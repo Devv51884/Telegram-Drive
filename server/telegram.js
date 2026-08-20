@@ -131,7 +131,8 @@ export async function uploadFileToTelegram(fileInput, originalname, mimetype, ca
       if (isFilePath) {
         formData.append("document", fs.createReadStream(fileInput), {
           filename: originalname,
-          contentType: mimetype
+          contentType: mimetype,
+          knownLength: fileSize
         });
       } else {
         formData.append("document", fileInput, {
@@ -143,14 +144,20 @@ export async function uploadFileToTelegram(fileInput, originalname, mimetype, ca
         formData.append("caption", caption);
       }
 
+      let formHeaders = formData.getHeaders();
+      try {
+        const formLen = formData.getLengthSync();
+        if (formLen) formHeaders["Content-Length"] = formLen;
+      } catch {}
+
       const response = await axios.post(
         `https://api.telegram.org/bot${config.botToken}/sendDocument`,
         formData,
         {
-          headers: formData.getHeaders(),
+          headers: formHeaders,
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
-          timeout: 180000
+          timeout: 0 // Infinite timeout: never abort in the middle of transfer
         }
       );
 
@@ -182,6 +189,7 @@ export async function uploadFileToTelegram(fileInput, originalname, mimetype, ca
         file: fileInput,
         caption: caption || originalname,
         forceDocument: true,
+        workers: 4,
         attributes: [
           new Api.DocumentAttributeFilename({
             fileName: originalname

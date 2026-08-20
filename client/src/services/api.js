@@ -4,7 +4,7 @@ const API_BASE = "/api";
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 300000 // 5 minutes for large uploads
+  timeout: 120000 // 2 minutes for normal requests
 });
 
 // Automatic Authorization Header Interceptor
@@ -50,6 +50,9 @@ export const DriveAPI = {
     return api
       .post("/files/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: 0, // No client-side timeout: allows large files (up to 2GB) to finish uploading seamlessly
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
         onUploadProgress: (progressEvent) => {
           if (onProgress && progressEvent.total) {
             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
