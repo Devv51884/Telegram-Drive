@@ -129,7 +129,51 @@ export async function uploadFileToTelegram(
     fileSize = fileInput.length;
   }
 
-  // 1. Primary Strategy: Try Telegram Bot API if configured (Bot API allows files <= 50MB)
+  // 1. Primary Strategy: Seamless MTProto Connected User Account Upload directly to personal Telegram Cloud (Saved Messages 'me')
+  // When uploaded to the user's account, the user owns the file and can stream it instantly with 100% reliability up to 2GB!
+  const gramClient = await getGramClient();
+  if (gramClient) {
+    try {
+      const targetPeer = "me"; // Upload directly to personal Telegram Cloud (Saved Messages)
+      const res = await gramClient.sendFile(targetPeer, {
+        file: fileInput,
+        caption: caption || originalname,
+        forceDocument: true,
+        workers: 4,
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            const percent = Math.min(99, Math.round(progress * 100));
+            const loaded = Math.round(progress * fileSize);
+            progressCallback({ loaded, total: fileSize, percent });
+          }
+        },
+        attributes: [
+          new Api.DocumentAttributeFilename({
+            fileName: originalname
+          })
+        ]
+      });
+
+      if (res && res.media && (res.media.document || res.media.photo)) {
+        if (progressCallback) {
+          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
+        }
+        const doc = res.media.document || res.media.photo;
+        return {
+          sourceType: "telegram_post",
+          fileId: null,
+          fileUniqueId: doc.id?.toString(),
+          fileSize: Number(doc.size || fileSize),
+          messageId: res.id.toString(),
+          channelId: "me"
+        };
+      }
+    } catch (gramErr) {
+      console.warn("GramJS user account upload failed, falling back to Bot API:", gramErr.message);
+    }
+  }
+
+  // 2. Secondary Strategy: Try Telegram Bot API if configured (Bot API allows files <= 50MB)
   if (config.botToken && config.chatId && fileSize <= 50 * 1024 * 1024) {
     try {
       const formData = new FormData();
@@ -190,61 +234,12 @@ export async function uploadFileToTelegram(
         };
       }
     } catch (botErr) {
-      console.warn(
-        "Bot API upload encountered issue, falling back to MTProto Account:",
-        botErr.response?.data?.description || botErr.message
-      );
-    }
-  }
-
-  // 2. Secondary Strategy: Seamless MTProto Connected User Account Upload (Supports up to 2GB!)
-  const gramClient = await getGramClient();
-  if (gramClient) {
-    try {
-      const targetPeer = "me"; // Upload directly to personal Telegram Cloud (Saved Messages)
-      const res = await gramClient.sendFile(targetPeer, {
-        file: fileInput,
-        caption: caption || originalname,
-        forceDocument: true,
-        workers: 4,
-        progressCallback: (progress) => {
-          if (progressCallback) {
-            const percent = Math.min(99, Math.round(progress * 100));
-            const loaded = Math.round(progress * fileSize);
-            progressCallback({ loaded, total: fileSize, percent });
-          }
-        },
-        attributes: [
-          new Api.DocumentAttributeFilename({
-            fileName: originalname
-          })
-        ]
-      });
-
-      if (res && res.media && (res.media.document || res.media.photo)) {
-        if (progressCallback) {
-          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
-        }
-        const doc = res.media.document || res.media.photo;
-        return {
-          sourceType: "telegram_post",
-          fileId: null,
-          fileUniqueId: doc.id?.toString(),
-          fileSize: Number(doc.size || fileSize),
-          messageId: res.id.toString(),
-          channelId: "me"
-        };
-      }
-    } catch (gramErr) {
-      console.error("GramJS user account upload failed:", gramErr.message);
-      throw new Error(
-        `Upload failed: ${gramErr.message}. If using Bot, please ensure your bot is an Administrator in your storage channel.`
-      );
+      console.warn("Bot API upload error:", botErr.response?.data?.description || botErr.message);
     }
   }
 
   throw new Error(
-    "Upload failed: Bot was unable to send to the channel and no Telegram account session is active."
+    "Upload failed: No connected Telegram account or active storage channel available."
   );
 }
 
@@ -460,15 +455,16 @@ export async function logoutTelegramUser() {
   return { success: true };
 }
 
-// Parse Telegram Post Link
+// Parse Telegram Post Link (supports private channel, public channel, and forum topics)
 export function parseTelegramPostUrl(url) {
   if (!url || typeof url !== "string") return null;
   const trimmed = url.trim();
 
-  const privateMatch = trimmed.match(/t\.me\/c\/(\d+)\/(\d+)/i);
+  // 1. Private channel / supergroup / forum topic: t.me/c/2643917389/1036/1039 or t.me/c/2643917389/1039
+  const privateMatch = trimmed.match(/t\.me\/c\/(\d+)(?:\/(\d+))?\/(\d+)/i);
   if (privateMatch) {
     const rawChannelId = privateMatch[1];
-    const messageId = parseInt(privateMatch[2], 10);
+    const messageId = parseInt(privateMatch[3], 10);
     const fullChannelId = rawChannelId.startsWith("-100") ? rawChannelId : `-100${rawChannelId}`;
     return {
       isPrivate: true,
@@ -478,10 +474,11 @@ export function parseTelegramPostUrl(url) {
     };
   }
 
-  const publicMatch = trimmed.match(/t\.me\/([a-zA-Z0-9_]+)\/(\d+)/i);
-  if (publicMatch) {
+  // 2. Public channel / group / forum topic: t.me/channel_name/1036/1039 or t.me/channel_name/1039
+  const publicMatch = trimmed.match(/t\.me\/([a-zA-Z0-9_]+)(?:\/(\d+))?\/(\d+)/i);
+  if (publicMatch && publicMatch[1] !== "c") {
     const channelUsername = publicMatch[1];
-    const messageId = parseInt(publicMatch[2], 10);
+    const messageId = parseInt(publicMatch[3], 10);
     return {
       isPrivate: false,
       channelUsername,

@@ -349,26 +349,16 @@ export default function UploadModal() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setIsMinimized(true)}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1f20] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-              title="Minimize upload window (keep uploading in background)"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => {
-                setActiveModal(null);
-                if (!hasActiveUploads) setUploadList([]);
-              }}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1f20] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-              title="Close window"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setActiveModal(null);
+              if (!hasActiveUploads) setUploadList([]);
+            }}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1f20] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            title="Close window"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Dropzone */}
@@ -511,19 +501,13 @@ export default function UploadModal() {
           </div>
         )}
 
-        {/* Footer with Minimize action button */}
-        <div className="flex justify-between items-center mt-4 flex-shrink-0 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => setIsMinimized(true)}
-            className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 font-semibold flex items-center gap-1.5"
-          >
-            <Minus className="w-3.5 h-3.5" />
-            <span>Minimize (Browse Drive while uploading)</span>
-          </button>
-
+        {/* Footer */}
+        <div className="flex justify-end items-center mt-4 flex-shrink-0 pt-2 border-t border-slate-100 dark:border-slate-800">
           <button
             onClick={() => {
+              if (hasActiveUploads) {
+                setIsMinimized(true);
+              }
               setActiveModal(null);
               if (!hasActiveUploads) setUploadList([]);
             }}

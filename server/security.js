@@ -226,7 +226,12 @@ export function sanitizeFileName(fileName) {
 export function validateTelegramUrl(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
-  const pattern = /^https?:\/\/(t\.me|telegram\.me)\/(c\/\d+\/\d+|[a-zA-Z0-9_]+\/\d+)$/i;
+  // Supports:
+  // - https://t.me/channel_name/123
+  // - https://t.me/channel_name/topic_id/123
+  // - https://t.me/c/1234567890/123
+  // - https://t.me/c/1234567890/topic_id/123
+  const pattern = /^https?:\/\/(t\.me|telegram\.me)\/(c\/\d+(\/\d+)+|[a-zA-Z0-9_]+(\/\d+)+)$/i;
   return pattern.test(trimmed);
 }
 
