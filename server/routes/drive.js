@@ -1,5 +1,5 @@
 import express from "express";
-import { getSqliteDb, dbGetFolderById } from "../db.js";
+import { getSqliteDb, dbGetFolderById, getSupabaseClient } from "../db.js";
 import { deleteTelegramMessage } from "../telegram.js";
 
 const router = express.Router();
@@ -116,37 +116,35 @@ router.get("/contents", async (req, res) => {
       files
     });
   } catch (err) {
+    console.error("Contents fetch error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// GET /api/drive/stats - Storage breakdown
+// GET /api/drive/stats - Storage statistics by file type
 router.get("/stats", async (req, res) => {
   try {
     const sqlite = await getSqliteDb();
-    let statsQuery = `
-      SELECT 
-        COUNT(id) as totalFiles,
-        COALESCE(SUM(size), 0) as totalBytes,
-        type
-      FROM files 
+
+    let countQuery = `
+      SELECT type, COUNT(*) as totalFiles, SUM(size) as totalBytes
+      FROM files
       WHERE is_trash = 0
     `;
+    let folderCountQuery = "SELECT COUNT(*) as totalFolders FROM folders WHERE is_trash = 0";
     const params = [];
-    if (req.userId) {
-      statsQuery += " AND (user_id = ? OR user_id IS NULL)";
-      params.push(req.userId);
-    }
-    statsQuery += " GROUP BY type";
-
-    const rows = await sqlite.all(statsQuery, params);
-
-    let folderCountQuery = "SELECT COUNT(id) as totalFolders FROM folders WHERE is_trash = 0";
     const folderParams = [];
+
     if (req.userId) {
+      countQuery += " AND (user_id = ? OR user_id IS NULL)";
       folderCountQuery += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(req.userId);
       folderParams.push(req.userId);
     }
+
+    countQuery += " GROUP BY type";
+
+    const rows = await sqlite.all(countQuery, params);
     const folderCount = await sqlite.get(folderCountQuery, folderParams);
 
     const stats = {
@@ -175,6 +173,186 @@ router.get("/stats", async (req, res) => {
     }
 
     res.json({ success: true, stats });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/drive/bulk-trash - Move multiple files & folders to trash
+router.post("/bulk-trash", async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [] } = req.body;
+    const sqlite = await getSqliteDb();
+
+    if (fileIds.length > 0) {
+      const placeholders = fileIds.map(() => "?").join(",");
+      await sqlite.run(`UPDATE files SET is_trash = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, fileIds);
+    }
+
+    if (folderIds.length > 0) {
+      const placeholders = folderIds.map(() => "?").join(",");
+      await sqlite.run(`UPDATE folders SET is_trash = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, folderIds);
+    }
+
+    (async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          if (fileIds.length > 0) await supabase.from("files").update({ is_trash: 1 }).in("id", fileIds);
+          if (folderIds.length > 0) await supabase.from("folders").update({ is_trash: 1 }).in("id", folderIds);
+        }
+      } catch {}
+    })();
+
+    res.json({ success: true, message: `Moved ${fileIds.length + folderIds.length} items to Trash` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/drive/bulk-restore - Restore multiple files & folders from trash
+router.post("/bulk-restore", async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [] } = req.body;
+    const sqlite = await getSqliteDb();
+
+    if (fileIds.length > 0) {
+      const placeholders = fileIds.map(() => "?").join(",");
+      await sqlite.run(`UPDATE files SET is_trash = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, fileIds);
+    }
+
+    if (folderIds.length > 0) {
+      const placeholders = folderIds.map(() => "?").join(",");
+      await sqlite.run(`UPDATE folders SET is_trash = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, folderIds);
+    }
+
+    (async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          if (fileIds.length > 0) await supabase.from("files").update({ is_trash: 0 }).in("id", fileIds);
+          if (folderIds.length > 0) await supabase.from("folders").update({ is_trash: 0 }).in("id", folderIds);
+        }
+      } catch {}
+    })();
+
+    res.json({ success: true, message: `Restored ${fileIds.length + folderIds.length} items from Trash` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/drive/bulk-move - Move multiple files & folders to a target folder
+router.post("/bulk-move", async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [], targetFolderId } = req.body;
+    const destination = targetFolderId === "root" || !targetFolderId ? null : targetFolderId;
+    const sqlite = await getSqliteDb();
+
+    if (fileIds.length > 0) {
+      const placeholders = fileIds.map(() => "?").join(",");
+      await sqlite.run(
+        `UPDATE files SET folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+        [destination, ...fileIds]
+      );
+    }
+
+    if (folderIds.length > 0) {
+      const placeholders = folderIds.map(() => "?").join(",");
+      await sqlite.run(
+        `UPDATE folders SET parent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+        [destination, ...folderIds]
+      );
+    }
+
+    (async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          if (fileIds.length > 0) await supabase.from("files").update({ folder_id: destination }).in("id", fileIds);
+          if (folderIds.length > 0) await supabase.from("folders").update({ parent_id: destination }).in("id", folderIds);
+        }
+      } catch {}
+    })();
+
+    res.json({ success: true, message: `Moved ${fileIds.length + folderIds.length} items successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/drive/bulk-star - Star / Unstar multiple items
+router.post("/bulk-star", async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [], isStarred = 1 } = req.body;
+    const starVal = isStarred ? 1 : 0;
+    const sqlite = await getSqliteDb();
+
+    if (fileIds.length > 0) {
+      const placeholders = fileIds.map(() => "?").join(",");
+      await sqlite.run(
+        `UPDATE files SET is_starred = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+        [starVal, ...fileIds]
+      );
+    }
+
+    if (folderIds.length > 0) {
+      const placeholders = folderIds.map(() => "?").join(",");
+      await sqlite.run(
+        `UPDATE folders SET is_starred = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+        [starVal, ...folderIds]
+      );
+    }
+
+    (async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          if (fileIds.length > 0) await supabase.from("files").update({ is_starred: starVal }).in("id", fileIds);
+          if (folderIds.length > 0) await supabase.from("folders").update({ is_starred: starVal }).in("id", folderIds);
+        }
+      } catch {}
+    })();
+
+    res.json({ success: true, message: `Updated star status on ${fileIds.length + folderIds.length} items` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/drive/bulk-delete - Permanently delete multiple files & folders
+router.post("/bulk-delete", async (req, res) => {
+  try {
+    const { fileIds = [], folderIds = [] } = req.body;
+    const sqlite = await getSqliteDb();
+
+    if (fileIds.length > 0) {
+      const placeholders = fileIds.map(() => "?").join(",");
+      const files = await sqlite.all(`SELECT * FROM files WHERE id IN (${placeholders})`, fileIds);
+      for (const file of files) {
+        if (file.telegram_message_id && file.telegram_channel_id && file.source_type === "upload") {
+          deleteTelegramMessage(file.telegram_message_id, file.telegram_channel_id).catch(() => {});
+        }
+      }
+      await sqlite.run(`DELETE FROM files WHERE id IN (${placeholders})`, fileIds);
+    }
+
+    if (folderIds.length > 0) {
+      const placeholders = folderIds.map(() => "?").join(",");
+      await sqlite.run(`DELETE FROM folders WHERE id IN (${placeholders})`, folderIds);
+    }
+
+    (async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          if (fileIds.length > 0) await supabase.from("files").delete().in("id", fileIds);
+          if (folderIds.length > 0) await supabase.from("folders").delete().in("id", folderIds);
+        }
+      } catch {}
+    })();
+
+    res.json({ success: true, message: `Deleted ${fileIds.length + folderIds.length} items permanently` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

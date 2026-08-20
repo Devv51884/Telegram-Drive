@@ -6,6 +6,7 @@ import Breadcrumbs from "./components/layout/Breadcrumbs.jsx";
 import FileGrid from "./components/drive/FileGrid.jsx";
 import FileList from "./components/drive/FileList.jsx";
 import EmptyState from "./components/drive/EmptyState.jsx";
+import BulkActionBar from "./components/drive/BulkActionBar.jsx";
 import NewFolderModal from "./components/modals/NewFolderModal.jsx";
 import UploadModal from "./components/modals/UploadModal.jsx";
 import ImportLinkModal from "./components/modals/ImportLinkModal.jsx";
@@ -82,6 +83,9 @@ function DriveMain() {
         {/* Right Info / Details Drawer */}
         <DetailsDrawer />
       </div>
+
+      {/* Floating Multi-Select Bulk Actions Bar */}
+      <BulkActionBar />
 
       {/* Modals & Dialogs */}
       <NewFolderModal />

@@ -3,12 +3,14 @@ import { useDrive } from "../../context/DriveContext.jsx";
 import { X, FolderInput, Folder, ChevronRight, ChevronDown, HardDrive } from "lucide-react";
 
 export default function MoveModal() {
-  const { activeModal, setActiveModal, modalTargetItem, folderTree, moveItem } = useDrive();
+  const { activeModal, setActiveModal, modalTargetItem, folderTree, moveItem, bulkMove } = useDrive();
   const [selectedFolderId, setSelectedFolderId] = useState("root");
   const [expanded, setExpanded] = useState({ root: true });
   const [loading, setLoading] = useState(false);
 
   if (activeModal !== "move" || !modalTargetItem) return null;
+
+  const isBulk = Boolean(modalTargetItem.isBulk);
 
   const toggleExpand = (id, e) => {
     e.stopPropagation();
@@ -17,7 +19,7 @@ export default function MoveModal() {
 
   const renderTreeItem = (folder, depth = 0) => {
     const isSelected = selectedFolderId === folder.id;
-    const isSelf = modalTargetItem.isFolder && modalTargetItem.id === folder.id;
+    const isSelf = !isBulk && modalTargetItem.isFolder && modalTargetItem.id === folder.id;
     const hasChildren = folder.children && folder.children.length > 0;
     const isExpanded = expanded[folder.id];
 
@@ -65,7 +67,11 @@ export default function MoveModal() {
 
   const handleMove = async () => {
     setLoading(true);
-    await moveItem(modalTargetItem, selectedFolderId);
+    if (isBulk) {
+      await bulkMove(selectedFolderId);
+    } else {
+      await moveItem(modalTargetItem, selectedFolderId);
+    }
     setLoading(false);
   };
 
@@ -82,7 +88,9 @@ export default function MoveModal() {
                 Move to Folder
               </h3>
               <p className="text-xs text-slate-400 truncate max-w-[240px]">
-                Moving: {modalTargetItem.name}
+                {isBulk
+                  ? `Moving ${modalTargetItem.count} selected items`
+                  : `Moving: ${modalTargetItem.name}`}
               </p>
             </div>
           </div>

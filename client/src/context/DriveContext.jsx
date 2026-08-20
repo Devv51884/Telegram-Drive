@@ -30,8 +30,9 @@ export function DriveProvider({ children }) {
   const [sortBy, setSortBy] = useState("name");
   const [sortOrder, setSortOrder] = useState("asc");
 
-  // Selection
+  // Selection & Multi-Select
   const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedItems, setSelectedItems] = useState([]); // Array of items: [{ id, isFolder, name, is_starred, is_trash }]
 
   // Modals & Drawers
   const [activeModal, setActiveModal] = useState(null);
@@ -179,6 +180,8 @@ export function DriveProvider({ children }) {
     setIsAuthenticated(false);
     setFolders([]);
     setFiles([]);
+    setSelectedItems([]);
+    setSelectedItem(null);
     showToast("Logged out successfully");
   };
 
@@ -251,6 +254,7 @@ export function DriveProvider({ children }) {
   const openFolder = (folderId) => {
     setCurrentFolderId(folderId);
     setSelectedItem(null);
+    setSelectedItems([]);
     setSearchQuery("");
   };
 
@@ -258,6 +262,7 @@ export function DriveProvider({ children }) {
     setSection(newSection);
     setCurrentFolderId("root");
     setSelectedItem(null);
+    setSelectedItems([]);
     setSearchQuery("");
     if (newSection === "my_drive") {
       setBreadcrumbs([{ id: "root", name: "My Drive" }]);
@@ -271,7 +276,176 @@ export function DriveProvider({ children }) {
   };
 
   // ==========================================
-  // ULTRA-RESPONSIVE OPTIMISTIC CRUD ACTIONS (0ms Delay)
+  // MULTI-SELECTION & BULK ACTIONS
+  // ==========================================
+
+  const isItemSelected = (id) => selectedItems.some((item) => item.id === id);
+
+  const toggleSelectItem = (item, isMulti = false) => {
+    if (!item) return;
+    const itemObj = {
+      id: item.id,
+      name: item.name,
+      isFolder: Boolean(item.isFolder || item.color),
+      is_starred: item.is_starred || 0,
+      is_trash: item.is_trash || 0
+    };
+
+    if (isMulti) {
+      setSelectedItems((prev) => {
+        const exists = prev.some((i) => i.id === item.id);
+        if (exists) {
+          const next = prev.filter((i) => i.id !== item.id);
+          setSelectedItem(next[next.length - 1] || null);
+          return next;
+        } else {
+          setSelectedItem(item);
+          return [...prev, itemObj];
+        }
+      });
+    } else {
+      setSelectedItems([itemObj]);
+      setSelectedItem(item);
+    }
+  };
+
+  const selectAll = () => {
+    const allFolderItems = folders.map((f) => ({
+      id: f.id,
+      name: f.name,
+      isFolder: true,
+      is_starred: f.is_starred,
+      is_trash: f.is_trash
+    }));
+    const allFileItems = files.map((f) => ({
+      id: f.id,
+      name: f.name,
+      isFolder: false,
+      is_starred: f.is_starred,
+      is_trash: f.is_trash
+    }));
+    setSelectedItems([...allFolderItems, ...allFileItems]);
+  };
+
+  const clearSelection = () => {
+    setSelectedItems([]);
+    setSelectedItem(null);
+  };
+
+  const bulkTrash = async () => {
+    if (selectedItems.length === 0) return;
+    const fileIds = selectedItems.filter((i) => !i.isFolder).map((i) => i.id);
+    const folderIds = selectedItems.filter((i) => i.isFolder).map((i) => i.id);
+    const count = selectedItems.length;
+
+    // Optimistic UI
+    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
+    setFolders((prev) => prev.filter((f) => !folderIds.includes(f.id)));
+    clearSelection();
+    showToast(`Moved ${count} items to Trash`);
+
+    try {
+      await DriveAPI.bulkTrash(fileIds, folderIds);
+      fetchMetadata();
+    } catch (err) {
+      fetchContents(true);
+      showToast("Failed to move items to trash", "error");
+    }
+  };
+
+  const bulkRestore = async () => {
+    if (selectedItems.length === 0) return;
+    const fileIds = selectedItems.filter((i) => !i.isFolder).map((i) => i.id);
+    const folderIds = selectedItems.filter((i) => i.isFolder).map((i) => i.id);
+    const count = selectedItems.length;
+
+    // Optimistic UI
+    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
+    setFolders((prev) => prev.filter((f) => !folderIds.includes(f.id)));
+    clearSelection();
+    showToast(`Restored ${count} items from Trash`);
+
+    try {
+      await DriveAPI.bulkRestore(fileIds, folderIds);
+      fetchMetadata();
+    } catch (err) {
+      fetchContents(true);
+      showToast("Failed to restore items", "error");
+    }
+  };
+
+  const bulkDeletePermanently = async () => {
+    if (selectedItems.length === 0) return;
+    const fileIds = selectedItems.filter((i) => !i.isFolder).map((i) => i.id);
+    const folderIds = selectedItems.filter((i) => i.isFolder).map((i) => i.id);
+    const count = selectedItems.length;
+
+    // Optimistic UI
+    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
+    setFolders((prev) => prev.filter((f) => !folderIds.includes(f.id)));
+    clearSelection();
+    showToast(`Deleted ${count} items permanently`);
+
+    try {
+      await DriveAPI.bulkDelete(fileIds, folderIds);
+      fetchMetadata();
+    } catch (err) {
+      fetchContents(true);
+      showToast("Failed to delete items permanently", "error");
+    }
+  };
+
+  const bulkMove = async (targetFolderId) => {
+    if (selectedItems.length === 0) return;
+    const fileIds = selectedItems.filter((i) => !i.isFolder).map((i) => i.id);
+    const folderIds = selectedItems.filter((i) => i.isFolder).map((i) => i.id);
+    const count = selectedItems.length;
+
+    // Optimistic UI
+    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
+    setFolders((prev) => prev.filter((f) => !folderIds.includes(f.id)));
+    clearSelection();
+    setActiveModal(null);
+    showToast(`Moved ${count} items successfully`);
+
+    try {
+      await DriveAPI.bulkMove(fileIds, folderIds, targetFolderId);
+      fetchMetadata();
+    } catch (err) {
+      fetchContents(true);
+      showToast("Failed to move items", "error");
+    }
+  };
+
+  const bulkToggleStar = async () => {
+    if (selectedItems.length === 0) return;
+    const fileIds = selectedItems.filter((i) => !i.isFolder).map((i) => i.id);
+    const folderIds = selectedItems.filter((i) => i.isFolder).map((i) => i.id);
+    const anyUnstarred = selectedItems.some((i) => !i.is_starred);
+    const newStar = anyUnstarred ? 1 : 0;
+    const count = selectedItems.length;
+
+    // Optimistic UI
+    setFiles((prev) =>
+      prev.map((f) => (fileIds.includes(f.id) ? { ...f, is_starred: newStar } : f))
+    );
+    setFolders((prev) =>
+      prev.map((f) => (folderIds.includes(f.id) ? { ...f, is_starred: newStar } : f))
+    );
+    setSelectedItems((prev) => prev.map((i) => ({ ...i, is_starred: newStar })));
+    showToast(newStar ? `Starred ${count} items` : `Unstarred ${count} items`);
+
+    try {
+      await DriveAPI.bulkStar(fileIds, folderIds, newStar);
+      fetchMetadata();
+    } catch (err) {
+      fetchContents(true);
+      showToast("Failed to update stars", "error");
+    }
+  };
+
+  // ==========================================
+  // SINGLE ITEM ACTIONS
   // ==========================================
 
   const createFolder = async (name, color) => {
@@ -508,9 +682,22 @@ export function DriveProvider({ children }) {
     sortOrder,
     setSortOrder,
 
-    // Selection
+    // Selection & Multi-Select
     selectedItem,
     setSelectedItem,
+    selectedItems,
+    setSelectedItems,
+    toggleSelectItem,
+    selectAll,
+    clearSelection,
+    isItemSelected,
+
+    // Bulk Operations
+    bulkTrash,
+    bulkRestore,
+    bulkDeletePermanently,
+    bulkMove,
+    bulkToggleStar,
 
     // Modals
     activeModal,
@@ -526,7 +713,7 @@ export function DriveProvider({ children }) {
     toast,
     showToast,
 
-    // Actions
+    // Single Actions
     createFolder,
     renameItem,
     moveItem,

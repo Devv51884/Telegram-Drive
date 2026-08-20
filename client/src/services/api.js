@@ -4,7 +4,7 @@ const API_BASE = "/api";
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 120000 // 2 minutes for normal requests
+  timeout: 120000 // 2 minutes for standard requests
 });
 
 // Automatic Authorization Header Interceptor
@@ -33,6 +33,18 @@ export const DriveAPI = {
   getStats: () => api.get("/drive/stats").then((r) => r.data),
   emptyTrash: () => api.post("/drive/empty-trash").then((r) => r.data),
 
+  // Bulk Operations
+  bulkTrash: (fileIds = [], folderIds = []) =>
+    api.post("/drive/bulk-trash", { fileIds, folderIds }).then((r) => r.data),
+  bulkRestore: (fileIds = [], folderIds = []) =>
+    api.post("/drive/bulk-restore", { fileIds, folderIds }).then((r) => r.data),
+  bulkDelete: (fileIds = [], folderIds = []) =>
+    api.post("/drive/bulk-delete", { fileIds, folderIds }).then((r) => r.data),
+  bulkMove: (fileIds = [], folderIds = [], targetFolderId = "root") =>
+    api.post("/drive/bulk-move", { fileIds, folderIds, targetFolderId }).then((r) => r.data),
+  bulkStar: (fileIds = [], folderIds = [], isStarred = 1) =>
+    api.post("/drive/bulk-star", { fileIds, folderIds, isStarred }).then((r) => r.data),
+
   // Folders
   getFolders: (params = {}) => api.get("/folders", { params }).then((r) => r.data),
   getFolderTree: () => api.get("/folders/tree").then((r) => r.data),
@@ -41,7 +53,7 @@ export const DriveAPI = {
   deleteFolder: (id) => api.delete(`/folders/${id}`).then((r) => r.data),
 
   // Files
-  uploadFile: (file, folderId, onProgress) => {
+  uploadFile: (file, folderId, onProgress, signal) => {
     const formData = new FormData();
     formData.append("file", file);
     if (folderId && folderId !== "root") {
@@ -50,13 +62,18 @@ export const DriveAPI = {
     return api
       .post("/files/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 0, // No client-side timeout: allows large files (up to 2GB) to finish uploading seamlessly
+        timeout: 0, // Infinite timeout for large file streams up to 2GB
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
+        signal, // AbortSignal for instant upload cancellation
         onUploadProgress: (progressEvent) => {
           if (onProgress && progressEvent.total) {
             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            onProgress(percent);
+            onProgress({
+              loaded: progressEvent.loaded,
+              total: progressEvent.total,
+              percent
+            });
           }
         }
       })

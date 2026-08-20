@@ -13,8 +13,8 @@ import {
   Star,
   MoreVertical,
   Send,
-  ExternalLink,
-  Play
+  Play,
+  Check
 } from "lucide-react";
 
 export default function FileGrid() {
@@ -24,6 +24,9 @@ export default function FileGrid() {
     openFolder,
     selectedItem,
     setSelectedItem,
+    selectedItems,
+    toggleSelectItem,
+    isItemSelected,
     setPreviewItem,
     toggleStar,
     moveItem
@@ -62,7 +65,9 @@ export default function FileGrid() {
     e.preventDefault();
     e.stopPropagation();
     const itemWithFlag = { ...item, isFolder };
-    setSelectedItem(itemWithFlag);
+    if (!isItemSelected(item.id)) {
+      toggleSelectItem(itemWithFlag, false);
+    }
     setContextMenu({
       x: Math.min(e.clientX, window.innerWidth - 230),
       y: Math.min(e.clientY, window.innerHeight - 300),
@@ -107,7 +112,7 @@ export default function FileGrid() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {folders.map((folder) => {
-              const isSelected = selectedItem?.id === folder.id && selectedItem?.isFolder;
+              const isSelected = isItemSelected(folder.id);
               const isDragTarget = dragOverFolderId === folder.id;
 
               return (
@@ -120,19 +125,36 @@ export default function FileGrid() {
                   onDrop={(e) => handleDrop(e, folder.id)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedItem({ ...folder, isFolder: true });
+                    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
+                    toggleSelectItem({ ...folder, isFolder: true }, isMulti);
                   }}
                   onDoubleClick={() => openFolder(folder.id)}
                   onContextMenu={(e) => handleContextMenu(e, folder, true)}
                   className={`group relative flex items-center justify-between p-3 rounded-2xl border transition-all cursor-pointer ${
                     isSelected
-                      ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 shadow-sm"
+                      ? "bg-blue-50/90 dark:bg-blue-950/60 border-blue-500 shadow-md ring-2 ring-blue-500/20"
                       : isDragTarget
                       ? "bg-blue-100 dark:bg-blue-900/60 border-blue-500 scale-[1.02]"
                       : "bg-white dark:bg-[#1e1f20] border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm"
                   }`}
                 >
-                  <div className="flex items-center gap-3 truncate pr-2">
+                  <div className="flex items-center gap-2.5 truncate pr-2">
+                    {/* Multi-Select Checkbox */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelectItem({ ...folder, isFolder: true }, true);
+                      }}
+                      className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
+                        isSelected
+                          ? "bg-blue-600 border-blue-600 text-white"
+                          : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] opacity-0 group-hover:opacity-100 hover:border-blue-500"
+                      }`}
+                    >
+                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    </button>
+
                     <Folder
                       className="w-5 h-5 flex-shrink-0 transition-transform group-hover:scale-110"
                       style={{ color: folder.color || "#4285f4" }}
@@ -178,7 +200,7 @@ export default function FileGrid() {
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {files.map((file) => {
-              const isSelected = selectedItem?.id === file.id && !selectedItem?.isFolder;
+              const isSelected = isItemSelected(file.id);
 
               return (
                 <div
@@ -187,19 +209,36 @@ export default function FileGrid() {
                   onDragStart={(e) => handleDragStart(e, file, false)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedItem({ ...file, isFolder: false });
+                    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
+                    toggleSelectItem({ ...file, isFolder: false }, isMulti);
                   }}
                   onDoubleClick={() => setPreviewItem(file)}
                   onContextMenu={(e) => handleContextMenu(e, file, false)}
                   className={`group relative flex flex-col justify-between rounded-2xl border transition-all cursor-pointer overflow-hidden ${
                     isSelected
-                      ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 shadow-md ring-2 ring-blue-500/20"
+                      ? "bg-blue-50/90 dark:bg-blue-950/50 border-blue-500 shadow-md ring-2 ring-blue-500/20"
                       : "bg-white dark:bg-[#1e1f20] border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md"
                   }`}
                 >
                   {/* File Card Header */}
                   <div className="flex items-center justify-between p-2.5 bg-slate-50/60 dark:bg-[#252628] border-b border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-1.5 truncate">
+                      {/* Multi-Select Checkbox */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectItem({ ...file, isFolder: false }, true);
+                        }}
+                        className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                          isSelected
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] opacity-0 group-hover:opacity-100 hover:border-blue-500"
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                      </button>
+
                       {getFileIcon(file.type)}
                       <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 truncate">
                         {file.name.split(".").pop() || file.type}
