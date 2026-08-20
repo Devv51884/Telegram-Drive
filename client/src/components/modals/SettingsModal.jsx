@@ -1,23 +1,26 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useDrive } from "../../context/DriveContext.jsx";
 import DriveAPI from "../../services/api.js";
 import {
   X,
-  UserCheck,
+  User,
   Key,
+  Shield,
+  ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  LogOut,
   Phone,
   Lock,
   Loader2,
-  Sparkles,
-  ShieldCheck,
   Send,
   ArrowLeft,
   Eye,
   EyeOff,
-  Shield
+  Trash2,
+  Mail,
+  Save,
+  LogOut,
+  Sparkles
 } from "lucide-react";
 
 export default function SettingsModal() {
@@ -27,38 +30,118 @@ export default function SettingsModal() {
     settings,
     refresh,
     showToast,
-    lockMaster
+    currentUser,
+    updateProfile,
+    updatePassword,
+    update2FAPin,
+    deleteAccount,
+    logoutUser
   } = useDrive();
 
-  // Active Tab: 'telegram' | 'security'
-  const [activeTab, setActiveTab] = useState("telegram");
+  // Active Tab: 'account' | 'telegram'
+  const [activeTab, setActiveTab] = useState("account");
 
-  // --- Telegram Auth State ---
+  // Profile Edit State
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  // Password Change State
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // 2FA Security PIN State
+  const [pin, setPin] = useState("");
+  const [pinPassword, setPinPassword] = useState("");
+  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [isUpdating2FA, setIsUpdating2FA] = useState(false);
+
+  // Danger Zone: Delete Account State
+  const [deletePass, setDeletePass] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Telegram Auth State
   const [step, setStep] = useState("input_phone");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phoneCodeHash, setPhoneCodeHash] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [password2FA, setPassword2FA] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
 
-  // --- Change Password State ---
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [pwdLoading, setPwdLoading] = useState(false);
-  const [pwdError, setPwdError] = useState("");
+  useEffect(() => {
+    if (currentUser) {
+      setName(currentUser.name || "");
+      setEmail(currentUser.email || "");
+      setIs2FAEnabled(Boolean(currentUser.is2FAEnabled));
+    }
+  }, [currentUser]);
 
   if (activeModal !== "settings") return null;
 
-  // --- Step 1: Send OTP to Phone ---
+  // 1. Save Profile (Name & Email)
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return showToast("Full Name is required", "error");
+    if (!email.trim() || !email.includes("@")) return showToast("Valid email is required", "error");
+
+    setIsUpdatingProfile(true);
+    await updateProfile(name.trim(), email.trim());
+    setIsUpdatingProfile(false);
+  };
+
+  // 2. Change Password
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!currentPassword) return showToast("Current password is required", "error");
+    if (!newPassword || newPassword.length < 6) {
+      return showToast("New password must be at least 6 characters long", "error");
+    }
+    if (newPassword !== confirmNewPassword) {
+      return showToast("New passwords do not match", "error");
+    }
+
+    setIsUpdatingPassword(true);
+    const success = await updatePassword(currentPassword, newPassword);
+    if (success) {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    }
+    setIsUpdatingPassword(false);
+  };
+
+  // 3. Configure 2FA PIN
+  const handleConfigure2FA = async (e) => {
+    e.preventDefault();
+    if (!pin && !is2FAEnabled) {
+      return showToast("Please enter a 4-6 digit Security PIN", "error");
+    }
+
+    setIsUpdating2FA(true);
+    await update2FAPin(pin, is2FAEnabled, pinPassword);
+    setPin("");
+    setPinPassword("");
+    setIsUpdating2FA(false);
+  };
+
+  // 4. Delete Account
+  const handleDeleteAccount = async (e) => {
+    e.preventDefault();
+    if (!deletePass) return showToast("Please enter your account password to confirm deletion", "error");
+
+    setIsDeleting(true);
+    await deleteAccount(deletePass);
+    setIsDeleting(false);
+  };
+
+  // --- Telegram Auth Handlers ---
   const handleSendCode = async (e) => {
     e.preventDefault();
-    if (!phoneNumber.trim()) {
-      showToast("Please enter your Telegram phone number", "error");
-      return;
-    }
+    if (!phoneNumber.trim()) return showToast("Please enter your phone number", "error");
 
     setAuthLoading(true);
     try {
@@ -75,13 +158,9 @@ export default function SettingsModal() {
     }
   };
 
-  // --- Step 2: Verify OTP ---
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
-    if (!otpCode.trim()) {
-      showToast("Please enter the verification code", "error");
-      return;
-    }
+    if (!otpCode.trim()) return showToast("Please enter the verification code", "error");
 
     setAuthLoading(true);
     try {
@@ -99,7 +178,6 @@ export default function SettingsModal() {
         refresh();
         setStep("input_phone");
         setOtpCode("");
-        setPassword2FA("");
       }
     } catch (err) {
       const errorData = err.response?.data;
@@ -114,21 +192,17 @@ export default function SettingsModal() {
     }
   };
 
-  // --- Step 3: Verify 2FA ---
   const handleVerify2FA = async (e) => {
     e.preventDefault();
-    if (!password2FA.trim()) {
-      showToast("Please enter your 2FA password", "error");
-      return;
-    }
+    if (!password2FA.trim()) return showToast("Please enter your 2-Step Verification password", "error");
 
     setAuthLoading(true);
     try {
       const res = await DriveAPI.loginTelegram({
         phoneNumber: phoneNumber.trim(),
         code: otpCode.trim(),
-        password: password2FA.trim(),
-        phoneCodeHash
+        phoneCodeHash,
+        password: password2FA.trim()
       });
 
       if (res.success) {
@@ -137,18 +211,15 @@ export default function SettingsModal() {
         setStep("input_phone");
         setOtpCode("");
         setPassword2FA("");
-      } else {
-        showToast(res.error || "Login failed", "error");
       }
     } catch (err) {
-      showToast(err.response?.data?.error || err.message || "Incorrect 2FA password", "error");
+      showToast(err.response?.data?.error || err.message || "2FA verification failed", "error");
     } finally {
       setAuthLoading(false);
     }
   };
 
-  // --- Disconnect Telegram Account ---
-  const handleLogout = async () => {
+  const handleDisconnectTelegram = async () => {
     try {
       await DriveAPI.logoutTelegram();
       showToast("Telegram account disconnected");
@@ -158,397 +229,460 @@ export default function SettingsModal() {
     }
   };
 
-  // --- Change Master PIN / Password ---
-  const handleChangeMasterPassword = async (e) => {
-    e.preventDefault();
-    setPwdError("");
-
-    if (newPassword !== confirmNewPassword) {
-      setPwdError("New passwords do not match");
-      return;
-    }
-
-    if (newPassword.length < 4) {
-      setPwdError("Password must be at least 4 characters");
-      return;
-    }
-
-    setPwdLoading(true);
-    try {
-      const res = await DriveAPI.changeMasterPassword(currentPassword, newPassword);
-      if (res.success) {
-        localStorage.setItem("teledrive_auth_token", res.token);
-        showToast("Master Password updated successfully!");
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmNewPassword("");
-      }
-    } catch (err) {
-      setPwdError(err.response?.data?.error || err.message || "Failed to update password");
-    } finally {
-      setPwdLoading(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-100">
-      <div className="bg-white dark:bg-[#282a2c] w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-[#282a2c] w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <div className="flex items-center justify-between mb-5 flex-shrink-0">
           <div>
-            <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              Settings & Account
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">
+              Account Settings & Security
             </h3>
             <p className="text-xs text-slate-400">
-              Manage your connected Telegram account and security lock
+              Manage your personal profile, 2-Factor PIN lock, and Telegram connection
             </p>
           </div>
           <button
             onClick={() => setActiveModal(null)}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#1e1f20] rounded-2xl mb-5 border border-slate-200/80 dark:border-slate-700/60">
+        <div className="flex bg-slate-100 dark:bg-[#1e1f20] p-1 rounded-2xl mb-5 flex-shrink-0 border border-slate-200/60 dark:border-slate-700">
           <button
-            onClick={() => setActiveTab("telegram")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
-              activeTab === "telegram"
+            type="button"
+            onClick={() => setActiveTab("account")}
+            className={`flex items-center justify-center gap-2 flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+              activeTab === "account"
                 ? "bg-white dark:bg-[#282a2c] text-blue-600 dark:text-blue-400 shadow-sm"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
             }`}
           >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Telegram Account</span>
+            <User className="w-3.5 h-3.5" />
+            <span>Account Profile & 2FA</span>
           </button>
 
           <button
-            onClick={() => setActiveTab("security")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
-              activeTab === "security"
-                ? "bg-white dark:bg-[#282a2c] text-indigo-600 dark:text-indigo-400 shadow-sm"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            type="button"
+            onClick={() => setActiveTab("telegram")}
+            className={`flex items-center justify-center gap-2 flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+              activeTab === "telegram"
+                ? "bg-white dark:bg-[#282a2c] text-blue-600 dark:text-blue-400 shadow-sm"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
             }`}
           >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Master PIN & Security</span>
+            <Send className="w-3.5 h-3.5 text-sky-500" />
+            <span>Telegram Connection</span>
           </button>
         </div>
 
-        {/* TAB 1: TELEGRAM ACCOUNT */}
-        {activeTab === "telegram" && (
-          <div className="space-y-4 animate-in fade-in duration-100">
-            {settings?.telegramUser?.connected ? (
-              <div className="space-y-4">
-                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-md">
-                      {settings.telegramUser.info?.firstName?.[0] || "U"}
+        {/* Tab Body */}
+        <div className="flex-1 overflow-y-auto pr-1 space-y-6">
+          {activeTab === "account" ? (
+            <>
+              {/* SECTION 1: Personal Profile CRUD (Name & Email) */}
+              <div className="bg-slate-50 dark:bg-[#1e1f20] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <User className="w-4 h-4 text-blue-500" />
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
+                    Personal Profile Details
+                  </h4>
+                </div>
+
+                <form onSubmit={handleSaveProfile} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                        Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                      />
                     </div>
                     <div>
-                      <h4 className="font-bold text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
-                        {settings.telegramUser.info?.firstName} {settings.telegramUser.info?.lastName || ""}
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={isUpdatingProfile}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
+                    >
+                      {isUpdatingProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      <span>Save Changes</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* SECTION 2: 2-Factor Security PIN Lock */}
+              <div className="bg-slate-50 dark:bg-[#1e1f20] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
+                        2-Factor Security PIN (2FA Lock)
                       </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username} • ` : ""}
-                        {settings.telegramUser.phoneNumber}
+                      <p className="text-[11px] text-slate-400">
+                        Require a 4-6 digit PIN to access and unlock your TeleDrive
                       </p>
                     </div>
                   </div>
-
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-colors"
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      is2FAEnabled
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300"
+                        : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                    }`}
                   >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Disconnect</span>
-                  </button>
+                    {is2FAEnabled ? "2FA Active" : "Disabled"}
+                  </span>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-xs space-y-2">
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Ready to Stream Channel Media & Videos</span>
+                <form onSubmit={handleConfigure2FA} className="space-y-3">
+                  <div className="flex items-center gap-3 bg-white dark:bg-[#282a2c] p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <input
+                      type="checkbox"
+                      id="enable2FA"
+                      checked={is2FAEnabled}
+                      onChange={(e) => setIs2FAEnabled(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                    />
+                    <label htmlFor="enable2FA" className="text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+                      Enable 2-Factor Security PIN on my account
+                    </label>
                   </div>
-                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                    Your Telegram account is connected. You can import post links from your subscribed private and public channels to stream video, PDFs, and photos instantly!
-                  </p>
-                </div>
+
+                  {is2FAEnabled && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                          New Security PIN (4–6 digits)
+                        </label>
+                        <input
+                          type="password"
+                          maxLength={6}
+                          value={pin}
+                          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                          placeholder="e.g. 1234"
+                          className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500 text-center tracking-widest font-mono text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                          Account Password (to verify)
+                        </label>
+                        <input
+                          type="password"
+                          value={pinPassword}
+                          onChange={(e) => setPinPassword(e.target.value)}
+                          placeholder="Your login password"
+                          className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={isUpdating2FA}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
+                    >
+                      {isUpdating2FA ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      <span>Update 2FA PIN</span>
+                    </button>
+                  </div>
+                </form>
               </div>
-            ) : step === "input_phone" ? (
-              <form onSubmit={handleSendCode} className="space-y-4">
-                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/80 rounded-2xl p-3.5 text-xs text-blue-900 dark:text-blue-200">
-                  <p className="font-semibold flex items-center gap-1.5 mb-1 text-blue-700 dark:text-blue-300">
-                    <Sparkles className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                    Step 1: Enter Telegram Phone Number
-                  </p>
-                  <p className="text-[11px] leading-relaxed opacity-90">
-                    Enter your phone number with country code. You will receive a 5-digit verification code directly in your official Telegram app chats.
-                  </p>
+
+              {/* SECTION 3: Change Account Password */}
+              <div className="bg-slate-50 dark:bg-[#1e1f20] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <Key className="w-4 h-4 text-purple-500" />
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
+                    Change Account Password
+                  </h4>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Telegram Phone Number (with country code)
-                  </label>
-                  <div className="relative flex items-center">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5" />
-                    <input
-                      type="tel"
-                      required
-                      autoFocus
-                      placeholder="+919876543210 or +1..."
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none text-slate-800 dark:text-white font-medium"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="submit"
-                    disabled={authLoading || !phoneNumber.trim()}
-                    className="w-full py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {authLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Sending Code...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5 -rotate-12" />
-                        <span>Send Verification Code</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            ) : step === "input_code" ? (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/80 rounded-2xl p-3.5 text-xs text-blue-900 dark:text-blue-200">
-                  <p className="font-semibold flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
-                    <Sparkles className="w-4 h-4 text-blue-500" />
-                    Step 2: Enter Verification Code
-                  </p>
-                  <p className="text-[11px] opacity-90 mt-0.5">
-                    Verification code has been sent to <b>{phoneNumber}</b>. Check your official Telegram app.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Telegram Verification Code
-                  </label>
-                  <div className="relative flex items-center">
-                    <Key className="w-4 h-4 text-slate-400 absolute left-3.5" />
-                    <input
-                      type="text"
-                      required
-                      autoFocus
-                      placeholder="Enter 5-digit OTP"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none text-slate-800 dark:text-white font-mono tracking-widest text-center text-lg"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep("input_phone")}
-                    className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Change Number</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={authLoading || !otpCode.trim()}
-                    className="px-6 py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {authLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Verifying...</span>
-                      </>
-                    ) : (
-                      <span>Complete Login</span>
-                    )}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleVerify2FA} className="space-y-4">
-                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/80 rounded-2xl p-3.5 text-xs text-amber-900 dark:text-amber-200">
-                  <p className="font-semibold flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
-                    <Lock className="w-4 h-4 text-amber-500" />
-                    Two-Step Verification (2FA)
-                  </p>
-                  <p className="text-[11px] opacity-90 mt-0.5">
-                    Your Telegram account has 2-Step Verification enabled. Please enter your password.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    Telegram 2FA Password
-                  </label>
-                  <div className="relative flex items-center">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5" />
+                <form onSubmit={handleChangePassword} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Current Password
+                    </label>
                     <input
                       type={showPassword ? "text" : "password"}
-                      required
-                      autoFocus
-                      placeholder="Enter your 2FA password"
-                      value={password2FA}
-                      onChange={(e) => setPassword2FA(e.target.value)}
-                      className="w-full pl-10 pr-10 py-2.5 rounded-xl text-sm bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none text-slate-800 dark:text-white"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                        New Password (min 6 chars)
+                      </label>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                        Confirm New Password
+                      </label>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-white dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="p-1 absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-1"
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      <span>{showPassword ? "Hide passwords" : "Show passwords"}</span>
                     </button>
+
+                    <button
+                      type="submit"
+                      disabled={isUpdatingPassword}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
+                    >
+                      {isUpdatingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+                      <span>Update Password</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* SECTION 4: Danger Zone - Delete Account */}
+              <div className="bg-rose-50/50 dark:bg-rose-950/20 p-4 rounded-2xl border border-rose-200 dark:border-rose-900/40">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-rose-600">
+                    <AlertCircle className="w-4 h-4" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider">
+                      Danger Zone
+                    </h4>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 gap-3">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+                  Permanently delete your account and all associated cloud files and folders. This action is irreversible.
+                </p>
+
+                {!showDeleteConfirm ? (
                   <button
                     type="button"
-                    onClick={() => setStep("input_code")}
-                    className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back to OTP</span>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete My Account</span>
                   </button>
+                ) : (
+                  <form onSubmit={handleDeleteAccount} className="space-y-3 bg-white dark:bg-[#282a2c] p-3.5 rounded-xl border border-rose-300 dark:border-rose-800">
+                    <p className="text-xs font-bold text-rose-600">
+                      Confirm Account Deletion:
+                    </p>
+                    <input
+                      type="password"
+                      required
+                      value={deletePass}
+                      onChange={(e) => setDeletePass(e.target.value)}
+                      placeholder="Enter your account password to confirm"
+                      className="w-full bg-slate-50 dark:bg-[#1e1f20] border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-rose-500"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="submit"
+                        disabled={isDeleting}
+                        className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1"
+                      >
+                        {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        <span>Confirm Permanent Delete</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          setDeletePass("");
+                        }}
+                        className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* TELEGRAM CONNECTION TAB */}
+              {settings?.telegramUser?.connected ? (
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-md">
+                        {settings.telegramUser.info?.firstName?.[0] || "T"}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-slate-800 dark:text-white">
+                            {settings.telegramUser.info?.firstName || "Telegram User"} {settings.telegramUser.info?.lastName || ""}
+                          </h4>
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3" /> Connected
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          @{settings.telegramUser.info?.username || "username"} • {settings.telegramUser.phoneNumber}
+                        </p>
+                      </div>
+                    </div>
 
-                  <button
-                    type="submit"
-                    disabled={authLoading || !password2FA.trim()}
-                    className="px-6 py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {authLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Verifying 2FA...</span>
-                      </>
-                    ) : (
-                      <span>Submit Password</span>
-                    )}
-                  </button>
+                    <button
+                      onClick={handleDisconnectTelegram}
+                      className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-800/60 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Disconnect</span>
+                    </button>
+                  </div>
                 </div>
-              </form>
-            )}
-          </div>
-        )}
+              ) : (
+                <div className="space-y-4">
+                  {step === "input_phone" && (
+                    <form onSubmit={handleSendCode} className="space-y-3">
+                      <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/40 text-xs text-slate-600 dark:text-slate-300">
+                        Connect your personal Telegram account to import media from channels and upload directly to Telegram Cloud.
+                      </div>
 
-        {/* TAB 2: SECURITY & MASTER LOCK */}
-        {activeTab === "security" && (
-          <div className="space-y-4 animate-in fade-in duration-100">
-            {/* Lock Now Button */}
-            <div className="bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-2xl p-4 flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-amber-500" />
-                  Lock Drive Now
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Immediately lock TeleDrive and require PIN to re-enter
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveModal(null);
-                  lockMaster();
-                }}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 hover:bg-amber-200 transition-colors"
-              >
-                Lock App
-              </button>
-            </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          Phone Number (with Country Code)
+                        </label>
+                        <div className="relative">
+                          <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="tel"
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
+                            placeholder="+1234567890"
+                            className="w-full bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
 
-            {/* Change Master Password Form */}
-            <form onSubmit={handleChangeMasterPassword} className="space-y-3 pt-2">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Change Master PIN / Password
-              </h4>
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {authLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        <span>Send Verification Code</span>
+                      </button>
+                    </form>
+                  )}
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                  Current Password
-                </label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Enter current password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none text-slate-800 dark:text-white"
-                />
-              </div>
+                  {step === "input_code" && (
+                    <form onSubmit={handleVerifyOtp} className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setStep("input_phone")}
+                          className="text-xs text-blue-500 hover:underline flex items-center gap-1"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" /> Back
+                        </button>
+                        <span className="text-xs text-slate-400">{phoneNumber}</span>
+                      </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                  New Master PIN / Password
-                </label>
-                <input
-                  type={showNewPassword ? "text" : "password"}
-                  required
-                  placeholder="Enter new password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none text-slate-800 dark:text-white"
-                />
-              </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          Enter 5-digit Telegram Code
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={5}
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                          placeholder="12345"
+                          className="w-full bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-center text-base tracking-widest font-mono text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                        />
+                      </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                  Confirm New Password
-                </label>
-                <input
-                  type={showNewPassword ? "text" : "password"}
-                  required
-                  placeholder="Confirm new password"
-                  value={confirmNewPassword}
-                  onChange={(e) => setConfirmNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none text-slate-800 dark:text-white"
-                />
-              </div>
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {authLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        <span>Verify & Connect</span>
+                      </button>
+                    </form>
+                  )}
 
-              {pwdError && (
-                <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs">
-                  {pwdError}
+                  {step === "input_2fa" && (
+                    <form onSubmit={handleVerify2FA} className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          Telegram 2-Step Verification Password
+                        </label>
+                        <input
+                          type="password"
+                          value={password2FA}
+                          onChange={(e) => setPassword2FA(e.target.value)}
+                          placeholder="Enter your Telegram 2FA password"
+                          className="w-full bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {authLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        <span>Verify 2FA Password</span>
+                      </button>
+                    </form>
+                  )}
                 </div>
               )}
-
-              <button
-                type="submit"
-                disabled={pwdLoading || !currentPassword.trim() || !newPassword.trim()}
-                className="w-full py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {pwdLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Updating Password...</span>
-                  </>
-                ) : (
-                  <span>Update Master Password</span>
-                )}
-              </button>
-            </form>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -84,8 +84,11 @@ export function DriveProvider({ children }) {
   }, [checkAuth]);
 
   // Auth Handlers
-  const loginUser = async (email, password) => {
-    const res = await DriveAPI.loginUser({ email, password });
+  const loginUser = async (email, password, pin = "") => {
+    const res = await DriveAPI.loginUser({ email, password, pin });
+    if (res.requires2FAPin) {
+      return { requires2FAPin: true, message: res.message };
+    }
     if (res.success && res.token) {
       localStorage.setItem("teledrive_auth_token", res.token);
       setCurrentUser(res.user);
@@ -93,9 +96,9 @@ export function DriveProvider({ children }) {
       showToast(`Welcome back, ${res.user.name}!`);
       fetchContents();
       fetchMetadata();
-      return true;
+      return { success: true };
     }
-    return false;
+    return { success: false, error: res.error || "Login failed" };
   };
 
   const signupUser = async (name, email, password) => {
@@ -110,6 +113,63 @@ export function DriveProvider({ children }) {
       return true;
     }
     return false;
+  };
+
+  const updateProfile = async (name, email) => {
+    try {
+      const res = await DriveAPI.updateProfile({ name, email });
+      if (res.success && res.user) {
+        setCurrentUser(res.user);
+        showToast("Profile details updated successfully!");
+        return true;
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to update profile", "error");
+      return false;
+    }
+  };
+
+  const updatePassword = async (currentPassword, newPassword) => {
+    try {
+      const res = await DriveAPI.updatePassword({ currentPassword, newPassword });
+      if (res.success) {
+        showToast("Account password changed successfully!");
+        return true;
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to change password", "error");
+      return false;
+    }
+  };
+
+  const update2FAPin = async (pin, isEnabled, currentPassword) => {
+    try {
+      const res = await DriveAPI.update2FAPin({ pin, isEnabled, currentPassword });
+      if (res.success) {
+        setCurrentUser((prev) => ({ ...prev, is2FAEnabled: res.is2FAEnabled }));
+        showToast(res.message || "2FA PIN updated successfully!");
+        return true;
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to update 2FA PIN", "error");
+      return false;
+    }
+  };
+
+  const deleteAccount = async (password) => {
+    try {
+      const res = await DriveAPI.deleteAccount(password);
+      if (res.success) {
+        localStorage.removeItem("teledrive_auth_token");
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        showToast("Account and files permanently deleted");
+        return true;
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to delete account", "error");
+      return false;
+    }
   };
 
   const logoutUser = () => {
@@ -406,12 +466,16 @@ export function DriveProvider({ children }) {
   };
 
   const value = {
-    // Auth & User
+    // Auth & User Profile
     currentUser,
     isAuthenticated,
     authChecking,
     loginUser,
     signupUser,
+    updateProfile,
+    updatePassword,
+    update2FAPin,
+    deleteAccount,
     logoutUser,
     checkAuth,
 

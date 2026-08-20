@@ -12,7 +12,8 @@ import {
   Zap,
   CheckCircle2,
   AlertCircle,
-  Loader2
+  Loader2,
+  Key
 } from "lucide-react";
 
 export default function AuthScreen() {
@@ -24,6 +25,8 @@ export default function AuthScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [requires2FA, setRequires2FA] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -57,9 +60,12 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       if (isLoginMode) {
-        const success = await loginUser(email, password);
-        if (!success) {
-          setError("Invalid email or password. Please try again.");
+        const res = await loginUser(email, password, pin);
+        if (res.requires2FAPin) {
+          setRequires2FA(true);
+          setError("");
+        } else if (!res.success) {
+          setError(res.error || "Invalid email, password, or security PIN.");
         }
       } else {
         const success = await signupUser(name, email, password);
@@ -100,6 +106,8 @@ export default function AuthScreen() {
             type="button"
             onClick={() => {
               setIsLoginMode(true);
+              setRequires2FA(false);
+              setPin("");
               setError("");
             }}
             className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
@@ -114,6 +122,8 @@ export default function AuthScreen() {
             type="button"
             onClick={() => {
               setIsLoginMode(false);
+              setRequires2FA(false);
+              setPin("");
               setError("");
             }}
             className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
@@ -196,6 +206,27 @@ export default function AuthScreen() {
             </div>
           </div>
 
+          {requires2FA && isLoginMode && (
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl animate-in fade-in zoom-in-95 duration-150">
+              <label className="block text-xs font-bold text-emerald-400 mb-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4" />
+                <span>2-Factor Security PIN</span>
+              </label>
+              <div className="relative">
+                <Key className="w-4 h-4 text-emerald-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  maxLength={6}
+                  required
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Enter 4-6 digit PIN"
+                  className="w-full bg-slate-800/90 border border-emerald-500/60 focus:border-emerald-400 rounded-xl pl-10 pr-4 py-2.5 text-sm tracking-widest text-center text-white placeholder-slate-500 outline-none font-mono transition-all"
+                />
+              </div>
+            </div>
+          )}
+
           {!isLoginMode && (
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -246,7 +277,7 @@ export default function AuthScreen() {
           </div>
           <div className="flex flex-col items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Encrypted</span>
+            <span>2FA Encrypted</span>
           </div>
         </div>
       </div>

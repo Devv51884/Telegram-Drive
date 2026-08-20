@@ -17,19 +17,16 @@ api.interceptors.request.use((config) => {
 });
 
 export const DriveAPI = {
-  // User Authentication (Signup & Login)
+  // User Authentication & Profile CRUD
   signupUser: (data) => api.post("/auth/signup", data).then((r) => r.data),
   loginUser: (data) => api.post("/auth/login", data).then((r) => r.data),
   getCurrentUser: () => api.get("/auth/me").then((r) => r.data),
+  updateProfile: (data) => api.put("/auth/profile", data).then((r) => r.data),
+  updatePassword: (data) => api.put("/auth/password", data).then((r) => r.data),
+  update2FAPin: (data) => api.put("/auth/2fa-pin", data).then((r) => r.data),
+  verify2FAPin: (pin) => api.post("/auth/verify-pin", { pin }).then((r) => r.data),
+  deleteAccount: (password) => api.delete("/auth/account", { data: { password } }).then((r) => r.data),
   logoutUser: () => api.post("/auth/logout").then((r) => r.data),
-
-  // Master PIN / Password Security
-  getAuthStatus: () => api.get("/settings/auth/status").then((r) => r.data),
-  setupMasterPassword: (password) => api.post("/settings/auth/setup", { password }).then((r) => r.data),
-  loginMasterPassword: (password) => api.post("/settings/auth/login", { password }).then((r) => r.data),
-  changeMasterPassword: (currentPassword, newPassword) =>
-    api.post("/settings/auth/change-password", { currentPassword, newPassword }).then((r) => r.data),
-  logoutMaster: () => api.post("/settings/auth/logout").then((r) => r.data),
 
   // Contents & Stats
   getContents: (params = {}) => api.get("/drive/contents", { params }).then((r) => r.data),

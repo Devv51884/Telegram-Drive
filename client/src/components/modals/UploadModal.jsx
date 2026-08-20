@@ -4,7 +4,7 @@ import DriveAPI from "../../services/api.js";
 import { X, Upload, CheckCircle2, AlertCircle, File, Cloud, Loader2 } from "lucide-react";
 
 export default function UploadModal() {
-  const { activeModal, setActiveModal, currentFolderId, refresh, showToast, settings } = useDrive();
+  const { activeModal, setActiveModal, currentFolderId, refresh } = useDrive();
   const [dragActive, setDragActive] = useState(false);
   const [uploadList, setUploadList] = useState([]);
   const fileInputRef = useRef(null);
@@ -38,23 +38,48 @@ export default function UploadModal() {
       name: f.name,
       size: f.size,
       progress: 0,
+      phase: "Starting upload...",
       status: "pending",
       error: null
     }));
 
     setUploadList((prev) => [...prev, ...newItems]);
 
-    // Process uploads
+    // Process uploads sequentially
     for (let i = 0; i < newItems.length; i++) {
       const item = newItems[i];
-      updateItemStatus(item.name, { status: "uploading", progress: 10 });
+      updateItemStatus(item.name, { status: "uploading", progress: 5, phase: "Uploading to server..." });
+
+      let telegramProgressInterval = null;
 
       try {
-        await DriveAPI.uploadFile(item.file, currentFolderId, (progress) => {
-          updateItemStatus(item.name, { progress: Math.min(progress, 90) });
+        await DriveAPI.uploadFile(item.file, currentFolderId, (browserPercent) => {
+          // Map browser upload to 0% -> 60%
+          const mapped = Math.round(browserPercent * 0.6);
+          updateItemStatus(item.name, {
+            progress: Math.max(5, mapped),
+            phase: mapped >= 60 ? "Saving to Telegram Cloud..." : `Uploading (${browserPercent}%)`
+          });
+
+          if (browserPercent >= 100 && !telegramProgressInterval) {
+            // Once sent to server, smoothly advance from 60% to 98% while Telegram processes
+            let current = 60;
+            telegramProgressInterval = setInterval(() => {
+              if (current < 96) {
+                current += 4;
+                updateItemStatus(item.name, {
+                  progress: current,
+                  phase: "Saving to Telegram Cloud..."
+                });
+              }
+            }, 300);
+          }
         });
-        updateItemStatus(item.name, { status: "done", progress: 100 });
+
+        if (telegramProgressInterval) clearInterval(telegramProgressInterval);
+        updateItemStatus(item.name, { status: "done", progress: 100, phase: "Saved to Telegram Cloud!" });
       } catch (err) {
+        if (telegramProgressInterval) clearInterval(telegramProgressInterval);
         const errorMsg = err.response?.data?.error || err.message || "Upload failed";
         updateItemStatus(item.name, { status: "error", error: errorMsg });
       }
@@ -140,18 +165,18 @@ export default function UploadModal() {
           </p>
         </div>
 
-        {/* Upload List & Progress */}
+        {/* Upload List & Synchronized Progress */}
         {uploadList.length > 0 && (
-          <div className="mt-4 max-h-48 overflow-y-auto space-y-2 pr-1">
+          <div className="mt-4 max-h-56 overflow-y-auto space-y-2.5 pr-1">
             {uploadList.map((item, idx) => (
               <div
                 key={idx}
-                className="bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs"
+                className="bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-xs shadow-sm"
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2 truncate pr-2">
-                    <File className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
+                    <File className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
                       {item.name}
                     </span>
                     <span className="text-slate-400 text-[10px]">({formatBytes(item.size)})</span>
@@ -159,20 +184,20 @@ export default function UploadModal() {
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {item.status === "uploading" && (
-                      <span className="flex items-center gap-1 text-blue-500 font-semibold">
-                        <Loader2 className="w-3 h-3 animate-spin" />
+                      <span className="flex items-center gap-1 text-blue-500 font-bold text-[11px]">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         {item.progress}%
                       </span>
                     )}
                     {item.status === "done" && (
-                      <span className="flex items-center gap-1 text-emerald-500 font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span className="flex items-center gap-1 text-emerald-500 font-bold text-[11px]">
+                        <CheckCircle2 className="w-4 h-4" />
                         Done
                       </span>
                     )}
                     {item.status === "error" && (
-                      <span className="flex items-center gap-1 text-rose-500 font-semibold">
-                        <AlertCircle className="w-3.5 h-3.5" />
+                      <span className="flex items-center gap-1 text-rose-500 font-bold text-[11px]">
+                        <AlertCircle className="w-4 h-4" />
                         Failed
                       </span>
                     )}
@@ -181,16 +206,19 @@ export default function UploadModal() {
 
                 {/* Progress bar */}
                 {item.status === "uploading" && (
-                  <div className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all duration-300"
-                      style={{ width: `${item.progress}%` }}
-                    />
+                  <div>
+                    <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300 rounded-full"
+                        style={{ width: `${item.progress}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium">{item.phase}</p>
                   </div>
                 )}
 
                 {item.error && (
-                  <p className="text-[10px] text-rose-500 mt-1 truncate">{item.error}</p>
+                  <p className="text-[10px] text-rose-500 mt-1 font-medium">{item.error}</p>
                 )}
               </div>
             ))}

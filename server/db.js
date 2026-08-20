@@ -42,6 +42,8 @@ export async function getSqliteDb() {
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      pin_hash TEXT,
+      is_2fa_enabled INTEGER DEFAULT 0,
       avatar_url TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -99,7 +101,13 @@ export async function getSqliteDb() {
     );
   `);
 
-  // Run lightweight migrations to add user_id column if not present
+  // Run lightweight migrations
+  try {
+    await db.exec("ALTER TABLE users ADD COLUMN pin_hash TEXT;");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE users ADD COLUMN is_2fa_enabled INTEGER DEFAULT 0;");
+  } catch {}
   try {
     await db.exec("ALTER TABLE folders ADD COLUMN user_id TEXT;");
   } catch {}
@@ -150,7 +158,7 @@ export async function getDb() {
 }
 
 // ==========================================
-// USER AUTHENTICATION CRUD
+// USER AUTHENTICATION & PROFILE CRUD
 // ==========================================
 
 export async function dbFindUserByEmail(email) {
@@ -182,8 +190,16 @@ export async function dbFindUserById(id) {
 export async function dbCreateUser(userRecord) {
   const sqlite = await getSqliteDb();
   await sqlite.run(
-    "INSERT INTO users (id, name, email, password_hash, avatar_url) VALUES (?, ?, ?, ?, ?)",
-    [userRecord.id, userRecord.name, userRecord.email.toLowerCase(), userRecord.password_hash, userRecord.avatar_url || null]
+    "INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [
+      userRecord.id,
+      userRecord.name,
+      userRecord.email.toLowerCase(),
+      userRecord.password_hash,
+      userRecord.pin_hash || null,
+      userRecord.is_2fa_enabled || 0,
+      userRecord.avatar_url || null
+    ]
   );
 
   (async () => {
@@ -195,6 +211,8 @@ export async function dbCreateUser(userRecord) {
           name: userRecord.name,
           email: userRecord.email.toLowerCase(),
           password_hash: userRecord.password_hash,
+          pin_hash: userRecord.pin_hash || null,
+          is_2fa_enabled: userRecord.is_2fa_enabled || 0,
           avatar_url: userRecord.avatar_url || null
         });
       }
@@ -204,6 +222,49 @@ export async function dbCreateUser(userRecord) {
   })();
 
   return dbFindUserById(userRecord.id);
+}
+
+export async function dbUpdateUser(id, updateFields) {
+  const sqlite = await getSqliteDb();
+  const keys = Object.keys(updateFields);
+  if (keys.length > 0) {
+    const setClauses = keys.map((k) => `${k} = ?`).join(", ");
+    const values = Object.values(updateFields);
+    await sqlite.run(`UPDATE users SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [...values, id]);
+  }
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("users").update(updateFields).eq("id", id);
+      }
+    } catch (err) {
+      console.warn("Supabase user update:", err.message);
+    }
+  })();
+
+  return dbFindUserById(id);
+}
+
+export async function dbDeleteUser(id) {
+  const sqlite = await getSqliteDb();
+  await sqlite.run("DELETE FROM files WHERE user_id = ?", [id]);
+  await sqlite.run("DELETE FROM folders WHERE user_id = ?", [id]);
+  await sqlite.run("DELETE FROM users WHERE id = ?", [id]);
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("files").delete().eq("user_id", id);
+        await supabase.from("folders").delete().eq("user_id", id);
+        await supabase.from("users").delete().eq("id", id);
+      }
+    } catch (err) {
+      console.warn("Supabase user delete:", err.message);
+    }
+  })();
 }
 
 // ==========================================
