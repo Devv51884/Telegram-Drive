@@ -10,7 +10,6 @@ import {
   Cloud,
   Loader2,
   Ban,
-  Minus,
   Maximize2
 } from "lucide-react";
 
@@ -22,7 +21,7 @@ export default function UploadModal() {
   const fileInputRef = useRef(null);
 
   const hasActiveUploads = uploadList.some(
-    (item) => item.status === "uploading" || item.status === "pending" || item.status === "processing"
+    (item) => item.status === "uploading" || item.status === "pending"
   );
 
   if (activeModal !== "upload" && !hasActiveUploads) return null;
@@ -86,13 +85,11 @@ export default function UploadModal() {
       phase: "Queued",
       status: "pending",
       error: null,
-      controller: new AbortController(),
-      pollInterval: null
+      controller: new AbortController()
     }));
 
     setUploadList((prev) => [...prev, ...newItems]);
 
-    // Start upload queue
     newItems.forEach((item) => {
       startUpload(item);
     });
@@ -102,80 +99,52 @@ export default function UploadModal() {
     const controller = new AbortController();
     let lastLoaded = 0;
     let lastTime = Date.now();
-    let pollTimer = null;
 
     updateItem(item.id, {
       status: "uploading",
       percent: 1,
       loadedBytes: 0,
-      phase: "Initiating cloud transfer...",
+      phase: "Starting upload...",
       controller
     });
-
-    // Start background polling to receive actual server-to-Telegram uploaded bytes
-    pollTimer = setInterval(async () => {
-      if (controller.signal.aborted) {
-        clearInterval(pollTimer);
-        return;
-      }
-      try {
-        const res = await DriveAPI.getUploadProgress(item.id);
-        if (res.success && res.progress) {
-          const p = res.progress;
-          const now = Date.now();
-          const timeDiff = (now - lastTime) / 1000;
-          let speedStr = "";
-          let etaStr = "";
-
-          if (timeDiff >= 0.5 && p.loaded > lastLoaded) {
-            const bytesDiff = p.loaded - lastLoaded;
-            const bytesPerSec = bytesDiff / timeDiff;
-            speedStr = `${formatBytes(bytesPerSec)}/s`;
-            if (bytesPerSec > 0) {
-              const remainingBytes = p.total - p.loaded;
-              etaStr = formatETA(remainingBytes / bytesPerSec);
-            }
-            lastLoaded = p.loaded;
-            lastTime = now;
-          }
-
-          updateItem(item.id, {
-            loadedBytes: p.loaded,
-            percent: p.percent,
-            speed: speedStr || item.speed,
-            eta: etaStr,
-            phase:
-              p.percent >= 100
-                ? "Finalizing on Telegram Cloud..."
-                : `Uploading to Telegram (${p.percent}%)`
-          });
-
-          if (p.status === "done") {
-            clearInterval(pollTimer);
-          }
-        }
-      } catch {}
-    }, 400);
 
     try {
       await DriveAPI.uploadFile(
         item.file,
         currentFolderId,
         (progress) => {
-          // Browser to Server buffer stage
-          if (progress.percent < 100) {
-            updateItem(item.id, {
-              loadedBytes: Math.round(progress.loaded * 0.1),
-              percent: Math.round(progress.percent * 0.1),
-              phase: `Buffering file (${progress.percent}%)`
-            });
+          const now = Date.now();
+          const timeDiff = (now - lastTime) / 1000;
+          let speedStr = "";
+          let etaStr = "";
+
+          if (timeDiff >= 0.3 && progress.loaded > lastLoaded) {
+            const bytesDiff = progress.loaded - lastLoaded;
+            const bytesPerSec = bytesDiff / timeDiff;
+            speedStr = `${formatBytes(bytesPerSec)}/s`;
+            if (bytesPerSec > 0) {
+              const remainingBytes = item.size - progress.loaded;
+              etaStr = formatETA(remainingBytes / bytesPerSec);
+            }
+            lastLoaded = progress.loaded;
+            lastTime = now;
           }
+
+          const percent = progress.percent;
+          updateItem(item.id, {
+            loadedBytes: progress.loaded,
+            percent: percent,
+            speed: speedStr || item.speed,
+            eta: etaStr || item.eta,
+            phase:
+              percent >= 100
+                ? "Storing in Telegram Storage Channel..."
+                : `Uploading (${percent}%)`
+          });
         },
         controller.signal,
         item.id
       );
-
-      clearInterval(pollTimer);
 
       updateItem(item.id, {
         status: "done",
@@ -187,7 +156,6 @@ export default function UploadModal() {
       });
       refresh();
     } catch (err) {
-      clearInterval(pollTimer);
       if (err.name === "CanceledError" || err.message === "canceled" || controller.signal.aborted) {
         updateItem(item.id, {
           status: "cancelled",
@@ -301,9 +269,7 @@ export default function UploadModal() {
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 mb-0.5">
                   <span className="truncate max-w-[180px] font-medium">{item.name}</span>
                   <span className="text-[10px] text-slate-400">
-                    {item.status === "done"
-                      ? "Done"
-                      : `${item.percent}%`}
+                    {item.status === "done" ? "Done" : `${item.percent}%`}
                   </span>
                 </div>
                 <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -344,7 +310,7 @@ export default function UploadModal() {
                 Upload Files to Telegram
               </h3>
               <p className="text-xs text-slate-400">
-                100% genuine live byte tracking, speed, ETA & cancel support
+                Live byte tracking, speed, ETA & cancel support
               </p>
             </div>
           </div>
@@ -396,7 +362,7 @@ export default function UploadModal() {
           </p>
         </div>
 
-        {/* Upload List & 100% Genuine Real-Time Progress */}
+        {/* Upload List & Real-Time Progress */}
         {uploadList.length > 0 && (
           <div className="mt-4 flex-1 overflow-y-auto space-y-2.5 pr-1">
             <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
@@ -471,7 +437,7 @@ export default function UploadModal() {
                   </div>
                 </div>
 
-                {/* Progress Bar & Genuine Live Byte Counter */}
+                {/* Progress Bar & Real-Time Byte Counter */}
                 {item.status === "uploading" && (
                   <div>
                     <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1.5">
