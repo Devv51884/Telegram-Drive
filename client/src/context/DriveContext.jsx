@@ -26,7 +26,7 @@ export function DriveProvider({ children }) {
   // Filters & View
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [viewMode, setViewMode] = useState("grid"); // 'grid' | 'list'
+  const [viewMode, setViewMode] = useState("grid");
   const [sortBy, setSortBy] = useState("name");
   const [sortOrder, setSortOrder] = useState("asc");
 
@@ -47,7 +47,7 @@ export function DriveProvider({ children }) {
     setToast({ id, message, type });
     setTimeout(() => {
       setToast((curr) => (curr?.id === id ? null : curr));
-    }, 4000);
+    }, 3500);
   };
 
   // Check Authentication & Master Lock Status
@@ -113,11 +113,11 @@ export function DriveProvider({ children }) {
   };
 
   // Fetch Drive Contents
-  const fetchContents = useCallback(async () => {
+  const fetchContents = useCallback(async (silent = false) => {
     if (!isAuthenticated && !isSetupRequired && localStorage.getItem("teledrive_auth_token") === null) {
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const params = {
         folderId: currentFolderId === "root" ? undefined : currentFolderId,
@@ -144,7 +144,7 @@ export function DriveProvider({ children }) {
         console.error("Failed to load contents:", err);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [currentFolderId, section, searchQuery, typeFilter, sortBy, sortOrder, isAuthenticated, isSetupRequired]);
 
@@ -166,8 +166,6 @@ export function DriveProvider({ children }) {
     } catch (err) {
       if (err.response?.status === 401) {
         setIsAuthenticated(false);
-      } else {
-        console.error("Failed to load metadata:", err);
       }
     }
   }, [isAuthenticated, isSetupRequired]);
@@ -207,7 +205,10 @@ export function DriveProvider({ children }) {
     }
   };
 
-  // CRUD Actions
+  // ==========================================
+  // ULTRA-RESPONSIVE OPTIMISTIC CRUD ACTIONS (0ms Delay)
+  // ==========================================
+
   const createFolder = async (name, color) => {
     try {
       const res = await DriveAPI.createFolder({
@@ -217,9 +218,10 @@ export function DriveProvider({ children }) {
       });
       if (res.success) {
         showToast(`Folder "${name}" created successfully`);
-        fetchContents();
-        fetchMetadata();
+        // Instant optimistic insert
+        setFolders((prev) => [...prev, res.folder]);
         setActiveModal(null);
+        fetchMetadata();
         return true;
       }
     } catch (err) {
@@ -229,114 +231,174 @@ export function DriveProvider({ children }) {
   };
 
   const renameItem = async (item, newName) => {
+    if (!item || !newName || item.name === newName) return;
+    const oldName = item.name;
+
+    // Instant Optimistic Update (0ms)
+    if (item.isFolder) {
+      setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, name: newName } : f)));
+    } else {
+      setFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, name: newName } : f)));
+    }
+    showToast("Renamed successfully");
+    setActiveModal(null);
+
     try {
       if (item.isFolder) {
         await DriveAPI.updateFolder(item.id, { name: newName });
       } else {
         await DriveAPI.updateFile(item.id, { name: newName });
       }
-      showToast("Renamed successfully");
-      fetchContents();
       fetchMetadata();
-      setActiveModal(null);
     } catch (err) {
+      // Rollback on error
+      if (item.isFolder) {
+        setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, name: oldName } : f)));
+      } else {
+        setFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, name: oldName } : f)));
+      }
       showToast(err.response?.data?.error || "Failed to rename", "error");
     }
   };
 
   const moveItem = async (item, targetFolderId) => {
+    if (!item) return;
+    const folderId = targetFolderId === "root" ? null : targetFolderId;
+
+    // Instant Optimistic Remove from current folder view
+    if (item.isFolder) {
+      setFolders((prev) => prev.filter((f) => f.id !== item.id));
+    } else {
+      setFiles((prev) => prev.filter((f) => f.id !== item.id));
+    }
+    showToast("Moved successfully");
+    setActiveModal(null);
+
     try {
-      const folderId = targetFolderId === "root" ? null : targetFolderId;
       if (item.isFolder) {
         await DriveAPI.updateFolder(item.id, { parentId: folderId });
       } else {
         await DriveAPI.updateFile(item.id, { folderId });
       }
-      showToast("Moved successfully");
-      fetchContents();
       fetchMetadata();
-      setActiveModal(null);
     } catch (err) {
+      fetchContents(true);
       showToast(err.response?.data?.error || "Failed to move", "error");
     }
   };
 
   const toggleStar = async (item) => {
+    if (!item) return;
+    const newStarred = item.is_starred ? 0 : 1;
+
+    // Instant Optimistic Toggle (0ms)
+    if (item.isFolder) {
+      setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, is_starred: newStarred } : f)));
+    } else {
+      setFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, is_starred: newStarred } : f)));
+    }
+    if (previewItem && previewItem.id === item.id) {
+      setPreviewItem((prev) => ({ ...prev, is_starred: newStarred }));
+    }
+    showToast(newStarred ? "Added to Starred" : "Removed from Starred");
+
     try {
-      const newStarred = item.is_starred ? 0 : 1;
       if (item.isFolder) {
         await DriveAPI.updateFolder(item.id, { isStarred: newStarred });
       } else {
         await DriveAPI.updateFile(item.id, { isStarred: newStarred });
       }
-      showToast(newStarred ? "Added to Starred" : "Removed from Starred");
-      fetchContents();
-      if (previewItem && previewItem.id === item.id) {
-        setPreviewItem((prev) => ({ ...prev, is_starred: newStarred }));
-      }
+      fetchMetadata();
     } catch (err) {
+      fetchContents(true);
       showToast("Failed to update star", "error");
     }
   };
 
   const moveToTrash = async (item) => {
     if (!item) return;
+
+    // Instant Optimistic Remove from View (0ms!)
+    if (item.isFolder) {
+      setFolders((prev) => prev.filter((f) => f.id !== item.id));
+    } else {
+      setFiles((prev) => prev.filter((f) => f.id !== item.id));
+    }
+    setSelectedItem(null);
+    showToast(`"${item.name}" moved to Trash`);
+
     try {
       if (item.isFolder) {
         await DriveAPI.updateFolder(item.id, { isTrash: 1 });
       } else {
         await DriveAPI.updateFile(item.id, { isTrash: 1 });
       }
-      showToast(`"${item.name}" moved to Trash`);
-      setSelectedItem(null);
-      fetchContents();
       fetchMetadata();
     } catch (err) {
+      fetchContents(true);
       showToast(err.response?.data?.error || "Failed to move to trash", "error");
     }
   };
 
   const restoreFromTrash = async (item) => {
     if (!item) return;
+
+    // Instant Optimistic Remove from Trash View (0ms!)
+    if (item.isFolder) {
+      setFolders((prev) => prev.filter((f) => f.id !== item.id));
+    } else {
+      setFiles((prev) => prev.filter((f) => f.id !== item.id));
+    }
+    setSelectedItem(null);
+    showToast(`"${item.name}" restored from Trash`);
+
     try {
       if (item.isFolder) {
         await DriveAPI.updateFolder(item.id, { isTrash: 0 });
       } else {
         await DriveAPI.updateFile(item.id, { isTrash: 0 });
       }
-      showToast(`"${item.name}" restored from Trash`);
-      setSelectedItem(null);
-      fetchContents();
       fetchMetadata();
     } catch (err) {
+      fetchContents(true);
       showToast(err.response?.data?.error || "Failed to restore", "error");
     }
   };
 
   const deletePermanently = async (item) => {
     if (!item) return;
+
+    // Instant Optimistic Remove (0ms!)
+    if (item.isFolder) {
+      setFolders((prev) => prev.filter((f) => f.id !== item.id));
+    } else {
+      setFiles((prev) => prev.filter((f) => f.id !== item.id));
+    }
+    setSelectedItem(null);
+    showToast(`"${item.name}" deleted permanently`);
+
     try {
       if (item.isFolder) {
         await DriveAPI.deleteFolder(item.id);
       } else {
         await DriveAPI.deleteFile(item.id);
       }
-      showToast(`"${item.name}" deleted permanently`);
-      setSelectedItem(null);
-      fetchContents();
       fetchMetadata();
     } catch (err) {
+      fetchContents(true);
       showToast(err.response?.data?.error || "Failed to delete", "error");
     }
   };
 
   const emptyTrash = async () => {
+    setFolders([]);
+    setFiles([]);
+    showToast("Trash emptied");
     try {
       await DriveAPI.emptyTrash();
-      showToast("Trash emptied");
-      fetchContents();
       fetchMetadata();
     } catch (err) {
+      fetchContents(true);
       showToast("Failed to empty trash", "error");
     }
   };
@@ -413,7 +475,7 @@ export function DriveProvider({ children }) {
     deletePermanently,
     emptyTrash,
 
-    // Aliases to guarantee all components work
+    // Aliases
     trashItem: moveToTrash,
     restoreItem: restoreFromTrash,
     deletePermanent: deletePermanently

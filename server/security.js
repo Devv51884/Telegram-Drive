@@ -2,8 +2,10 @@ import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { dbGetSetting, dbSetSetting } from "./db.js";
 
-// Ensure a persistent server secret key for HMAC token signing
+// Ensure a persistent in-memory cached server secret key for HMAC token signing
 let cachedServerSecret = null;
+let cachedMasterHash = null;
+let lastHashCheck = 0;
 
 export async function getServerSecret() {
   if (cachedServerSecret) return cachedServerSecret;
@@ -23,6 +25,22 @@ export async function getServerSecret() {
   await dbSetSetting("APP_SECRET", newSecret);
   cachedServerSecret = newSecret;
   return newSecret;
+}
+
+export async function getMasterPasswordHash() {
+  const now = Date.now();
+  if (cachedMasterHash !== null && now - lastHashCheck < 30000) {
+    return cachedMasterHash;
+  }
+  const hash = (await dbGetSetting("MASTER_PASSWORD_HASH")) || process.env.MASTER_PASSWORD_HASH || "";
+  cachedMasterHash = hash;
+  lastHashCheck = now;
+  return hash;
+}
+
+export function invalidateMasterHashCache(newHash = null) {
+  cachedMasterHash = newHash;
+  lastHashCheck = Date.now();
 }
 
 // 1. Cryptographically Secure Password Hashing with Scrypt & Salt
@@ -85,7 +103,7 @@ export async function verifySessionToken(token) {
   }
 }
 
-// 3. Authentication Middleware
+// 3. Ultra-Fast Authentication Middleware with in-memory caching
 export async function requireAuth(req, res, next) {
   const fullUrl = req.originalUrl || req.url || "";
   const path = req.path || "";
@@ -105,8 +123,8 @@ export async function requireAuth(req, res, next) {
     return next();
   }
 
-  // Check if Master Password is configured
-  const masterHash = (await dbGetSetting("MASTER_PASSWORD_HASH")) || process.env.MASTER_PASSWORD_HASH;
+  // Fast In-Memory Check for Master Password configuration
+  const masterHash = await getMasterPasswordHash();
   if (!masterHash) {
     // Master password has not been setup yet -> allow setup
     return next();
@@ -166,34 +184,30 @@ export const uploadLimiter = rateLimit({
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 600, // Max 600 requests per 15 minutes per IP
+  max: 1200, // Max 1200 requests per 15 minutes per IP
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => (req.originalUrl || req.url || "").includes("/stream") // Don't rate limit video chunks streaming
+  skip: (req) => (req.originalUrl || req.url || "").includes("/stream")
 });
 
 // 5. Input Sanitization & Security Helpers
 export function sanitizeFileName(fileName) {
   if (!fileName || typeof fileName !== "string") return "file";
 
-  // Strip null bytes, path traversal, control chars, and HTML/script tags
   let clean = fileName
     .replace(/\0/g, "")
-    .replace(/<[^>]*>?/gm, "") // Remove HTML tags
+    .replace(/<[^>]*>?/gm, "")
     .replace(/[\r\n\t]/g, "")
-    .replace(/\.\.+[/\\]/g, "") // Remove ../ and ..\
-    .replace(/[/\\]/g, "_") // Replace path slashes
+    .replace(/\.\.+[/\\]/g, "")
+    .replace(/[/\\]/g, "_")
     .trim();
 
-  // Strip leading dots to prevent hidden files on unix/storage
   clean = clean.replace(/^\.+/, "");
 
-  // Fallback if cleaned string is empty
   if (!clean || clean.length === 0) {
     clean = `file_${crypto.randomBytes(4).toString("hex")}`;
   }
 
-  // Max 255 characters limit
   if (clean.length > 255) {
     const ext = clean.split(".").pop();
     const base = clean.slice(0, 255 - ext.length - 1);
@@ -206,7 +220,6 @@ export function sanitizeFileName(fileName) {
 export function validateTelegramUrl(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
-  // Strictly validate telegram post URLs to prevent SSRF
   const pattern = /^https?:\/\/(t\.me|telegram\.me)\/(c\/\d+\/\d+|[a-zA-Z0-9_]+\/\d+)$/i;
   return pattern.test(trimmed);
 }
