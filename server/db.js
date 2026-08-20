@@ -117,6 +117,15 @@ export async function getSqliteDb() {
   try {
     await db.exec("ALTER TABLE files ADD COLUMN user_id TEXT;");
   } catch {}
+  try {
+    await db.exec("ALTER TABLE telegram_sessions ADD COLUMN first_name TEXT;");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE telegram_sessions ADD COLUMN last_name TEXT;");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE telegram_sessions ADD COLUMN username TEXT;");
+  } catch {}
 
   sqliteDbInstance = db;
   return sqliteDbInstance;
