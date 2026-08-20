@@ -1,0 +1,26 @@
+{
+  "name": "telegram-drive-server",
+  "version": "1.0.0",
+  "description": "Telegram Cloud Storage & Link Streamer Backend",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "axios": "^1.7.9",
+    "big-integer": "^1.6.52",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
+    "form-data": "^4.0.1",
+    "helmet": "^8.3.0",
+    "multer": "^1.4.5-lts.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "telegram": "^2.26.16"
+  }
+}

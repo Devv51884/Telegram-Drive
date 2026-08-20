@@ -1,0 +1,12 @@
+{
+  "name": "telegram-drive",
+  "version": "1.0.0",
+  "description": "Telegram Cloud Storage (Google Drive Clone) with Channel Post Link Streamer",
+  "scripts": {
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "dev": "node server/index.js"
+  }
+}
