@@ -129,51 +129,7 @@ export async function uploadFileToTelegram(
     fileSize = fileInput.length;
   }
 
-  // 1. Primary Strategy: Seamless MTProto Connected User Account Upload directly to personal Telegram Cloud (Saved Messages 'me')
-  // When uploaded to the user's account, the user owns the file and can stream it instantly with 100% reliability up to 2GB!
-  const gramClient = await getGramClient();
-  if (gramClient) {
-    try {
-      const targetPeer = "me"; // Upload directly to personal Telegram Cloud (Saved Messages)
-      const res = await gramClient.sendFile(targetPeer, {
-        file: fileInput,
-        caption: caption || originalname,
-        forceDocument: true,
-        workers: 4,
-        progressCallback: (progress) => {
-          if (progressCallback) {
-            const percent = Math.min(99, Math.round(progress * 100));
-            const loaded = Math.round(progress * fileSize);
-            progressCallback({ loaded, total: fileSize, percent });
-          }
-        },
-        attributes: [
-          new Api.DocumentAttributeFilename({
-            fileName: originalname
-          })
-        ]
-      });
-
-      if (res && res.media && (res.media.document || res.media.photo)) {
-        if (progressCallback) {
-          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
-        }
-        const doc = res.media.document || res.media.photo;
-        return {
-          sourceType: "telegram_post",
-          fileId: null,
-          fileUniqueId: doc.id?.toString(),
-          fileSize: Number(doc.size || fileSize),
-          messageId: res.id.toString(),
-          channelId: "me"
-        };
-      }
-    } catch (gramErr) {
-      console.warn("GramJS user account upload failed, falling back to Bot API:", gramErr.message);
-    }
-  }
-
-  // 2. Secondary Strategy: Try Telegram Bot API if configured (Bot API allows files <= 50MB)
+  // 1. Primary Strategy: Upload via Telegram Bot API to central Storage Channel (Files <= 50MB)
   if (config.botToken && config.chatId && fileSize <= 50 * 1024 * 1024) {
     try {
       const formData = new FormData();
@@ -207,7 +163,7 @@ export async function uploadFileToTelegram(
           headers: formHeaders,
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
-          timeout: 0, // Infinite timeout: never abort in the middle of transfer
+          timeout: 0,
           onUploadProgress: (p) => {
             if (progressCallback && p.total) {
               const loaded = p.loaded;
@@ -234,7 +190,54 @@ export async function uploadFileToTelegram(
         };
       }
     } catch (botErr) {
-      console.warn("Bot API upload error:", botErr.response?.data?.description || botErr.message);
+      console.warn(
+        "Bot API upload issue, falling back to MTProto Account:",
+        botErr.response?.data?.description || botErr.message
+      );
+    }
+  }
+
+  // 2. Secondary Strategy: Large File Upload (up to 2GB) via MTProto to Storage Channel / Cloud
+  const gramClient = await getGramClient();
+  if (gramClient) {
+    try {
+      const targetPeer = config.chatId || "me";
+      const res = await gramClient.sendFile(targetPeer, {
+        file: fileInput,
+        caption: caption || originalname,
+        forceDocument: true,
+        workers: 4,
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            const percent = Math.min(99, Math.round(progress * 100));
+            const loaded = Math.round(progress * fileSize);
+            progressCallback({ loaded, total: fileSize, percent });
+          }
+        },
+        attributes: [
+          new Api.DocumentAttributeFilename({
+            fileName: originalname
+          })
+        ]
+      });
+
+      if (res && res.media && (res.media.document || res.media.photo)) {
+        if (progressCallback) {
+          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
+        }
+        const doc = res.media.document || res.media.photo;
+        return {
+          sourceType: "upload",
+          fileId: null,
+          fileUniqueId: doc.id?.toString(),
+          fileSize: Number(doc.size || fileSize),
+          messageId: res.id.toString(),
+          channelId: targetPeer.toString()
+        };
+      }
+    } catch (gramErr) {
+      console.error("MTProto storage channel upload failed:", gramErr.message);
+      throw new Error(`Upload failed: ${gramErr.message}`);
     }
   }
 
