@@ -363,6 +363,17 @@ export async function getConnectedTelegramUser() {
     return { connected: false };
   }
 
+  let parsedInfo = {};
+  if (sessionRow.user_info) {
+    try {
+      parsedInfo = typeof sessionRow.user_info === "string" ? JSON.parse(sessionRow.user_info) : sessionRow.user_info;
+    } catch {}
+  }
+
+  const firstName = parsedInfo.firstName || sessionRow.first_name || "Telegram User";
+  const lastName = parsedInfo.lastName || sessionRow.last_name || "";
+  const username = parsedInfo.username || sessionRow.username || "";
+
   try {
     const client = await getGramClient();
     if (!client) {
@@ -370,9 +381,9 @@ export async function getConnectedTelegramUser() {
         connected: true,
         phoneNumber: sessionRow.phone_number,
         info: {
-          firstName: sessionRow.first_name,
-          lastName: sessionRow.last_name,
-          username: sessionRow.username
+          firstName,
+          lastName,
+          username
         }
       };
     }
@@ -383,9 +394,9 @@ export async function getConnectedTelegramUser() {
       phoneNumber: sessionRow.phone_number,
       info: {
         id: me.id?.toString(),
-        firstName: me.firstName,
-        lastName: me.lastName,
-        username: me.username
+        firstName: me.firstName || firstName,
+        lastName: me.lastName || lastName,
+        username: me.username || username
       }
     };
   } catch (err) {
@@ -393,11 +404,10 @@ export async function getConnectedTelegramUser() {
       connected: true,
       phoneNumber: sessionRow.phone_number,
       info: {
-        firstName: sessionRow.first_name,
-        lastName: sessionRow.last_name,
-        username: sessionRow.username
-      },
-      warning: "Could not verify live session with Telegram"
+        firstName,
+        lastName,
+        username
+      }
     };
   }
 }

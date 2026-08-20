@@ -60,6 +60,9 @@ export async function getSqliteDb() {
       phone_number TEXT,
       session_string TEXT,
       user_info TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      username TEXT,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -150,10 +153,55 @@ export async function getSupabaseClient() {
   }
 }
 
-// Initial Database Boot
+// Initial Database Boot & Background Session Cache
 export async function getDb() {
   const sqlite = await getSqliteDb();
-  getSupabaseClient().catch(() => {});
+  // Auto-sync active Telegram session from Supabase on boot
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        const { data } = await supabase
+          .from("telegram_sessions")
+          .select("*")
+          .eq("is_active", 1)
+          .maybeSingle();
+
+        if (data) {
+          const infoStr = typeof data.user_info === "object" ? JSON.stringify(data.user_info) : data.user_info;
+          let parsedInfo = {};
+          try {
+            parsedInfo = JSON.parse(infoStr);
+          } catch {}
+
+          await sqlite.run(
+            `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+              session_string = excluded.session_string,
+              user_info = excluded.user_info,
+              first_name = excluded.first_name,
+              last_name = excluded.last_name,
+              username = excluded.username,
+              is_active = excluded.is_active`,
+            [
+              data.id,
+              data.phone_number,
+              data.session_string,
+              infoStr,
+              parsedInfo.firstName || null,
+              parsedInfo.lastName || null,
+              parsedInfo.username || null,
+              data.is_active
+            ]
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("Bootstrap telegram session cache warning:", e.message);
+    }
+  })();
+
   return sqlite;
 }
 
@@ -480,12 +528,44 @@ export async function dbGetActiveTelegramSession() {
 
   const supabase = await getSupabaseClient();
   if (supabase) {
-    const { data, error } = await supabase
-      .from("telegram_sessions")
-      .select("*")
-      .eq("is_active", 1)
-      .maybeSingle();
-    if (!error && data) return data;
+    try {
+      const { data, error } = await supabase
+        .from("telegram_sessions")
+        .select("*")
+        .eq("is_active", 1)
+        .maybeSingle();
+
+      if (!error && data) {
+        const infoStr = typeof data.user_info === "object" ? JSON.stringify(data.user_info) : data.user_info;
+        let parsedInfo = {};
+        try {
+          parsedInfo = JSON.parse(infoStr);
+        } catch {}
+
+        await sqlite.run(
+          `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            session_string = excluded.session_string,
+            user_info = excluded.user_info,
+            first_name = excluded.first_name,
+            last_name = excluded.last_name,
+            username = excluded.username,
+            is_active = excluded.is_active`,
+          [
+            data.id,
+            data.phone_number,
+            data.session_string,
+            infoStr,
+            parsedInfo.firstName || null,
+            parsedInfo.lastName || null,
+            parsedInfo.username || null,
+            data.is_active
+          ]
+        );
+        return data;
+      }
+    } catch {}
   }
   return null;
 }
@@ -494,10 +574,24 @@ export async function dbSaveTelegramSession(sessionRecord) {
   const sqlite = await getSqliteDb();
   await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
   await sqlite.run(
-    `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, is_active)
-     VALUES (?, ?, ?, ?, 1)
-     ON CONFLICT(id) DO UPDATE SET session_string = excluded.session_string, user_info = excluded.user_info, is_active = 1`,
-    [sessionRecord.id, sessionRecord.phone_number, sessionRecord.session_string, sessionRecord.user_info]
+    `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+     ON CONFLICT(id) DO UPDATE SET
+      session_string = excluded.session_string,
+      user_info = excluded.user_info,
+      first_name = excluded.first_name,
+      last_name = excluded.last_name,
+      username = excluded.username,
+      is_active = 1`,
+    [
+      sessionRecord.id,
+      sessionRecord.phone_number,
+      sessionRecord.session_string,
+      sessionRecord.user_info,
+      sessionRecord.first_name || null,
+      sessionRecord.last_name || null,
+      sessionRecord.username || null
+    ]
   );
 
   (async () => {

@@ -208,9 +208,9 @@ export default function Sidebar() {
           </div>
 
           <button
-            onClick={lockMaster}
-            title="Lock Drive"
-            className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-amber-500 hover:bg-slate-50 dark:hover:bg-[#282a2c] transition-colors"
+            onClick={() => setActiveModal("settings")}
+            title="Account & Security Settings"
+            className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-[#282a2c] transition-colors"
           >
             <Lock className="w-4 h-4" />
           </button>
