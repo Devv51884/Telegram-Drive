@@ -7,6 +7,7 @@ import FileGrid from "./components/drive/FileGrid.jsx";
 import FileList from "./components/drive/FileList.jsx";
 import EmptyState from "./components/drive/EmptyState.jsx";
 import BulkActionBar from "./components/drive/BulkActionBar.jsx";
+import DragSelectContainer from "./components/drive/DragSelectContainer.jsx";
 import NewFolderModal from "./components/modals/NewFolderModal.jsx";
 import UploadModal from "./components/modals/UploadModal.jsx";
 import ImportLinkModal from "./components/modals/ImportLinkModal.jsx";
@@ -64,7 +65,7 @@ function DriveMain() {
         <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#191a1b] overflow-hidden">
           <Breadcrumbs />
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          <DragSelectContainer>
             {loading && isEmpty ? (
               <div className="flex flex-col items-center justify-center h-64 gap-3">
                 <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -77,7 +78,7 @@ function DriveMain() {
             ) : (
               <FileList />
             )}
-          </div>
+          </DragSelectContainer>
         </main>
 
         {/* Right Info / Details Drawer */}

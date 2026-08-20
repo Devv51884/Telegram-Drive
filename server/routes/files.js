@@ -172,7 +172,46 @@ router.get("/:id/stream", async (req, res) => {
 
     const range = req.headers.range;
 
-    // Strategy A: MTProto Channel Post or Account Saved Message
+    // Strategy 1: Bot API File Id (Fast Direct Bot CDN Streaming for all uploaded files)
+    if (file.telegram_file_id) {
+      try {
+        const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
+        const headers = { "User-Agent": "TeleDrive/1.0" };
+        if (range) headers.Range = range;
+
+        const response = await axios({
+          method: "GET",
+          url: downloadUrl,
+          responseType: "stream",
+          headers,
+          timeout: 0
+        });
+
+        const isPdf = file.name?.toLowerCase().endsWith(".pdf") || file.mime_type === "application/pdf";
+        const contentType = isPdf ? "application/pdf" : file.mime_type || "application/octet-stream";
+
+        res.status(response.status);
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
+
+        if (response.headers["content-range"]) {
+          res.setHeader("Content-Range", response.headers["content-range"]);
+        }
+        if (response.headers["content-length"]) {
+          res.setHeader("Content-Length", response.headers["content-length"]);
+        }
+        if (response.headers["accept-ranges"]) {
+          res.setHeader("Accept-Ranges", response.headers["accept-ranges"]);
+        }
+
+        response.data.pipe(res);
+        return;
+      } catch (botErr) {
+        console.warn("Bot stream failed, falling back to MTProto:", botErr.message);
+      }
+    }
+
+    // Strategy 2: MTProto Channel Post or Account Saved Message
     if (file.telegram_channel_id && file.telegram_message_id) {
       await streamGramMedia(
         file.telegram_channel_id,
@@ -183,40 +222,6 @@ router.get("/:id/stream", async (req, res) => {
         file.mime_type,
         file.name
       );
-      return;
-    }
-
-    // Strategy B: Bot API File Id
-    if (file.telegram_file_id) {
-      const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
-      const headers = { "User-Agent": "TeleDrive/1.0" };
-      if (range) headers.Range = range;
-
-      const response = await axios({
-        method: "GET",
-        url: downloadUrl,
-        responseType: "stream",
-        headers
-      });
-
-      const isPdf = file.name?.toLowerCase().endsWith(".pdf") || file.mime_type === "application/pdf";
-      const contentType = isPdf ? "application/pdf" : file.mime_type || "application/octet-stream";
-
-      res.status(response.status);
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
-
-      if (response.headers["content-range"]) {
-        res.setHeader("Content-Range", response.headers["content-range"]);
-      }
-      if (response.headers["content-length"]) {
-        res.setHeader("Content-Length", response.headers["content-length"]);
-      }
-      if (response.headers["accept-ranges"]) {
-        res.setHeader("Accept-Ranges", response.headers["accept-ranges"]);
-      }
-
-      response.data.pipe(res);
       return;
     }
 
@@ -239,6 +244,31 @@ router.get("/:id/download", async (req, res) => {
       return res.status(404).send("File not found");
     }
 
+    if (file.telegram_file_id) {
+      try {
+        const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
+        const response = await axios({
+          method: "GET",
+          url: downloadUrl,
+          responseType: "stream",
+          timeout: 0
+        });
+
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+        if (response.headers["content-length"]) {
+          res.setHeader("Content-Length", response.headers["content-length"]);
+        }
+        if (file.mime_type) {
+          res.setHeader("Content-Type", file.mime_type);
+        }
+
+        response.data.pipe(res);
+        return;
+      } catch (botErr) {
+        console.warn("Bot download failed, falling back to MTProto:", botErr.message);
+      }
+    }
+
     if (file.telegram_channel_id && file.telegram_message_id) {
       await streamGramMedia(
         file.telegram_channel_id,
@@ -252,25 +282,7 @@ router.get("/:id/download", async (req, res) => {
       return;
     }
 
-    if (file.telegram_file_id) {
-      const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
-      const response = await axios({
-        method: "GET",
-        url: downloadUrl,
-        responseType: "stream"
-      });
-
-      res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
-      if (response.headers["content-length"]) {
-        res.setHeader("Content-Length", response.headers["content-length"]);
-      }
-
-      response.data.pipe(res);
-      return;
-    }
-
-    res.status(400).send("File reference invalid");
+    res.status(400).send("No valid Telegram reference found for this file");
   } catch (err) {
     console.error("Download error:", err.message);
     if (!res.headersSent) {

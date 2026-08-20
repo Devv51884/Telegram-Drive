@@ -113,6 +113,9 @@ export default function FileList() {
             return (
               <div
                 key={folder.id}
+                data-item-id={folder.id}
+                data-item-folder="true"
+                data-item-name={folder.name}
                 onClick={(e) => {
                   e.stopPropagation();
                   const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
@@ -193,6 +196,9 @@ export default function FileList() {
             return (
               <div
                 key={file.id}
+                data-item-id={file.id}
+                data-item-folder="false"
+                data-item-name={file.name}
                 onClick={(e) => {
                   e.stopPropagation();
                   const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;

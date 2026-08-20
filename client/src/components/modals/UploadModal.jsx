@@ -10,17 +10,29 @@ import {
   Cloud,
   Loader2,
   Ban,
-  Play,
-  RotateCcw
+  Minus,
+  Maximize2,
+  ChevronUp,
+  ChevronDown
 } from "lucide-react";
 
 export default function UploadModal() {
   const { activeModal, setActiveModal, currentFolderId, refresh } = useDrive();
   const [dragActive, setDragActive] = useState(false);
   const [uploadList, setUploadList] = useState([]);
+  const [isMinimized, setIsMinimized] = useState(false);
   const fileInputRef = useRef(null);
 
-  if (activeModal !== "upload") return null;
+  // If modal is not active and not minimized with active uploads, don't render
+  const hasActiveUploads = uploadList.some(
+    (item) => item.status === "uploading" || item.status === "pending" || item.status === "processing"
+  );
+
+  if (activeModal !== "upload" && !hasActiveUploads) return null;
+  if (activeModal !== "upload" && hasActiveUploads && !isMinimized) {
+    // If user closed dialog while uploads running, keep dock minimized
+    return renderMinimizedDock();
+  }
 
   const formatBytes = (bytes) => {
     if (!bytes || bytes === 0) return "0 B";
@@ -67,7 +79,7 @@ export default function UploadModal() {
       percent: 0,
       speed: "",
       phase: "Queued",
-      status: "pending", // 'pending' | 'uploading' | 'saving' | 'done' | 'error' | 'cancelled'
+      status: "pending", // 'pending' | 'uploading' | 'processing' | 'done' | 'error' | 'cancelled'
       error: null,
       controller: new AbortController(),
       lastLoaded: 0,
@@ -76,7 +88,7 @@ export default function UploadModal() {
 
     setUploadList((prev) => [...prev, ...newItems]);
 
-    // Start uploading items concurrently
+    // Upload items concurrently
     newItems.forEach((item) => {
       startUpload(item);
     });
@@ -88,7 +100,7 @@ export default function UploadModal() {
       status: "uploading",
       percent: 1,
       loadedBytes: 0,
-      phase: "Uploading to server...",
+      phase: "Starting upload...",
       controller
     });
 
@@ -112,14 +124,15 @@ export default function UploadModal() {
             lastTime = now;
           }
 
+          const isComplete = progress.percent >= 100;
           updateItem(item.id, {
             loadedBytes: progress.loaded,
             percent: progress.percent,
             speed: speedStr || item.speed,
-            phase:
-              progress.percent >= 100
-                ? "Saving to Telegram Cloud..."
-                : `Uploading (${progress.percent}%)`
+            status: isComplete ? "processing" : "uploading",
+            phase: isComplete
+              ? "Processing on Telegram Cloud..."
+              : `Uploading (${progress.percent}%)`
           });
         },
         controller.signal
@@ -153,7 +166,7 @@ export default function UploadModal() {
   };
 
   const cancelUpload = (item) => {
-    if (item.controller && item.status === "uploading") {
+    if (item.controller) {
       item.controller.abort();
     }
     updateItem(item.id, {
@@ -165,22 +178,115 @@ export default function UploadModal() {
 
   const cancelAllUploads = () => {
     uploadList.forEach((item) => {
-      if (item.status === "uploading" && item.controller) {
+      if (item.controller && (item.status === "uploading" || item.status === "processing")) {
         item.controller.abort();
       }
     });
     setUploadList((prev) =>
       prev.map((item) =>
-        item.status === "uploading" || item.status === "pending"
+        item.status === "uploading" || item.status === "pending" || item.status === "processing"
           ? { ...item, status: "cancelled", phase: "Cancelled by user", speed: "" }
           : item
       )
     );
   };
 
-  const isAnyUploading = uploadList.some(
-    (item) => item.status === "uploading" || item.status === "pending"
-  );
+  // Minimized Dock Widget Function
+  function renderMinimizedDock() {
+    const activeCount = uploadList.filter(
+      (i) => i.status === "uploading" || i.status === "processing" || i.status === "pending"
+    ).length;
+    const completedCount = uploadList.filter((i) => i.status === "done").length;
+
+    return (
+      <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5 duration-200">
+        <div className="w-80 sm:w-96 bg-white dark:bg-[#1e1f20] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-3.5 flex flex-col gap-2.5 backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 flex items-center justify-center">
+                {activeCount > 0 ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800 dark:text-white">
+                  {activeCount > 0
+                    ? `Uploading ${activeCount} file${activeCount > 1 ? "s" : ""}`
+                    : `All ${completedCount} uploads complete`}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {uploadList.length} total files in queue
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMinimized(false);
+                  setActiveModal("upload");
+                }}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#282a2c] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title="Expand upload window"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  cancelAllUploads();
+                  setUploadList([]);
+                  setActiveModal(null);
+                  setIsMinimized(false);
+                }}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#282a2c] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick mini-list of files */}
+          <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+            {uploadList.slice(0, 3).map((item) => (
+              <div key={item.id} className="text-[11px]">
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 mb-0.5">
+                  <span className="truncate max-w-[180px] font-medium">{item.name}</span>
+                  <span className="text-[10px] text-slate-400">
+                    {item.status === "done"
+                      ? "Done"
+                      : item.status === "processing"
+                      ? "Processing"
+                      : `${item.percent}%`}
+                  </span>
+                </div>
+                <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-150 rounded-full ${
+                      item.status === "done"
+                        ? "bg-emerald-500"
+                        : item.status === "error"
+                        ? "bg-rose-500"
+                        : "bg-blue-500"
+                    }`}
+                    style={{ width: `${item.percent}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isMinimized) {
+    return renderMinimizedDock();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-100">
@@ -196,19 +302,31 @@ export default function UploadModal() {
                 Upload Files to Telegram
               </h3>
               <p className="text-xs text-slate-400">
-                Multi-file parallel upload with real-time byte tracking & cancel support
+                100% live byte progress, minimize dock & cancel support
               </p>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setActiveModal(null);
-              setUploadList([]);
-            }}
-            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setIsMinimized(true)}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1f20] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              title="Minimize upload window (keep uploading in background)"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setActiveModal(null);
+                if (!hasActiveUploads) setUploadList([]);
+              }}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1f20] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              title="Close window"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Dropzone */}
@@ -242,16 +360,16 @@ export default function UploadModal() {
             Drag & drop multiple files here, or <span className="text-blue-500 font-bold">browse</span>
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Select multiple videos, photos, PDFs, documents (up to 2GB per file on Telegram Cloud)
+            Supports videos, photos, PDFs, audio, documents (up to 2GB per file on Telegram Cloud)
           </p>
         </div>
 
-        {/* Upload List & Synchronized Real-Time Progress */}
+        {/* Upload List & 100% Genuine Real-Time Progress */}
         {uploadList.length > 0 && (
           <div className="mt-4 flex-1 overflow-y-auto space-y-2.5 pr-1">
             <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
               <span>Queue ({uploadList.length} files)</span>
-              {isAnyUploading && (
+              {hasActiveUploads && (
                 <button
                   type="button"
                   onClick={cancelAllUploads}
@@ -281,11 +399,11 @@ export default function UploadModal() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {item.status === "uploading" && (
+                    {(item.status === "uploading" || item.status === "processing") && (
                       <>
                         <span className="text-blue-500 font-bold text-[11px] flex items-center gap-1">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {item.percent}%
+                          {item.status === "processing" ? "Processing..." : `${item.percent}%`}
                         </span>
                         <button
                           type="button"
@@ -321,18 +439,22 @@ export default function UploadModal() {
                   </div>
                 </div>
 
-                {/* Progress Bar & Byte Count */}
-                {item.status === "uploading" && (
+                {/* Progress Bar & Genuine Live Byte Counter */}
+                {(item.status === "uploading" || item.status === "processing") && (
                   <div>
                     <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1.5">
                       <div
-                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-150 rounded-full"
-                        style={{ width: `${item.percent}%` }}
+                        className={`h-full transition-all duration-150 rounded-full ${
+                          item.status === "processing"
+                            ? "bg-gradient-to-r from-emerald-500 to-teal-400 animate-pulse w-full"
+                            : "bg-gradient-to-r from-blue-500 to-indigo-500"
+                        }`}
+                        style={{ width: item.status === "processing" ? "100%" : `${item.percent}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
                       <span>
-                        {formatBytes(item.loadedBytes)} / {formatBytes(item.size)} ({item.percent}%)
+                        {formatBytes(item.loadedBytes)} of {formatBytes(item.size)} ({item.percent}%)
                       </span>
                       <span>
                         {item.speed ? `${item.speed} • ` : ""}
@@ -350,16 +472,25 @@ export default function UploadModal() {
           </div>
         )}
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 mt-4 flex-shrink-0">
+        {/* Footer with Minimize action button */}
+        <div className="flex justify-between items-center mt-4 flex-shrink-0 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setIsMinimized(true)}
+            className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 font-semibold flex items-center gap-1.5"
+          >
+            <Minus className="w-3.5 h-3.5" />
+            <span>Minimize (Browse Drive while uploading)</span>
+          </button>
+
           <button
             onClick={() => {
               setActiveModal(null);
-              setUploadList([]);
+              if (!hasActiveUploads) setUploadList([]);
             }}
             className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all"
           >
-            {isAnyUploading ? "Close Window (Uploads Continue)" : "Done"}
+            {hasActiveUploads ? "Keep Uploading in Background" : "Done"}
           </button>
         </div>
       </div>

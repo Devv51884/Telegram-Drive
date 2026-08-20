@@ -616,8 +616,20 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     return;
   }
 
-  const isPdf = fileName?.toLowerCase().endsWith(".pdf") || mimeType === "application/pdf";
-  const contentType = isPdf ? "application/pdf" : mimeType || "application/octet-stream";
+  const lowerName = (fileName || "").toLowerCase();
+  let contentType = mimeType || "application/octet-stream";
+  if (lowerName.endsWith(".mp4")) contentType = "video/mp4";
+  else if (lowerName.endsWith(".webm")) contentType = "video/webm";
+  else if (lowerName.endsWith(".mkv")) contentType = "video/x-matroska";
+  else if (lowerName.endsWith(".mov")) contentType = "video/quicktime";
+  else if (lowerName.endsWith(".avi")) contentType = "video/x-msvideo";
+  else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a")) contentType = "audio/mpeg";
+  else if (lowerName.endsWith(".pdf")) contentType = "application/pdf";
+  else if (lowerName.endsWith(".png")) contentType = "image/png";
+  else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) contentType = "image/jpeg";
+  else if (lowerName.endsWith(".gif")) contentType = "image/gif";
+  else if (lowerName.endsWith(".webp")) contentType = "image/webp";
+
   const requestSize = 512 * 1024; // 512 KB chunk size
 
   if (rangeHeader && totalSize > 0) {

@@ -118,6 +118,9 @@ export default function FileGrid() {
               return (
                 <div
                   key={folder.id}
+                  data-item-id={folder.id}
+                  data-item-folder="true"
+                  data-item-name={folder.name}
                   draggable
                   onDragStart={(e) => handleDragStart(e, folder, true)}
                   onDragOver={(e) => handleDragOver(e, folder.id)}
@@ -205,6 +208,9 @@ export default function FileGrid() {
               return (
                 <div
                   key={file.id}
+                  data-item-id={file.id}
+                  data-item-folder="false"
+                  data-item-name={file.name}
                   draggable
                   onDragStart={(e) => handleDragStart(e, file, false)}
                   onClick={(e) => {
