@@ -5,8 +5,8 @@ const DriveContext = createContext(null);
 
 export function DriveProvider({ children }) {
   // Authentication & Security State
+  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isSetupRequired, setIsSetupRequired] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
 
   // Navigation & Location
@@ -50,24 +50,30 @@ export function DriveProvider({ children }) {
     }, 3500);
   };
 
-  // Check Authentication & Master Lock Status
+  // Check Authentication Status
   const checkAuth = useCallback(async () => {
+    const token = localStorage.getItem("teledrive_auth_token");
+    if (!token) {
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setAuthChecking(false);
+      return;
+    }
+
     try {
-      const res = await DriveAPI.getAuthStatus();
-      if (res.success) {
-        if (!res.isSetup) {
-          setIsSetupRequired(true);
-          setIsAuthenticated(false);
-        } else if (res.isAuthenticated) {
-          setIsAuthenticated(true);
-          setIsSetupRequired(false);
-        } else {
-          setIsAuthenticated(false);
-          setIsSetupRequired(false);
-        }
+      const res = await DriveAPI.getCurrentUser();
+      if (res.success && res.user) {
+        setCurrentUser(res.user);
+        setIsAuthenticated(true);
+      } else {
+        localStorage.removeItem("teledrive_auth_token");
+        setIsAuthenticated(false);
+        setCurrentUser(null);
       }
     } catch (err) {
-      console.error("Auth check failed:", err);
+      localStorage.removeItem("teledrive_auth_token");
+      setIsAuthenticated(false);
+      setCurrentUser(null);
     } finally {
       setAuthChecking(false);
     }
@@ -78,13 +84,13 @@ export function DriveProvider({ children }) {
   }, [checkAuth]);
 
   // Auth Handlers
-  const loginMaster = async (password) => {
-    const res = await DriveAPI.loginMasterPassword(password);
+  const loginUser = async (email, password) => {
+    const res = await DriveAPI.loginUser({ email, password });
     if (res.success && res.token) {
       localStorage.setItem("teledrive_auth_token", res.token);
+      setCurrentUser(res.user);
       setIsAuthenticated(true);
-      setIsSetupRequired(false);
-      showToast("Drive unlocked successfully!");
+      showToast(`Welcome back, ${res.user.name}!`);
       fetchContents();
       fetchMetadata();
       return true;
@@ -92,13 +98,13 @@ export function DriveProvider({ children }) {
     return false;
   };
 
-  const setupMaster = async (password) => {
-    const res = await DriveAPI.setupMasterPassword(password);
+  const signupUser = async (name, email, password) => {
+    const res = await DriveAPI.signupUser({ name, email, password });
     if (res.success && res.token) {
       localStorage.setItem("teledrive_auth_token", res.token);
+      setCurrentUser(res.user);
       setIsAuthenticated(true);
-      setIsSetupRequired(false);
-      showToast("Master Password configured & Drive unlocked!");
+      showToast(`Account created! Welcome to TeleDrive, ${res.user.name}!`);
       fetchContents();
       fetchMetadata();
       return true;
@@ -106,15 +112,19 @@ export function DriveProvider({ children }) {
     return false;
   };
 
-  const lockMaster = () => {
+  const logoutUser = () => {
+    DriveAPI.logoutUser().catch(() => {});
     localStorage.removeItem("teledrive_auth_token");
+    setCurrentUser(null);
     setIsAuthenticated(false);
-    showToast("Drive locked");
+    setFolders([]);
+    setFiles([]);
+    showToast("Logged out successfully");
   };
 
   // Fetch Drive Contents
   const fetchContents = useCallback(async (silent = false) => {
-    if (!isAuthenticated && !isSetupRequired && localStorage.getItem("teledrive_auth_token") === null) {
+    if (!localStorage.getItem("teledrive_auth_token")) {
       return;
     }
     if (!silent) setLoading(true);
@@ -146,11 +156,11 @@ export function DriveProvider({ children }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [currentFolderId, section, searchQuery, typeFilter, sortBy, sortOrder, isAuthenticated, isSetupRequired]);
+  }, [currentFolderId, section, searchQuery, typeFilter, sortBy, sortOrder]);
 
   // Fetch Stats & Settings & Folder Tree
   const fetchMetadata = useCallback(async () => {
-    if (!isAuthenticated && !isSetupRequired && localStorage.getItem("teledrive_auth_token") === null) {
+    if (!localStorage.getItem("teledrive_auth_token")) {
       return;
     }
     try {
@@ -168,19 +178,14 @@ export function DriveProvider({ children }) {
         setIsAuthenticated(false);
       }
     }
-  }, [isAuthenticated, isSetupRequired]);
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchContents();
-    }
-  }, [fetchContents, isAuthenticated]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
       fetchMetadata();
     }
-  }, [fetchMetadata, isAuthenticated]);
+  }, [fetchContents, fetchMetadata, isAuthenticated]);
 
   // Navigation handlers
   const openFolder = (folderId) => {
@@ -218,7 +223,6 @@ export function DriveProvider({ children }) {
       });
       if (res.success) {
         showToast(`Folder "${name}" created successfully`);
-        // Instant optimistic insert
         setFolders((prev) => [...prev, res.folder]);
         setActiveModal(null);
         fetchMetadata();
@@ -234,7 +238,6 @@ export function DriveProvider({ children }) {
     if (!item || !newName || item.name === newName) return;
     const oldName = item.name;
 
-    // Instant Optimistic Update (0ms)
     if (item.isFolder) {
       setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, name: newName } : f)));
     } else {
@@ -251,7 +254,6 @@ export function DriveProvider({ children }) {
       }
       fetchMetadata();
     } catch (err) {
-      // Rollback on error
       if (item.isFolder) {
         setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, name: oldName } : f)));
       } else {
@@ -265,7 +267,6 @@ export function DriveProvider({ children }) {
     if (!item) return;
     const folderId = targetFolderId === "root" ? null : targetFolderId;
 
-    // Instant Optimistic Remove from current folder view
     if (item.isFolder) {
       setFolders((prev) => prev.filter((f) => f.id !== item.id));
     } else {
@@ -291,7 +292,6 @@ export function DriveProvider({ children }) {
     if (!item) return;
     const newStarred = item.is_starred ? 0 : 1;
 
-    // Instant Optimistic Toggle (0ms)
     if (item.isFolder) {
       setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, is_starred: newStarred } : f)));
     } else {
@@ -318,7 +318,6 @@ export function DriveProvider({ children }) {
   const moveToTrash = async (item) => {
     if (!item) return;
 
-    // Instant Optimistic Remove from View (0ms!)
     if (item.isFolder) {
       setFolders((prev) => prev.filter((f) => f.id !== item.id));
     } else {
@@ -343,7 +342,6 @@ export function DriveProvider({ children }) {
   const restoreFromTrash = async (item) => {
     if (!item) return;
 
-    // Instant Optimistic Remove from Trash View (0ms!)
     if (item.isFolder) {
       setFolders((prev) => prev.filter((f) => f.id !== item.id));
     } else {
@@ -368,7 +366,6 @@ export function DriveProvider({ children }) {
   const deletePermanently = async (item) => {
     if (!item) return;
 
-    // Instant Optimistic Remove (0ms!)
     if (item.isFolder) {
       setFolders((prev) => prev.filter((f) => f.id !== item.id));
     } else {
@@ -409,13 +406,13 @@ export function DriveProvider({ children }) {
   };
 
   const value = {
-    // Auth
+    // Auth & User
+    currentUser,
     isAuthenticated,
-    isSetupRequired,
     authChecking,
-    loginMaster,
-    setupMaster,
-    lockMaster,
+    loginUser,
+    signupUser,
+    logoutUser,
     checkAuth,
 
     // Navigation

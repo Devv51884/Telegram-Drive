@@ -1,5 +1,5 @@
 import express from "express";
-import { getSqliteDb, getSupabaseClient, dbGetFolderById } from "../db.js";
+import { getSqliteDb, dbGetFolderById } from "../db.js";
 import { deleteTelegramMessage } from "../telegram.js";
 
 const router = express.Router();
@@ -15,6 +15,14 @@ router.get("/contents", async (req, res) => {
     const folderParams = [];
     const fileParams = [];
 
+    // Filter by user if logged in
+    if (req.userId) {
+      folderQuery += " AND (user_id = ? OR user_id IS NULL)";
+      folderParams.push(req.userId);
+      fileQuery += " AND (user_id = ? OR user_id IS NULL)";
+      fileParams.push(req.userId);
+    }
+
     // Filter by Section
     if (section === "trash") {
       folderQuery += " AND is_trash = 1";
@@ -23,7 +31,7 @@ router.get("/contents", async (req, res) => {
       folderQuery += " AND is_trash = 0 AND is_starred = 1";
       fileQuery += " AND is_trash = 0 AND is_starred = 1";
     } else if (section === "telegram_imports") {
-      folderQuery += " AND 1=0"; // No folders in telegram imports filter
+      folderQuery += " AND 1=0";
       fileQuery += " AND is_trash = 0 AND source_type = 'telegram_post'";
     } else if (section === "recent") {
       folderQuery += " AND is_trash = 0";
@@ -55,9 +63,9 @@ router.get("/contents", async (req, res) => {
       fileParams.push(searchPattern, searchPattern);
     }
 
-    // Type filter (video, image, pdf, audio, document, archive)
+    // Type filter
     if (type && type !== "all") {
-      folderQuery += " AND 1=0"; // Folder doesn't match media type filter
+      folderQuery += " AND 1=0";
       fileQuery += " AND type = ?";
       fileParams.push(type);
     }
@@ -116,84 +124,94 @@ router.get("/contents", async (req, res) => {
 router.get("/stats", async (req, res) => {
   try {
     const sqlite = await getSqliteDb();
-    const rows = await sqlite.all(`
+    let statsQuery = `
       SELECT 
-        type, 
-        COUNT(*) as count, 
-        SUM(size) as total_size 
+        COUNT(id) as totalFiles,
+        COALESCE(SUM(size), 0) as totalBytes,
+        type
       FROM files 
-      WHERE is_trash = 0 
-      GROUP BY type
-    `);
+      WHERE is_trash = 0
+    `;
+    const params = [];
+    if (req.userId) {
+      statsQuery += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(req.userId);
+    }
+    statsQuery += " GROUP BY type";
 
-    let totalBytes = 0;
-    let totalFiles = 0;
-    const breakdown = {
-      video: { count: 0, size: 0 },
-      image: { count: 0, size: 0 },
-      pdf: { count: 0, size: 0 },
-      audio: { count: 0, size: 0 },
-      document: { count: 0, size: 0 },
-      archive: { count: 0, size: 0 },
-      other: { count: 0, size: 0 }
+    const rows = await sqlite.all(statsQuery, params);
+
+    let folderCountQuery = "SELECT COUNT(id) as totalFolders FROM folders WHERE is_trash = 0";
+    const folderParams = [];
+    if (req.userId) {
+      folderCountQuery += " AND (user_id = ? OR user_id IS NULL)";
+      folderParams.push(req.userId);
+    }
+    const folderCount = await sqlite.get(folderCountQuery, folderParams);
+
+    const stats = {
+      totalFiles: 0,
+      totalFolders: folderCount?.totalFolders || 0,
+      totalBytes: 0,
+      byType: {
+        video: 0,
+        image: 0,
+        pdf: 0,
+        audio: 0,
+        document: 0,
+        archive: 0,
+        other: 0
+      }
     };
 
-    rows.forEach((r) => {
-      const type = r.type || "other";
-      const size = Number(r.total_size || 0);
-      const count = Number(r.count || 0);
-      if (breakdown[type]) {
-        breakdown[type] = { count, size };
+    for (const r of rows) {
+      stats.totalFiles += r.totalFiles;
+      stats.totalBytes += r.totalBytes;
+      if (stats.byType[r.type] !== undefined) {
+        stats.byType[r.type] += r.totalBytes;
       } else {
-        breakdown.other.count += count;
-        breakdown.other.size += size;
+        stats.byType.other += r.totalBytes;
       }
-      totalBytes += size;
-      totalFiles += count;
-    });
+    }
 
-    const folderCount = await sqlite.get("SELECT COUNT(*) as count FROM folders WHERE is_trash = 0");
-
-    res.json({
-      success: true,
-      stats: {
-        totalBytes,
-        totalFiles,
-        totalFolders: folderCount?.count || 0,
-        breakdown
-      }
-    });
+    res.json({ success: true, stats });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/drive/trash/empty - Empty Trash (Permanently delete all trash files)
-router.post("/trash/empty", async (req, res) => {
+// POST /api/drive/empty-trash - Permanently delete all items in trash
+router.post("/empty-trash", async (req, res) => {
   try {
     const sqlite = await getSqliteDb();
-    const supabase = await getSupabaseClient();
-    const trashFiles = await sqlite.all("SELECT * FROM files WHERE is_trash = 1");
+
+    let trashFilesQuery = "SELECT * FROM files WHERE is_trash = 1";
+    let trashFoldersQuery = "SELECT * FROM folders WHERE is_trash = 1";
+    const params = [];
+    if (req.userId) {
+      trashFilesQuery += " AND (user_id = ? OR user_id IS NULL)";
+      trashFoldersQuery += " AND (user_id = ? OR user_id IS NULL)";
+      params.push(req.userId);
+    }
+
+    const trashFiles = await sqlite.all(trashFilesQuery, params);
+    const trashFolders = await sqlite.all(trashFoldersQuery, params);
 
     for (const file of trashFiles) {
       if (file.telegram_message_id && file.telegram_channel_id && file.source_type === "upload") {
-        try {
-          await deleteTelegramMessage(file.telegram_message_id, file.telegram_channel_id);
-        } catch {}
+        await deleteTelegramMessage(file.telegram_message_id, file.telegram_channel_id);
       }
+      await sqlite.run("DELETE FROM files WHERE id = ?", [file.id]);
     }
 
-    await sqlite.run("DELETE FROM files WHERE is_trash = 1");
-    await sqlite.run("DELETE FROM folders WHERE is_trash = 1");
-
-    if (supabase) {
-      try {
-        await supabase.from("files").delete().eq("is_trash", 1);
-        await supabase.from("folders").delete().eq("is_trash", 1);
-      } catch {}
+    for (const folder of trashFolders) {
+      await sqlite.run("DELETE FROM folders WHERE id = ?", [folder.id]);
     }
 
-    res.json({ success: true, message: "Trash emptied successfully" });
+    res.json({
+      success: true,
+      message: `Deleted ${trashFiles.length} files and ${trashFolders.length} folders permanently`
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

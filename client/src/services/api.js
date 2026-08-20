@@ -4,7 +4,7 @@ const API_BASE = "/api";
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 60000
+  timeout: 300000 // 5 minutes for large uploads
 });
 
 // Automatic Authorization Header Interceptor
@@ -17,7 +17,13 @@ api.interceptors.request.use((config) => {
 });
 
 export const DriveAPI = {
-  // Master PIN / Password Authentication
+  // User Authentication (Signup & Login)
+  signupUser: (data) => api.post("/auth/signup", data).then((r) => r.data),
+  loginUser: (data) => api.post("/auth/login", data).then((r) => r.data),
+  getCurrentUser: () => api.get("/auth/me").then((r) => r.data),
+  logoutUser: () => api.post("/auth/logout").then((r) => r.data),
+
+  // Master PIN / Password Security
   getAuthStatus: () => api.get("/settings/auth/status").then((r) => r.data),
   setupMasterPassword: (password) => api.post("/settings/auth/setup", { password }).then((r) => r.data),
   loginMasterPassword: (password) => api.post("/settings/auth/login", { password }).then((r) => r.data),
@@ -28,7 +34,7 @@ export const DriveAPI = {
   // Contents & Stats
   getContents: (params = {}) => api.get("/drive/contents", { params }).then((r) => r.data),
   getStats: () => api.get("/drive/stats").then((r) => r.data),
-  emptyTrash: () => api.post("/drive/trash/empty").then((r) => r.data),
+  emptyTrash: () => api.post("/drive/empty-trash").then((r) => r.data),
 
   // Folders
   getFolders: (params = {}) => api.get("/folders", { params }).then((r) => r.data),
@@ -56,8 +62,8 @@ export const DriveAPI = {
       })
       .then((r) => r.data);
   },
-  importLink: (postUrl, folderId) =>
-    api.post("/files/import-link", { postUrl, folderId }).then((r) => r.data),
+  importLink: (postUrl, folderId, customName) =>
+    api.post("/files/import-link", { postUrl, folderId, customName }).then((r) => r.data),
   updateFile: (id, data) => api.patch(`/files/${id}`, data).then((r) => r.data),
   deleteFile: (id) => api.delete(`/files/${id}`).then((r) => r.data),
   getStreamUrl: (id) => {

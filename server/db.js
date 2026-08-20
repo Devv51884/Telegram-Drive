@@ -35,8 +35,18 @@ export async function getSqliteDb() {
   await db.exec("PRAGMA journal_mode = WAL;");
   await db.exec("PRAGMA foreign_keys = ON;");
 
-  // Create SQLite Tables
+  // Create SQLite Tables with Users and User ID associations
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      avatar_url TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT,
@@ -55,6 +65,7 @@ export async function getSqliteDb() {
 
     CREATE TABLE IF NOT EXISTS folders (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
       name TEXT NOT NULL,
       color TEXT DEFAULT '#4285f4',
       parent_id TEXT,
@@ -66,6 +77,7 @@ export async function getSqliteDb() {
 
     CREATE TABLE IF NOT EXISTS files (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
       name TEXT NOT NULL,
       folder_id TEXT,
       size INTEGER DEFAULT 0,
@@ -86,6 +98,14 @@ export async function getSqliteDb() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Run lightweight migrations to add user_id column if not present
+  try {
+    await db.exec("ALTER TABLE folders ADD COLUMN user_id TEXT;");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE files ADD COLUMN user_id TEXT;");
+  } catch {}
 
   sqliteDbInstance = db;
   return sqliteDbInstance;
@@ -125,17 +145,71 @@ export async function getSupabaseClient() {
 // Initial Database Boot
 export async function getDb() {
   const sqlite = await getSqliteDb();
-  // Async bootstrap Supabase client
   getSupabaseClient().catch(() => {});
   return sqlite;
 }
 
 // ==========================================
-// ULTRA-FAST UNIFIED DATABASE CRUD
-// (Instant Local Performance + Async Cloud Sync)
+// USER AUTHENTICATION CRUD
 // ==========================================
 
-// FILES OPERATIONS
+export async function dbFindUserByEmail(email) {
+  const sqlite = await getSqliteDb();
+  const user = await sqlite.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
+  if (user) return user;
+
+  const supabase = await getSupabaseClient();
+  if (supabase) {
+    const { data } = await supabase.from("users").select("*").ilike("email", email.trim()).maybeSingle();
+    if (data) return data;
+  }
+  return null;
+}
+
+export async function dbFindUserById(id) {
+  const sqlite = await getSqliteDb();
+  const user = await sqlite.get("SELECT * FROM users WHERE id = ?", [id]);
+  if (user) return user;
+
+  const supabase = await getSupabaseClient();
+  if (supabase) {
+    const { data } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
+    if (data) return data;
+  }
+  return null;
+}
+
+export async function dbCreateUser(userRecord) {
+  const sqlite = await getSqliteDb();
+  await sqlite.run(
+    "INSERT INTO users (id, name, email, password_hash, avatar_url) VALUES (?, ?, ?, ?, ?)",
+    [userRecord.id, userRecord.name, userRecord.email.toLowerCase(), userRecord.password_hash, userRecord.avatar_url || null]
+  );
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("users").upsert({
+          id: userRecord.id,
+          name: userRecord.name,
+          email: userRecord.email.toLowerCase(),
+          password_hash: userRecord.password_hash,
+          avatar_url: userRecord.avatar_url || null
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase user insert:", err.message);
+    }
+  })();
+
+  return dbFindUserById(userRecord.id);
+}
+
+// ==========================================
+// FILES CRUD
+// ==========================================
+
 export async function dbGetFileById(id) {
   const sqlite = await getSqliteDb();
   const file = await sqlite.get("SELECT * FROM files WHERE id = ?", [id]);
@@ -153,11 +227,11 @@ export async function dbInsertFile(fileRecord) {
   const sqlite = await getSqliteDb();
   await sqlite.run(
     `INSERT INTO files (
-      id, name, folder_id, size, mime_type, type, source_type,
+      id, user_id, name, folder_id, size, mime_type, type, source_type,
       telegram_file_id, telegram_message_id, telegram_channel_id,
       telegram_post_url, telegram_channel_title, telegram_access_hash,
       telegram_file_reference, thumbnail_url, is_starred, is_trash
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       folder_id = excluded.folder_id,
@@ -175,6 +249,7 @@ export async function dbInsertFile(fileRecord) {
       updated_at = CURRENT_TIMESTAMP`,
     [
       fileRecord.id,
+      fileRecord.user_id || null,
       fileRecord.name,
       fileRecord.folder_id,
       fileRecord.size || 0,
@@ -194,7 +269,6 @@ export async function dbInsertFile(fileRecord) {
     ]
   );
 
-  // Background Cloud Sync to Supabase
   (async () => {
     try {
       const supabase = await getSupabaseClient();
@@ -218,7 +292,6 @@ export async function dbUpdateFile(id, updateFields) {
     await sqlite.run(`UPDATE files SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [...values, id]);
   }
 
-  // Background Cloud Sync to Supabase
   (async () => {
     try {
       const supabase = await getSupabaseClient();
@@ -237,7 +310,6 @@ export async function dbDeleteFile(id) {
   const sqlite = await getSqliteDb();
   await sqlite.run("DELETE FROM files WHERE id = ?", [id]);
 
-  // Background Cloud Sync to Supabase
   (async () => {
     try {
       const supabase = await getSupabaseClient();
@@ -250,7 +322,10 @@ export async function dbDeleteFile(id) {
   })();
 }
 
-// FOLDERS OPERATIONS
+// ==========================================
+// FOLDERS CRUD
+// ==========================================
+
 export async function dbGetFolderById(id) {
   const sqlite = await getSqliteDb();
   const folder = await sqlite.get("SELECT * FROM folders WHERE id = ?", [id]);
@@ -269,6 +344,7 @@ export async function dbInsertFolder(folderRecord) {
 
   const record = {
     id: folderRecord.id,
+    user_id: folderRecord.user_id || null,
     name: folderRecord.name,
     parent_id: parent,
     color: folderRecord.color || "#4285f4",
@@ -278,11 +354,10 @@ export async function dbInsertFolder(folderRecord) {
 
   const sqlite = await getSqliteDb();
   await sqlite.run(
-    "INSERT INTO folders (id, name, color, parent_id, is_starred, is_trash) VALUES (?, ?, ?, ?, ?, ?)",
-    [record.id, record.name, record.color, record.parent_id, record.is_starred, record.is_trash]
+    "INSERT INTO folders (id, user_id, name, color, parent_id, is_starred, is_trash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [record.id, record.user_id, record.name, record.color, record.parent_id, record.is_starred, record.is_trash]
   );
 
-  // Background Cloud Sync to Supabase
   (async () => {
     try {
       const supabase = await getSupabaseClient();
@@ -306,7 +381,6 @@ export async function dbUpdateFolder(id, updateFields) {
     await sqlite.run(`UPDATE folders SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [...values, id]);
   }
 
-  // Background Cloud Sync to Supabase
   (async () => {
     try {
       const supabase = await getSupabaseClient();
@@ -325,7 +399,6 @@ export async function dbDeleteFolder(id) {
   const sqlite = await getSqliteDb();
   await sqlite.run("DELETE FROM folders WHERE id = ?", [id]);
 
-  // Background Cloud Sync to Supabase
   (async () => {
     try {
       const supabase = await getSupabaseClient();
@@ -422,7 +495,6 @@ export async function dbGetSetting(key) {
     try {
       const { data } = await supabase.from("settings").select("value").eq("key", key).maybeSingle();
       if (data && data.value !== undefined) {
-        // Cache to local sqlite
         await sqlite.run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING", [key, data.value]);
         return data.value;
       }

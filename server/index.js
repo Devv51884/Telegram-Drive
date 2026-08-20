@@ -7,6 +7,7 @@ import helmet from "helmet";
 import { getDb } from "./db.js";
 import { requireAuth, apiLimiter } from "./security.js";
 
+import authRouter from "./routes/auth.js";
 import foldersRouter from "./routes/folders.js";
 import filesRouter from "./routes/files.js";
 import driveRouter from "./routes/drive.js";
@@ -54,10 +55,11 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 // Security Middleware 3: Global Rate Limiting
 app.use("/api", apiLimiter);
 
-// Security Middleware 4: Master Authentication Protection
+// Security Middleware 4: Master & User Authentication Protection
 app.use("/api", requireAuth);
 
 // API Routes
+app.use("/api/auth", authRouter);
 app.use("/api/folders", foldersRouter);
 app.use("/api/files", filesRouter);
 app.use("/api/drive", driveRouter);

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { dbGetSetting, dbSetSetting } from "./db.js";
 
-// Ensure a persistent in-memory cached server secret key for HMAC token signing
+// Persistent in-memory cached server secret key for HMAC token signing
 let cachedServerSecret = null;
 let cachedMasterHash = null;
 let lastHashCheck = 0;
@@ -20,7 +20,6 @@ export async function getServerSecret() {
     return cachedServerSecret;
   }
 
-  // Generate random 64-byte secret key on first run
   const newSecret = crypto.randomBytes(64).toString("hex");
   await dbSetSetting("APP_SECRET", newSecret);
   cachedServerSecret = newSecret;
@@ -63,9 +62,10 @@ export function verifyPassword(password, storedHash) {
 }
 
 // 2. Signed HMAC-SHA256 Session Token
-export async function createSessionToken(expiresInDays = 7) {
+export async function createSessionToken(userPayload = {}, expiresInDays = 7) {
   const secret = await getServerSecret();
   const payload = {
+    ...userPayload,
     iat: Date.now(),
     exp: Date.now() + expiresInDays * 24 * 60 * 60 * 1000,
     nonce: crypto.randomBytes(8).toString("hex")
@@ -79,7 +79,7 @@ export async function createSessionToken(expiresInDays = 7) {
 }
 
 export async function verifySessionToken(token) {
-  if (!token || typeof token !== "string" || !token.includes(".")) return false;
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
   try {
     const [payloadBase64, signature] = token.split(".");
     const secret = await getServerSecret();
@@ -89,17 +89,17 @@ export async function verifySessionToken(token) {
       .digest("base64url");
 
     if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
-      return false;
+      return null;
     }
 
     const payload = JSON.parse(Buffer.from(payloadBase64, "base64url").toString("utf8"));
     if (Date.now() > payload.exp) {
-      return false; // Token expired
+      return null; // Token expired
     }
 
-    return true;
+    return payload;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -114,19 +114,16 @@ export async function requireAuth(req, res, next) {
     path === "/settings/auth/status" ||
     path === "/settings/auth/login" ||
     path === "/settings/auth/setup" ||
+    path === "/auth/login" ||
+    path === "/auth/signup" ||
     fullUrl.includes("/api/health") ||
     fullUrl.includes("/api/settings/auth/status") ||
     fullUrl.includes("/api/settings/auth/login") ||
-    fullUrl.includes("/api/settings/auth/setup");
+    fullUrl.includes("/api/settings/auth/setup") ||
+    fullUrl.includes("/api/auth/login") ||
+    fullUrl.includes("/api/auth/signup");
 
   if (isPublic) {
-    return next();
-  }
-
-  // Fast In-Memory Check for Master Password configuration
-  const masterHash = await getMasterPasswordHash();
-  if (!masterHash) {
-    // Master password has not been setup yet -> allow setup
     return next();
   }
 
@@ -141,20 +138,29 @@ export async function requireAuth(req, res, next) {
     token = req.headers["x-access-token"];
   }
 
+  // Master password fallback check if present
+  const masterHash = await getMasterPasswordHash();
+
   if (!token) {
+    if (!masterHash) {
+      return next();
+    }
     return res.status(401).json({
       success: false,
-      error: "Authentication required. Please enter your Master PIN/Password to access TeleDrive."
+      error: "Authentication required. Please login or enter your password to access TeleDrive."
     });
   }
 
-  const isValid = await verifySessionToken(token);
-  if (!isValid) {
+  const payload = await verifySessionToken(token);
+  if (!payload) {
     return res.status(401).json({
       success: false,
       error: "Session invalid or expired. Please login again."
     });
   }
+
+  req.user = payload;
+  req.userId = payload.userId || null;
 
   next();
 }
@@ -162,7 +168,7 @@ export async function requireAuth(req, res, next) {
 // 4. DDoS & Brute-Force Rate Limiters
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Max 10 attempts per IP
+  max: 20, // Max 20 attempts per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -172,19 +178,19 @@ export const authLimiter = rateLimit({
 });
 
 export const uploadLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 40, // Max 40 uploads / link imports per 5 minutes
+  windowMs: 5 * 60 * 1000,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     success: false,
-    error: "Upload rate limit exceeded. Please wait a few minutes before uploading or importing more files."
+    error: "Upload rate limit exceeded. Please wait a few moments before uploading more files."
   }
 });
 
 export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1200, // Max 1200 requests per 15 minutes per IP
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => (req.originalUrl || req.url || "").includes("/stream")

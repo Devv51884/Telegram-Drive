@@ -14,7 +14,7 @@ import RenameModal from "./components/modals/RenameModal.jsx";
 import FilePreviewModal from "./components/modals/FilePreviewModal.jsx";
 import SettingsModal from "./components/modals/SettingsModal.jsx";
 import DetailsDrawer from "./components/modals/DetailsDrawer.jsx";
-import LockScreen from "./components/auth/LockScreen.jsx";
+import AuthScreen from "./components/auth/AuthScreen.jsx";
 import { Loader2, CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 function DriveMain() {
@@ -26,7 +26,6 @@ function DriveMain() {
     toast,
     setSelectedItem,
     isAuthenticated,
-    isSetupRequired,
     authChecking
   } = useDrive();
 
@@ -35,14 +34,14 @@ function DriveMain() {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-white gap-3 font-sans">
         <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-        <p className="text-xs text-slate-400 font-medium">Securing TeleDrive...</p>
+        <p className="text-xs text-slate-400 font-medium">Connecting to TeleDrive...</p>
       </div>
     );
   }
 
-  // Display LockScreen if locked or first-time setup
-  if (isSetupRequired || !isAuthenticated) {
-    return <LockScreen />;
+  // Display Login / Sign Up screen if not authenticated
+  if (!isAuthenticated) {
+    return <AuthScreen />;
   }
 
   const isEmpty = folders.length === 0 && files.length === 0;

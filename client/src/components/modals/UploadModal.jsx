@@ -136,7 +136,7 @@ export default function UploadModal() {
             Drag and drop files here, or <span className="text-blue-500">browse</span>
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            Supports videos, images, PDFs, audio, documents (stored directly on Telegram Cloud)
+            Supports videos, images, PDFs, audio, documents (up to 2GB per file on Telegram Cloud)
           </p>
         </div>
 

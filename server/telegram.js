@@ -110,19 +110,35 @@ export async function testBotConnection(botToken, chatId) {
   }
 }
 
-// Upload file to Telegram (Dual Strategy: Bot API + Seamless MTProto User Account Fallback)
-export async function uploadFileToTelegram(fileBuffer, originalname, mimetype, caption = "") {
+// Upload file to Telegram (Dual Strategy: Bot API + Seamless MTProto User Account Fallback, supporting disk streams up to 2GB)
+export async function uploadFileToTelegram(fileInput, originalname, mimetype, caption = "") {
   const config = await getTelegramConfig();
+  const isFilePath = typeof fileInput === "string";
+  let fileSize = 0;
+  if (isFilePath) {
+    try {
+      fileSize = fs.statSync(fileInput).size;
+    } catch {}
+  } else if (fileInput && fileInput.length) {
+    fileSize = fileInput.length;
+  }
 
-  // 1. Primary Strategy: Try Telegram Bot API if configured
-  if (config.botToken && config.chatId) {
+  // 1. Primary Strategy: Try Telegram Bot API if configured (Bot API allows files <= 50MB)
+  if (config.botToken && config.chatId && fileSize <= 50 * 1024 * 1024) {
     try {
       const formData = new FormData();
       formData.append("chat_id", config.chatId);
-      formData.append("document", fileBuffer, {
-        filename: originalname,
-        contentType: mimetype
-      });
+      if (isFilePath) {
+        formData.append("document", fs.createReadStream(fileInput), {
+          filename: originalname,
+          contentType: mimetype
+        });
+      } else {
+        formData.append("document", fileInput, {
+          filename: originalname,
+          contentType: mimetype
+        });
+      }
       if (caption) {
         formData.append("caption", caption);
       }
@@ -134,7 +150,7 @@ export async function uploadFileToTelegram(fileBuffer, originalname, mimetype, c
           headers: formData.getHeaders(),
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
-          timeout: 120000
+          timeout: 180000
         }
       );
 
@@ -144,7 +160,7 @@ export async function uploadFileToTelegram(fileBuffer, originalname, mimetype, c
           sourceType: "upload",
           fileId: doc.file_id,
           fileUniqueId: doc.file_unique_id,
-          fileSize: doc.file_size || fileBuffer.length,
+          fileSize: doc.file_size || fileSize,
           messageId: response.data.result.message_id,
           channelId: config.chatId
         };
@@ -157,13 +173,13 @@ export async function uploadFileToTelegram(fileBuffer, originalname, mimetype, c
     }
   }
 
-  // 2. Secondary Strategy: Seamless MTProto Connected User Account Upload
+  // 2. Secondary Strategy: Seamless MTProto Connected User Account Upload (Supports up to 2GB!)
   const gramClient = await getGramClient();
   if (gramClient) {
     try {
-      const targetPeer = "me"; // Upload to personal Saved Messages
+      const targetPeer = "me"; // Upload directly to personal Telegram Cloud (Saved Messages)
       const res = await gramClient.sendFile(targetPeer, {
-        file: fileBuffer,
+        file: fileInput,
         caption: caption || originalname,
         forceDocument: true,
         attributes: [
@@ -179,7 +195,7 @@ export async function uploadFileToTelegram(fileBuffer, originalname, mimetype, c
           sourceType: "telegram_post",
           fileId: null,
           fileUniqueId: doc.id?.toString(),
-          fileSize: Number(doc.size || fileBuffer.length),
+          fileSize: Number(doc.size || fileSize),
           messageId: res.id.toString(),
           channelId: "me"
         };
@@ -187,13 +203,13 @@ export async function uploadFileToTelegram(fileBuffer, originalname, mimetype, c
     } catch (gramErr) {
       console.error("GramJS user account upload failed:", gramErr.message);
       throw new Error(
-        `Upload failed: ${gramErr.message}. If using Bot, please ensure @AutoRenameDevilBot is added as an Administrator in your storage channel.`
+        `Upload failed: ${gramErr.message}. If using Bot, please ensure your bot is an Administrator in your storage channel.`
       );
     }
   }
 
   throw new Error(
-    "Upload failed: Bot was unable to send to the channel (make sure bot is an Admin in the channel) and no Telegram account session is active."
+    "Upload failed: Bot was unable to send to the channel and no Telegram account session is active."
   );
 }
 
@@ -404,7 +420,6 @@ export function parseTelegramPostUrl(url) {
   if (!url || typeof url !== "string") return null;
   const trimmed = url.trim();
 
-  // Pattern A: Private channel link (https://t.me/c/1234567890/456)
   const privateMatch = trimmed.match(/t\.me\/c\/(\d+)\/(\d+)/i);
   if (privateMatch) {
     const rawChannelId = privateMatch[1];
@@ -418,7 +433,6 @@ export function parseTelegramPostUrl(url) {
     };
   }
 
-  // Pattern B: Public channel link (https://t.me/channel_name/456)
   const publicMatch = trimmed.match(/t\.me\/([a-zA-Z0-9_]+)\/(\d+)/i);
   if (publicMatch) {
     const channelUsername = publicMatch[1];
