@@ -11,9 +11,7 @@ import {
   Loader2,
   Ban,
   Minus,
-  Maximize2,
-  ChevronUp,
-  ChevronDown
+  Maximize2
 } from "lucide-react";
 
 export default function UploadModal() {
@@ -23,14 +21,12 @@ export default function UploadModal() {
   const [isMinimized, setIsMinimized] = useState(false);
   const fileInputRef = useRef(null);
 
-  // If modal is not active and not minimized with active uploads, don't render
   const hasActiveUploads = uploadList.some(
     (item) => item.status === "uploading" || item.status === "pending" || item.status === "processing"
   );
 
   if (activeModal !== "upload" && !hasActiveUploads) return null;
   if (activeModal !== "upload" && hasActiveUploads && !isMinimized) {
-    // If user closed dialog while uploads running, keep dock minimized
     return renderMinimizedDock();
   }
 
@@ -40,6 +36,14 @@ export default function UploadModal() {
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  };
+
+  const formatETA = (seconds) => {
+    if (!seconds || seconds <= 0 || !isFinite(seconds)) return "";
+    if (seconds < 60) return `~${Math.round(seconds)}s left`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `~${mins}m ${secs}s left`;
   };
 
   const handleDrag = (e) => {
@@ -71,24 +75,24 @@ export default function UploadModal() {
     if (!files || files.length === 0) return;
 
     const newItems = files.map((f, idx) => ({
-      id: `up_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
+      id: `up_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 6)}`,
       file: f,
       name: f.name,
       size: f.size,
       loadedBytes: 0,
       percent: 0,
       speed: "",
+      eta: "",
       phase: "Queued",
-      status: "pending", // 'pending' | 'uploading' | 'processing' | 'done' | 'error' | 'cancelled'
+      status: "pending",
       error: null,
       controller: new AbortController(),
-      lastLoaded: 0,
-      lastTime: Date.now()
+      pollInterval: null
     }));
 
     setUploadList((prev) => [...prev, ...newItems]);
 
-    // Upload items concurrently
+    // Start upload queue
     newItems.forEach((item) => {
       startUpload(item);
     });
@@ -96,62 +100,100 @@ export default function UploadModal() {
 
   const startUpload = async (item) => {
     const controller = new AbortController();
+    let lastLoaded = 0;
+    let lastTime = Date.now();
+    let pollTimer = null;
+
     updateItem(item.id, {
       status: "uploading",
       percent: 1,
       loadedBytes: 0,
-      phase: "Starting upload...",
+      phase: "Initiating cloud transfer...",
       controller
     });
 
-    let lastLoaded = 0;
-    let lastTime = Date.now();
+    // Start background polling to receive actual server-to-Telegram uploaded bytes
+    pollTimer = setInterval(async () => {
+      if (controller.signal.aborted) {
+        clearInterval(pollTimer);
+        return;
+      }
+      try {
+        const res = await DriveAPI.getUploadProgress(item.id);
+        if (res.success && res.progress) {
+          const p = res.progress;
+          const now = Date.now();
+          const timeDiff = (now - lastTime) / 1000;
+          let speedStr = "";
+          let etaStr = "";
+
+          if (timeDiff >= 0.5 && p.loaded > lastLoaded) {
+            const bytesDiff = p.loaded - lastLoaded;
+            const bytesPerSec = bytesDiff / timeDiff;
+            speedStr = `${formatBytes(bytesPerSec)}/s`;
+            if (bytesPerSec > 0) {
+              const remainingBytes = p.total - p.loaded;
+              etaStr = formatETA(remainingBytes / bytesPerSec);
+            }
+            lastLoaded = p.loaded;
+            lastTime = now;
+          }
+
+          updateItem(item.id, {
+            loadedBytes: p.loaded,
+            percent: p.percent,
+            speed: speedStr || item.speed,
+            eta: etaStr,
+            phase:
+              p.percent >= 100
+                ? "Finalizing on Telegram Cloud..."
+                : `Uploading to Telegram (${p.percent}%)`
+          });
+
+          if (p.status === "done") {
+            clearInterval(pollTimer);
+          }
+        }
+      } catch {}
+    }, 400);
 
     try {
       await DriveAPI.uploadFile(
         item.file,
         currentFolderId,
         (progress) => {
-          const now = Date.now();
-          const timeDiff = (now - lastTime) / 1000;
-          let speedStr = "";
-
-          if (timeDiff >= 0.5) {
-            const bytesDiff = progress.loaded - lastLoaded;
-            const bytesPerSec = bytesDiff / timeDiff;
-            speedStr = `${formatBytes(bytesPerSec)}/s`;
-            lastLoaded = progress.loaded;
-            lastTime = now;
+          // Browser to Server buffer stage
+          if (progress.percent < 100) {
+            updateItem(item.id, {
+              loadedBytes: Math.round(progress.loaded * 0.1),
+              percent: Math.round(progress.percent * 0.1),
+              phase: `Buffering file (${progress.percent}%)`
+            });
           }
-
-          const isComplete = progress.percent >= 100;
-          updateItem(item.id, {
-            loadedBytes: progress.loaded,
-            percent: progress.percent,
-            speed: speedStr || item.speed,
-            status: isComplete ? "processing" : "uploading",
-            phase: isComplete
-              ? "Processing on Telegram Cloud..."
-              : `Uploading (${progress.percent}%)`
-          });
         },
-        controller.signal
+        controller.signal,
+        item.id
       );
+
+      clearInterval(pollTimer);
 
       updateItem(item.id, {
         status: "done",
         percent: 100,
         loadedBytes: item.size,
         speed: "",
+        eta: "",
         phase: "Saved to Telegram Cloud!"
       });
       refresh();
     } catch (err) {
+      clearInterval(pollTimer);
       if (err.name === "CanceledError" || err.message === "canceled" || controller.signal.aborted) {
         updateItem(item.id, {
           status: "cancelled",
-          phase: "Upload cancelled",
-          speed: ""
+          phase: "Upload cancelled by user",
+          speed: "",
+          eta: ""
         });
       } else {
         const errorMsg = err.response?.data?.error || err.message || "Upload failed";
@@ -159,7 +201,8 @@ export default function UploadModal() {
           status: "error",
           error: errorMsg,
           phase: "Upload failed",
-          speed: ""
+          speed: "",
+          eta: ""
         });
       }
     }
@@ -172,29 +215,30 @@ export default function UploadModal() {
     updateItem(item.id, {
       status: "cancelled",
       phase: "Cancelled by user",
-      speed: ""
+      speed: "",
+      eta: ""
     });
   };
 
   const cancelAllUploads = () => {
     uploadList.forEach((item) => {
-      if (item.controller && (item.status === "uploading" || item.status === "processing")) {
+      if (item.controller && (item.status === "uploading" || item.status === "pending")) {
         item.controller.abort();
       }
     });
     setUploadList((prev) =>
       prev.map((item) =>
-        item.status === "uploading" || item.status === "pending" || item.status === "processing"
-          ? { ...item, status: "cancelled", phase: "Cancelled by user", speed: "" }
+        item.status === "uploading" || item.status === "pending"
+          ? { ...item, status: "cancelled", phase: "Cancelled by user", speed: "", eta: "" }
           : item
       )
     );
   };
 
-  // Minimized Dock Widget Function
+  // Minimized Floating Dock Widget
   function renderMinimizedDock() {
     const activeCount = uploadList.filter(
-      (i) => i.status === "uploading" || i.status === "processing" || i.status === "pending"
+      (i) => i.status === "uploading" || i.status === "pending"
     ).length;
     const completedCount = uploadList.filter((i) => i.status === "done").length;
 
@@ -259,8 +303,6 @@ export default function UploadModal() {
                   <span className="text-[10px] text-slate-400">
                     {item.status === "done"
                       ? "Done"
-                      : item.status === "processing"
-                      ? "Processing"
                       : `${item.percent}%`}
                   </span>
                 </div>
@@ -302,7 +344,7 @@ export default function UploadModal() {
                 Upload Files to Telegram
               </h3>
               <p className="text-xs text-slate-400">
-                100% live byte progress, minimize dock & cancel support
+                100% genuine live byte tracking, speed, ETA & cancel support
               </p>
             </div>
           </div>
@@ -399,11 +441,11 @@ export default function UploadModal() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {(item.status === "uploading" || item.status === "processing") && (
+                    {item.status === "uploading" && (
                       <>
                         <span className="text-blue-500 font-bold text-[11px] flex items-center gap-1">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {item.status === "processing" ? "Processing..." : `${item.percent}%`}
+                          {item.percent}%
                         </span>
                         <button
                           type="button"
@@ -440,16 +482,12 @@ export default function UploadModal() {
                 </div>
 
                 {/* Progress Bar & Genuine Live Byte Counter */}
-                {(item.status === "uploading" || item.status === "processing") && (
+                {item.status === "uploading" && (
                   <div>
                     <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1.5">
                       <div
-                        className={`h-full transition-all duration-150 rounded-full ${
-                          item.status === "processing"
-                            ? "bg-gradient-to-r from-emerald-500 to-teal-400 animate-pulse w-full"
-                            : "bg-gradient-to-r from-blue-500 to-indigo-500"
-                        }`}
-                        style={{ width: item.status === "processing" ? "100%" : `${item.percent}%` }}
+                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-200 rounded-full"
+                        style={{ width: `${Math.max(2, item.percent)}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
@@ -458,6 +496,7 @@ export default function UploadModal() {
                       </span>
                       <span>
                         {item.speed ? `${item.speed} • ` : ""}
+                        {item.eta ? `${item.eta} • ` : ""}
                         {item.phase}
                       </span>
                     </div>

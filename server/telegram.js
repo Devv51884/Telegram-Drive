@@ -110,8 +110,14 @@ export async function testBotConnection(botToken, chatId) {
   }
 }
 
-// Upload file to Telegram (Dual Strategy: Bot API + Seamless MTProto User Account Fallback, supporting disk streams up to 2GB)
-export async function uploadFileToTelegram(fileInput, originalname, mimetype, caption = "") {
+// Upload a local file stream or buffer to Telegram Cloud with Dual Strategy & Live Progress
+export async function uploadFileToTelegram(
+  fileInput,
+  originalname,
+  mimetype,
+  caption = "",
+  progressCallback = null
+) {
   const config = await getTelegramConfig();
   const isFilePath = typeof fileInput === "string";
   let fileSize = 0;
@@ -157,11 +163,22 @@ export async function uploadFileToTelegram(fileInput, originalname, mimetype, ca
           headers: formHeaders,
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
-          timeout: 0 // Infinite timeout: never abort in the middle of transfer
+          timeout: 0, // Infinite timeout: never abort in the middle of transfer
+          onUploadProgress: (p) => {
+            if (progressCallback && p.total) {
+              const loaded = p.loaded;
+              const total = p.total;
+              const percent = Math.min(99, Math.round((loaded * 100) / total));
+              progressCallback({ loaded, total, percent });
+            }
+          }
         }
       );
 
       if (response.data && response.data.ok) {
+        if (progressCallback) {
+          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
+        }
         const doc = response.data.result.document || response.data.result.video || response.data.result.audio;
         return {
           sourceType: "upload",
@@ -190,6 +207,13 @@ export async function uploadFileToTelegram(fileInput, originalname, mimetype, ca
         caption: caption || originalname,
         forceDocument: true,
         workers: 4,
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            const percent = Math.min(99, Math.round(progress * 100));
+            const loaded = Math.round(progress * fileSize);
+            progressCallback({ loaded, total: fileSize, percent });
+          }
+        },
         attributes: [
           new Api.DocumentAttributeFilename({
             fileName: originalname
@@ -198,6 +222,9 @@ export async function uploadFileToTelegram(fileInput, originalname, mimetype, ca
       });
 
       if (res && res.media && (res.media.document || res.media.photo)) {
+        if (progressCallback) {
+          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
+        }
         const doc = res.media.document || res.media.photo;
         return {
           sourceType: "telegram_post",

@@ -53,11 +53,14 @@ export const DriveAPI = {
   deleteFolder: (id) => api.delete(`/folders/${id}`).then((r) => r.data),
 
   // Files
-  uploadFile: (file, folderId, onProgress, signal) => {
+  uploadFile: (file, folderId, onProgress, signal, uploadId) => {
     const formData = new FormData();
     formData.append("file", file);
     if (folderId && folderId !== "root") {
       formData.append("folderId", folderId);
+    }
+    if (uploadId) {
+      formData.append("uploadId", uploadId);
     }
     return api
       .post("/files/upload", formData, {
@@ -72,13 +75,16 @@ export const DriveAPI = {
             onProgress({
               loaded: progressEvent.loaded,
               total: progressEvent.total,
-              percent
+              percent,
+              stage: "browser"
             });
           }
         }
       })
       .then((r) => r.data);
   },
+  getUploadProgress: (uploadId) =>
+    api.get(`/files/upload-progress/${uploadId}`).then((r) => r.data),
   importLink: (postUrl, folderId, customName) =>
     api.post("/files/import-link", { postUrl, folderId, customName }).then((r) => r.data),
   updateFile: (id, data) => api.patch(`/files/${id}`, data).then((r) => r.data),

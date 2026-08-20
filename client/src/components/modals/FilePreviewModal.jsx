@@ -326,21 +326,31 @@ export default function FilePreviewModal() {
               </div>
             ) : (
               <video
+                key={previewItem.id}
                 ref={videoRef}
                 controls
                 autoPlay
-                preload="metadata"
+                preload="auto"
                 playsInline
+                onLoadedMetadata={() => setVideoLoading(false)}
+                onLoadedData={() => {
+                  setVideoLoading(false);
+                  setVideoError(false);
+                }}
                 onCanPlay={() => setVideoLoading(false)}
                 onWaiting={() => setVideoLoading(true)}
-                onPlaying={() => setVideoLoading(false)}
-                onError={() => {
+                onPlaying={() => {
+                  setVideoLoading(false);
+                  setVideoError(false);
+                }}
+                onError={(e) => {
+                  console.error("Video stream error:", videoRef.current?.error);
                   setVideoLoading(false);
                   setVideoError(true);
                 }}
                 className="w-full h-full max-h-[78vh] object-contain rounded-3xl"
-                src={streamUrl}
               >
+                <source src={streamUrl} type="video/mp4" />
                 Your browser does not support HTML5 video streaming.
               </video>
             )}

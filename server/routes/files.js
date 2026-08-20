@@ -55,6 +55,16 @@ const upload = multer({
   limits: { fileSize: 2000 * 1024 * 1024 } // 2000 MB (2GB)
 });
 
+// Active server-to-telegram live upload progress map
+const activeUploadProgress = new Map();
+
+// GET /api/files/upload-progress/:uploadId - Poll live server-to-telegram upload progress
+router.get("/upload-progress/:uploadId", (req, res) => {
+  const { uploadId } = req.params;
+  const progress = activeUploadProgress.get(uploadId) || null;
+  res.json({ success: true, progress });
+});
+
 // POST /api/files/upload - Direct File Upload to Telegram Cloud (up to 2GB)
 router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) => {
   if (!req.file) {
@@ -62,6 +72,7 @@ router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) =>
   }
 
   const tempFilePath = req.file.path;
+  const uploadId = req.body.uploadId || null;
 
   try {
     const { folderId } = req.body;
@@ -70,13 +81,40 @@ router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) =>
     const type = detectFileType(mimeType, cleanName);
     const targetFolder = folderId === "root" || !folderId ? null : folderId;
 
+    if (uploadId) {
+      activeUploadProgress.set(uploadId, {
+        loaded: 0,
+        total: req.file.size,
+        percent: 0,
+        status: "telegram_uploading"
+      });
+    }
+
     // Upload disk file to Telegram Cloud (Dual-Strategy: Bot or Connected Account)
     const result = await uploadFileToTelegram(
       tempFilePath,
       cleanName,
       mimeType,
-      `Uploaded to TeleDrive: ${cleanName}`
+      `Uploaded to TeleDrive: ${cleanName}`,
+      (progressData) => {
+        if (uploadId) {
+          activeUploadProgress.set(uploadId, {
+            ...progressData,
+            status: "telegram_uploading",
+            updatedAt: Date.now()
+          });
+        }
+      }
     );
+
+    if (uploadId) {
+      activeUploadProgress.set(uploadId, {
+        loaded: req.file.size,
+        total: req.file.size,
+        percent: 100,
+        status: "done"
+      });
+    }
 
     const fileId = generateId("file_");
     const fileRecord = {
@@ -104,9 +142,15 @@ router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) =>
       file: saved
     });
   } catch (err) {
+    if (uploadId) {
+      activeUploadProgress.delete(uploadId);
+    }
     console.error("Upload error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   } finally {
+    if (uploadId) {
+      setTimeout(() => activeUploadProgress.delete(uploadId), 10000);
+    }
     // Delete temporary file from local disk
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       fs.promises.unlink(tempFilePath).catch(() => {});
