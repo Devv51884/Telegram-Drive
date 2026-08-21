@@ -58,6 +58,21 @@ export function DriveProvider({ children }) {
   const [modalTargetItem, setModalTargetItem] = useState(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
+  const handleSetPreviewItem = (item) => {
+    setPreviewItem(item);
+    setSelectedItem(null);
+    setSelectedItems([]);
+    try {
+      const url = new URL(window.location);
+      if (item && item.id) {
+        url.searchParams.set("file", item.id);
+      } else {
+        url.searchParams.delete("file");
+      }
+      window.history.replaceState({}, "", url);
+    } catch {}
+  };
+
   // Toast notifications
   const [toast, setToast] = useState(null);
 
@@ -227,6 +242,17 @@ export function DriveProvider({ children }) {
         if (data.breadcrumbs && !searchQuery && section === "my_drive") {
           setBreadcrumbs(data.breadcrumbs);
         }
+        // Auto-restore preview modal on page refresh if ?file=file_id in URL
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const fileParam = urlParams.get("file");
+          if (fileParam && (data.files || []).length > 0) {
+            const matchedFile = data.files.find((f) => f.id === fileParam);
+            if (matchedFile) {
+              setPreviewItem(matchedFile);
+            }
+          }
+        } catch {}
       }
     } catch (err) {
       if (err.response?.status === 401) {
@@ -592,6 +618,7 @@ export function DriveProvider({ children }) {
       setFiles((prev) => prev.filter((f) => f.id !== item.id));
     }
     setSelectedItem(null);
+    setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
     showToast(`"${item.name}" moved to Trash`);
 
     try {
@@ -616,6 +643,7 @@ export function DriveProvider({ children }) {
       setFiles((prev) => prev.filter((f) => f.id !== item.id));
     }
     setSelectedItem(null);
+    setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
     showToast(`"${item.name}" restored from Trash`);
 
     try {
@@ -640,6 +668,7 @@ export function DriveProvider({ children }) {
       setFiles((prev) => prev.filter((f) => f.id !== item.id));
     }
     setSelectedItem(null);
+    setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
     showToast(`"${item.name}" deleted permanently`);
 
     try {
@@ -737,7 +766,7 @@ export function DriveProvider({ children }) {
     activeModal,
     setActiveModal,
     previewItem,
-    setPreviewItem,
+    setPreviewItem: handleSetPreviewItem,
     modalTargetItem,
     setModalTargetItem,
     isDetailsOpen,

@@ -645,30 +645,38 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td className="p-4 text-right space-x-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleRole(u.id, u.role)}
-                            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-purple-500 transition-colors"
-                            title={u.role === "admin" ? "Demote to User" : "Promote to Admin"}
-                          >
-                            {u.role === "admin" ? (
-                              <ShieldAlert className="w-4 h-4 text-purple-500" />
-                            ) : (
-                              <ShieldCheck className="w-4 h-4" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStatus(u.id, u.status)}
-                            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-amber-500 transition-colors"
-                            title={u.status === "active" ? "Disable Account" : "Enable Account"}
-                          >
-                            {u.status === "active" ? (
-                              <UserX className="w-4 h-4 text-amber-500" />
-                            ) : (
-                              <UserCheck className="w-4 h-4 text-emerald-500" />
-                            )}
-                          </button>
+                          {u.email !== "devv5412@gmail.com" ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleRole(u.id, u.role)}
+                                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-purple-500 transition-colors"
+                                title={u.role === "admin" ? "Demote to User" : "Promote to Admin"}
+                              >
+                                {u.role === "admin" ? (
+                                  <ShieldAlert className="w-4 h-4 text-purple-500" />
+                                ) : (
+                                  <ShieldCheck className="w-4 h-4" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStatus(u.id, u.status)}
+                                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-amber-500 transition-colors"
+                                title={u.status === "active" ? "Disable Account" : "Enable Account"}
+                              >
+                                {u.status === "active" ? (
+                                  <UserX className="w-4 h-4 text-amber-500" />
+                                ) : (
+                                  <UserCheck className="w-4 h-4 text-emerald-500" />
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="px-2 py-1 text-[10px] font-bold text-purple-600 bg-purple-50 dark:bg-purple-950/40 rounded-lg">
+                              Primary Owner
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => setResettingUser(u)}
