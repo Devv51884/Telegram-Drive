@@ -72,5 +72,26 @@ Visit `http://localhost:5000` in your browser!
 
 ---
 
+## 🌐 Deploy to Render (Cloud Hosting)
+
+1. Push your repository to **GitHub**.
+2. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** -> **Web Service**.
+3. Connect your GitHub repository.
+4. Set the following configuration:
+   - **Environment**: `Node`
+   - **Build Command**: `npm run build`
+   - **Start Command**: `npm start`
+5. In the **Environment Variables** section, add:
+   - `BOT_TOKEN`
+   - `STORAGE_CHAT_ID`
+   - `API_ID`
+   - `API_HASH`
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `NODE_ENV` = `production`
+6. Click **Deploy Web Service**!
+
+---
+
 ## 📄 License
 MIT License. Free for personal and educational use.
