@@ -593,6 +593,201 @@ export async function parseAndFetchTelegramPost(postUrl) {
       caption,
       duration
     };
+    try {
+      parsedInfo = typeof sessionRow.user_info === "string" ? JSON.parse(sessionRow.user_info) : sessionRow.user_info;
+    } catch {}
+  }
+
+  const firstName = parsedInfo.firstName || sessionRow.first_name || "Telegram User";
+  const lastName = parsedInfo.lastName || sessionRow.last_name || "";
+  const username = parsedInfo.username || sessionRow.username || "";
+
+  try {
+    const client = await getGramClient();
+    if (!client) {
+      return {
+        connected: true,
+        phoneNumber: sessionRow.phone_number,
+        info: {
+          firstName,
+          lastName,
+          username
+        }
+      };
+    }
+
+    const me = await client.getMe();
+    return {
+      connected: true,
+      phoneNumber: sessionRow.phone_number,
+      info: {
+        id: me.id?.toString(),
+        firstName: me.firstName || firstName,
+        lastName: me.lastName || lastName,
+        username: me.username || username
+      }
+    };
+  } catch (err) {
+    return {
+      connected: true,
+      phoneNumber: sessionRow.phone_number,
+      info: {
+        firstName,
+        lastName,
+        username
+      }
+    };
+  }
+}
+
+// Logout & Disconnect Telegram User Account
+export async function logoutTelegramUser() {
+  if (activeGramClient) {
+    try {
+      await activeGramClient.disconnect();
+    } catch {}
+    activeGramClient = null;
+    activeSessionString = null;
+  }
+  await dbDeactivateTelegramSessions();
+  return { success: true };
+}
+
+// Parse Telegram Post Link (supports private channel, public channel, and forum topics)
+export function parseTelegramPostUrl(url) {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+
+  // 1. Private channel / supergroup / forum topic: t.me/c/2643917389/1036/1039 or t.me/c/2643917389/1039
+  const privateMatch = trimmed.match(/t\.me\/c\/(\d+)(?:\/(\d+))?\/(\d+)/i);
+  if (privateMatch) {
+    const rawChannelId = privateMatch[1];
+    const messageId = parseInt(privateMatch[3], 10);
+    const fullChannelId = rawChannelId.startsWith("-100") ? rawChannelId : `-100${rawChannelId}`;
+    return {
+      isPrivate: true,
+      channelId: fullChannelId,
+      rawChannelId,
+      messageId
+    };
+  }
+
+  // 2. Public channel / group / forum topic: t.me/channel_name/1036/1039 or t.me/channel_name/1039
+  const publicMatch = trimmed.match(/t\.me\/([a-zA-Z0-9_]+)(?:\/(\d+))?\/(\d+)/i);
+  if (publicMatch && publicMatch[1] !== "c") {
+    const channelUsername = publicMatch[1];
+    const messageId = parseInt(publicMatch[3], 10);
+    return {
+      isPrivate: false,
+      channelUsername,
+      channelId: channelUsername,
+      messageId
+    };
+  }
+
+  return null;
+}
+
+// Parse and Fetch Telegram Post Media using GramJS MTProto Client
+export async function parseAndFetchTelegramPost(postUrl) {
+  const parsed = parseTelegramPostUrl(postUrl);
+  if (!parsed) {
+    throw new Error(
+      "Invalid Telegram link format. Expected https://t.me/channel_name/123 or https://t.me/c/1234567890/123"
+    );
+  }
+
+  const client = await getGramClient();
+  if (!client) {
+    throw new Error(
+      "No Telegram user account is connected. Please connect your Telegram account in Settings to import channel media."
+    );
+  }
+
+  let peer = parsed.channelId;
+  const messageId = parsed.messageId;
+
+  try {
+    const messages = await client.getMessages(peer, { ids: [messageId] });
+    if (!messages || messages.length === 0 || !messages[0]) {
+      throw new Error(`Message #${messageId} not found in this channel.`);
+    }
+
+    const msg = messages[0];
+    if (!msg.media) {
+      throw new Error("This message contains only text and no downloadable file/video media.");
+    }
+
+    let fileName = "telegram_media";
+    let mimeType = "application/octet-stream";
+    let fileSize = 0;
+    let type = "other";
+    let caption = msg.message || "";
+    let duration = 0;
+
+    if (msg.media.document) {
+      const doc = msg.media.document;
+      fileSize = Number(doc.size || 0);
+      mimeType = doc.mimeType || "application/octet-stream";
+
+      const fileAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeFilename");
+      const videoAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeVideo");
+      const audioAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeAudio");
+
+      if (fileAttr && fileAttr.fileName) {
+        fileName = fileAttr.fileName;
+      } else if (mimeType.startsWith("video/")) {
+        fileName = `video_${messageId}.mp4`;
+      } else if (mimeType.startsWith("audio/")) {
+        fileName = `audio_${messageId}.mp3`;
+      } else if (mimeType === "application/pdf") {
+        fileName = `document_${messageId}.pdf`;
+      } else {
+        fileName = `document_${messageId}`;
+      }
+
+      if (videoAttr) {
+        type = "video";
+        duration = videoAttr.duration || 0;
+      } else if (audioAttr) {
+        type = "audio";
+        duration = audioAttr.duration || 0;
+      } else if (mimeType.startsWith("video/")) {
+        type = "video";
+      } else if (mimeType.startsWith("image/")) {
+        type = "image";
+      } else if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
+        type = "pdf";
+      } else {
+        type = "document";
+      }
+    } else if (msg.media.photo) {
+      type = "image";
+      mimeType = "image/jpeg";
+      fileName = `photo_${messageId}.jpg`;
+      const sizes = msg.media.photo.sizes || [];
+      const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
+      fileSize = Number(largest?.size || 1024 * 500);
+    }
+
+    let channelTitle = "Telegram Channel";
+    try {
+      const chat = await client.getEntity(peer);
+      channelTitle = chat.title || chat.username || "Telegram Channel";
+    } catch {}
+
+    return {
+      messageId: messageId.toString(),
+      channelId: peer.toString(),
+      channelTitle,
+      postUrl: postUrl.trim(),
+      fileName,
+      mimeType,
+      fileSize,
+      type,
+      caption,
+      duration
+    };
   } catch (err) {
     throw new Error(`Failed to fetch Telegram message: ${err.message}`);
   }
@@ -677,12 +872,15 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
   else if (lowerName.endsWith(".webp")) contentType = "image/webp";
 
   const RPC_CHUNK_SIZE = 512 * 1024; // 512 KB aligned chunks
+  const MAX_STREAM_RESPONSE_CHUNK = 2 * 1024 * 1024; // 2MB max per HTTP 206 response for instant buffering
 
   if (rangeHeader && totalSize > 0) {
     // Parse Range: bytes=start-end
     const parts = rangeHeader.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+    const rawEnd = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+    // Cap chunk to 2MB so player starts immediately and streams subsequent chunks on demand
+    const end = Math.min(rawEnd, start + MAX_STREAM_RESPONSE_CHUNK - 1, totalSize - 1);
     const requestedLength = end - start + 1;
 
     res.writeHead(206, {

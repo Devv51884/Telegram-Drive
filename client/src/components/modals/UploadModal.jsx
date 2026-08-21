@@ -24,24 +24,21 @@ export default function UploadModal() {
     (item) => item.status === "uploading" || item.status === "pending"
   );
 
-  if (activeModal !== "upload" && !hasActiveUploads) return null;
-  if (activeModal !== "upload" && hasActiveUploads && !isMinimized) {
-    return renderMinimizedDock();
-  }
-
   const formatBytes = (bytes) => {
-    if (!bytes || bytes === 0) return "0 B";
+    const num = Number(bytes);
+    if (!num || num <= 0 || isNaN(num) || !isFinite(num)) return "0 B";
     const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.min(sizes.length - 1, Math.max(0, Math.floor(Math.log(num) / Math.log(k))));
+    return parseFloat((num / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
   const formatETA = (seconds) => {
-    if (!seconds || seconds <= 0 || !isFinite(seconds)) return "";
-    if (seconds < 60) return `~${Math.round(seconds)}s left`;
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
+    const num = Number(seconds);
+    if (!num || num <= 0 || !isFinite(num) || isNaN(num)) return "";
+    if (num < 60) return `~${Math.round(num)}s left`;
+    const mins = Math.floor(num / 60);
+    const secs = Math.round(num % 60);
     return `~${mins}m ${secs}s left`;
   };
 
@@ -76,10 +73,10 @@ export default function UploadModal() {
     const newItems = files.map((f, idx) => ({
       id: `up_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 6)}`,
       file: f,
-      name: f.name,
-      size: f.size,
+      name: f.name || "File",
+      size: Number(f.size) || 0,
       loadedBytes: 0,
-      percent: 0,
+      percent: 1,
       speed: "",
       eta: "",
       phase: "Queued",
@@ -109,7 +106,7 @@ export default function UploadModal() {
       controller
     });
 
-    // Start background real-time byte stream poller from backend
+    // Background live byte stream poller from backend
     pollInterval = setInterval(async () => {
       if (controller.signal.aborted) {
         clearInterval(pollInterval);
@@ -117,31 +114,36 @@ export default function UploadModal() {
       }
       try {
         const res = await DriveAPI.getUploadProgress(item.id);
-        if (res.success && res.progress) {
+        if (res?.success && res?.progress) {
           const p = res.progress;
           const now = Date.now();
-          const timeDiff = (now - lastTime) / 1000;
+          const timeDiff = Math.max(0.1, (now - lastTime) / 1000);
           let speedStr = "";
           let etaStr = "";
 
-          if (timeDiff >= 0.3 && p.loaded > lastLoaded) {
-            const bytesDiff = p.loaded - lastLoaded;
+          const pLoaded = Number(p.loaded) || 0;
+          const pTotal = Number(p.total) || item.size || 1;
+
+          if (timeDiff >= 0.3 && pLoaded > lastLoaded) {
+            const bytesDiff = pLoaded - lastLoaded;
             const bytesPerSec = bytesDiff / timeDiff;
             speedStr = `${formatBytes(bytesPerSec)}/s`;
             if (bytesPerSec > 0) {
-              const remainingBytes = (p.total || item.size) - p.loaded;
+              const remainingBytes = Math.max(0, pTotal - pLoaded);
               etaStr = formatETA(remainingBytes / bytesPerSec);
             }
-            lastLoaded = p.loaded;
+            lastLoaded = pLoaded;
             lastTime = now;
           }
 
-          const currentPercent = Math.min(99, Math.max(1, p.percent || 1));
+          const rawPercent = Number(p.percent) || Math.round((pLoaded * 100) / pTotal);
+          const currentPercent = Math.min(99, Math.max(1, rawPercent));
+
           updateItem(item.id, {
-            loadedBytes: p.loaded || 0,
+            loadedBytes: pLoaded,
             percent: currentPercent,
-            speed: speedStr || item.speed,
-            eta: etaStr || item.eta,
+            speed: speedStr || item.speed || "",
+            eta: etaStr || item.eta || "",
             phase: `Uploading to Telegram Cloud (${currentPercent}%)`
           });
 
@@ -221,8 +223,10 @@ export default function UploadModal() {
     );
   };
 
-  // Minimized Floating Dock Widget
-  function renderMinimizedDock() {
+  if (activeModal !== "upload" && !hasActiveUploads) return null;
+
+  // Render Minimized Floating Dock Widget
+  if (isMinimized || (activeModal !== "upload" && hasActiveUploads)) {
     const activeCount = uploadList.filter(
       (i) => i.status === "uploading" || i.status === "pending"
     ).length;
@@ -280,14 +284,14 @@ export default function UploadModal() {
             </div>
           </div>
 
-          {/* Quick mini-list of files */}
+          {/* Mini-list */}
           <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
             {uploadList.slice(0, 3).map((item) => (
               <div key={item.id} className="text-[11px]">
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 mb-0.5">
                   <span className="truncate max-w-[180px] font-medium">{item.name}</span>
                   <span className="text-[10px] text-slate-400">
-                    {item.status === "done" ? "Done" : `${item.percent}%`}
+                    {item.status === "done" ? "Done" : `${item.percent || 1}%`}
                   </span>
                 </div>
                 <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -299,7 +303,7 @@ export default function UploadModal() {
                         ? "bg-rose-500"
                         : "bg-blue-500"
                     }`}
-                    style={{ width: `${item.percent}%` }}
+                    style={{ width: `${Math.max(2, item.percent || 1)}%` }}
                   />
                 </div>
               </div>
@@ -308,10 +312,6 @@ export default function UploadModal() {
         </div>
       </div>
     );
-  }
-
-  if (isMinimized) {
-    return renderMinimizedDock();
   }
 
   return (
@@ -461,7 +461,7 @@ export default function UploadModal() {
                     <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1.5">
                       <div
                         className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-200 rounded-full"
-                        style={{ width: `${Math.max(2, item.percent)}%` }}
+                        style={{ width: `${Math.max(2, item.percent || 1)}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">

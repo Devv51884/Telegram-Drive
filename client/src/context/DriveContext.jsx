@@ -7,11 +7,28 @@ export function DriveProvider({ children }) {
   // Authentication & Security State
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authChecking, setAuthChecking] = useState(true);
+  // Helper to persist navigation across page reloads
+  const getInitialFolder = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("folder") || localStorage.getItem("teledrive_last_folder") || "root";
+    } catch {
+      return "root";
+    }
+  };
+
+  const getInitialSection = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("section") || localStorage.getItem("teledrive_last_section") || "my_drive";
+    } catch {
+      return "my_drive";
+    }
+  };
 
   // Navigation & Location
-  const [section, setSection] = useState("my_drive"); // 'my_drive', 'starred', 'trash', 'recent', 'telegram_imports'
-  const [currentFolderId, setCurrentFolderId] = useState("root");
+  const [section, setSection] = useState(getInitialSection); // 'my_drive', 'starred', 'trash', 'recent', 'telegram_imports'
+  const [currentFolderId, setCurrentFolderId] = useState(getInitialFolder);
   const [breadcrumbs, setBreadcrumbs] = useState([{ id: "root", name: "My Drive" }]);
   const [currentFolder, setCurrentFolder] = useState(null);
 
@@ -256,6 +273,12 @@ export function DriveProvider({ children }) {
     setSelectedItem(null);
     setSelectedItems([]);
     setSearchQuery("");
+    try {
+      localStorage.setItem("teledrive_last_folder", folderId);
+      const url = new URL(window.location);
+      url.searchParams.set("folder", folderId);
+      window.history.replaceState({}, "", url);
+    } catch {}
   };
 
   const navigateToSection = (newSection) => {
@@ -264,6 +287,14 @@ export function DriveProvider({ children }) {
     setSelectedItem(null);
     setSelectedItems([]);
     setSearchQuery("");
+    try {
+      localStorage.setItem("teledrive_last_section", newSection);
+      localStorage.setItem("teledrive_last_folder", "root");
+      const url = new URL(window.location);
+      url.searchParams.set("section", newSection);
+      url.searchParams.set("folder", "root");
+      window.history.replaceState({}, "", url);
+    } catch {}
     if (newSection === "my_drive") {
       setBreadcrumbs([{ id: "root", name: "My Drive" }]);
     } else if (newSection === "starred") {
