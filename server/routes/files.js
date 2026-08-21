@@ -256,9 +256,10 @@ router.get("/:id/stream", async (req, res) => {
     }
 
     // Strategy 2: MTProto Channel Post or Account Saved Message
-    if (file.telegram_channel_id && file.telegram_message_id) {
+    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    if (targetChannelId && file.telegram_message_id) {
       await streamGramMedia(
-        file.telegram_channel_id,
+        targetChannelId,
         file.telegram_message_id,
         range,
         req,
@@ -313,9 +314,10 @@ router.get("/:id/download", async (req, res) => {
       }
     }
 
-    if (file.telegram_channel_id && file.telegram_message_id) {
+    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    if (targetChannelId && file.telegram_message_id) {
       await streamGramMedia(
-        file.telegram_channel_id,
+        targetChannelId,
         file.telegram_message_id,
         null,
         req,

@@ -32,47 +32,89 @@ export async function getTelegramConfig() {
   };
 }
 
-// Global active MTProto TelegramClient instance
+// Global active MTProto TelegramClient instances
 let activeGramClient = null;
 let activeSessionString = null;
+let activeBotGramClient = null;
+let activeBotToken = null;
 
-// Initialize or retrieve the authenticated GramJS client
+// Initialize or retrieve the authenticated GramJS client (Supports User Account Session & Bot Token MTProto fallback)
 export async function getGramClient() {
   const config = await getTelegramConfig();
   if (!config.apiId || !config.apiHash) {
     return null;
   }
 
+  // Strategy A: Authenticated User Account Session (if connected in Settings)
   const sessionRow = await dbGetActiveTelegramSession();
   const sessionStr = sessionRow?.session_string || process.env.TELEGRAM_SESSION_STRING || "";
 
-  if (!sessionStr) {
-    return null;
-  }
-
-  if (activeGramClient && activeSessionString === sessionStr) {
-    if (!activeGramClient.connected) {
-      await activeGramClient.connect();
+  if (sessionStr) {
+    if (activeGramClient && activeSessionString === sessionStr) {
+      if (!activeGramClient.connected) {
+        await activeGramClient.connect();
+      }
+      return activeGramClient;
     }
-    return activeGramClient;
-  }
 
-  if (activeGramClient) {
+    if (activeGramClient) {
+      try {
+        await activeGramClient.disconnect();
+      } catch {}
+    }
+
     try {
-      await activeGramClient.disconnect();
-    } catch {}
+      const session = new StringSession(sessionStr);
+      const client = new TelegramClient(session, config.apiId, config.apiHash, {
+        connectionRetries: 5,
+        useWSS: false
+      });
+
+      await client.connect();
+      activeGramClient = client;
+      activeSessionString = sessionStr;
+      return activeGramClient;
+    } catch (userGramErr) {
+      console.warn("User MTProto session connect error, trying bot MTProto fallback:", userGramErr.message);
+    }
   }
 
-  const session = new StringSession(sessionStr);
-  const client = new TelegramClient(session, config.apiId, config.apiHash, {
-    connectionRetries: 5,
-    useWSS: false
-  });
+  // Strategy B: Dedicated MTProto Bot Session (No phone OTP login required, streams up to 2GB)
+  if (config.botToken) {
+    if (activeBotGramClient && activeBotToken === config.botToken) {
+      if (!activeBotGramClient.connected) {
+        await activeBotGramClient.connect();
+      }
+      return activeBotGramClient;
+    }
 
-  await client.connect();
-  activeGramClient = client;
-  activeSessionString = sessionStr;
-  return activeGramClient;
+    if (activeBotGramClient) {
+      try {
+        await activeBotGramClient.disconnect();
+      } catch {}
+    }
+
+    try {
+      const botSession = new StringSession("");
+      const botClient = new TelegramClient(botSession, config.apiId, config.apiHash, {
+        connectionRetries: 5,
+        useWSS: false
+      });
+
+      await botClient.start({
+        botAuthToken: config.botToken
+      });
+
+      activeBotGramClient = botClient;
+      activeBotToken = config.botToken;
+      console.log("🤖 MTProto Bot Client active for high-speed 2GB streaming.");
+      return activeBotGramClient;
+    } catch (botGramErr) {
+      console.error("Failed to initialize MTProto Bot Client:", botGramErr.message);
+    }
+  }
+
+  return null;
 }
 
 // Test Bot Token Connection
@@ -616,7 +658,25 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     let peer = channelId;
     const msgId = parseInt(messageId, 10);
 
-    const messages = await client.getMessages(peer, { ids: [msgId] });
+    let messages = [];
+    try {
+      messages = await client.getMessages(peer, { ids: [msgId] });
+    } catch (err1) {
+      try {
+        if (typeof channelId === "string" && (channelId.startsWith("-100") || /^-?\d+$/.test(channelId))) {
+          const numId = bigInt(channelId);
+          try {
+            const inputPeer = await client.getInputEntity(numId);
+            messages = await client.getMessages(inputPeer, { ids: [msgId] });
+          } catch {
+            messages = await client.getMessages(numId, { ids: [msgId] });
+          }
+        }
+      } catch (err2) {
+        console.error("Failed to get Telegram message for streaming:", err2.message);
+      }
+    }
+
     if (!messages || messages.length === 0 || !messages[0] || !messages[0].media) {
       res.status(404).send("Telegram media not found");
       return;
