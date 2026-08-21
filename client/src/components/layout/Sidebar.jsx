@@ -20,11 +20,13 @@ export default function Sidebar() {
   const {
     section,
     setSection,
+    navigateToSection,
     openFolder,
     stats,
     settings,
     setActiveModal,
-    lockMaster
+    lockMaster,
+    currentUser
   } = useDrive();
 
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
@@ -36,6 +38,8 @@ export default function Sidebar() {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
+
+  const isAdmin = currentUser?.role === "admin" || currentUser?.email === "devv5412@gmail.com";
 
   return (
     <aside className="w-64 h-[calc(100vh-4rem)] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] flex flex-col justify-between p-3 flex-shrink-0 overflow-y-auto">
@@ -99,10 +103,7 @@ export default function Sidebar() {
         <nav className="space-y-1">
           {/* My Drive */}
           <div
-            onClick={() => {
-              setSection("my_drive");
-              openFolder("root");
-            }}
+            onClick={() => navigateToSection("my_drive")}
             className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "my_drive"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
@@ -113,9 +114,9 @@ export default function Sidebar() {
             <span>My Drive</span>
           </div>
 
-          {/* Telegram Channel Imports Section */}
+          {/* Telegram Imports */}
           <div
-            onClick={() => setSection("telegram_imports")}
+            onClick={() => navigateToSection("telegram_imports")}
             className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "telegram_imports"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
@@ -123,12 +124,12 @@ export default function Sidebar() {
             }`}
           >
             <Send className="w-4 h-4 text-sky-500" />
-            <span>Telegram Imports</span>
+            <span>Channel Imports</span>
           </div>
 
           {/* Starred */}
           <div
-            onClick={() => setSection("starred")}
+            onClick={() => navigateToSection("starred")}
             className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "starred"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
@@ -141,7 +142,7 @@ export default function Sidebar() {
 
           {/* Trash */}
           <div
-            onClick={() => setSection("trash")}
+            onClick={() => navigateToSection("trash")}
             className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "trash"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
@@ -152,14 +153,20 @@ export default function Sidebar() {
             <span>Trash</span>
           </div>
 
-          {/* Admin Panel Button */}
-          <div
-            onClick={() => setActiveModal("admin")}
-            className="flex items-center gap-3 px-4 py-2 mt-2 rounded-full text-sm font-medium cursor-pointer transition-all bg-gradient-to-r from-purple-500/10 to-indigo-500/10 hover:from-purple-500/20 hover:to-indigo-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-          >
-            <Shield className="w-4 h-4 text-purple-500" />
-            <span className="font-semibold">Admin Panel</span>
-          </div>
+          {/* Admin Panel Button - Only visible for Admin Accounts */}
+          {isAdmin && (
+            <div
+              onClick={() => navigateToSection("admin")}
+              className={`flex items-center gap-3 px-4 py-2 mt-2 rounded-full text-sm font-medium cursor-pointer transition-all ${
+                section === "admin"
+                  ? "bg-purple-600 text-white font-semibold shadow-md shadow-purple-500/20"
+                  : "bg-gradient-to-r from-purple-500/10 to-indigo-500/10 hover:from-purple-500/20 hover:to-indigo-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+              }`}
+            >
+              <Shield className="w-4 h-4 text-purple-500" />
+              <span className="font-semibold">Admin Panel</span>
+            </div>
+          )}
         </nav>
       </div>
 

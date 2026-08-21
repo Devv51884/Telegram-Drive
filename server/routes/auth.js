@@ -99,6 +99,8 @@ router.post("/signup", authLimiter, async (req, res) => {
         id: newUser.id,
         name: newUser.name,
         email: newUser.email,
+        role: newUser.role || (newUser.email === "devv5412@gmail.com" ? "admin" : "user"),
+        status: newUser.status || "active",
         is2FAEnabled: false
       }
     });
@@ -171,6 +173,8 @@ router.post("/login", authLimiter, async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role || (user.email === "devv5412@gmail.com" ? "admin" : "user"),
+        status: user.status || "active",
         is2FAEnabled: Boolean(user.is_2fa_enabled && user.pin_hash)
       }
     });
@@ -198,6 +202,8 @@ router.get("/me", async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role || (user.email === "devv5412@gmail.com" ? "admin" : "user"),
+        status: user.status || "active",
         is2FAEnabled: Boolean(user.is_2fa_enabled && user.pin_hash),
         created_at: user.created_at
       }

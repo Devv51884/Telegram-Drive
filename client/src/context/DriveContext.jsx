@@ -304,6 +304,8 @@ export function DriveProvider({ children }) {
       setBreadcrumbs([{ id: "trash", name: "Trash Bin" }]);
     } else if (newSection === "telegram_imports") {
       setBreadcrumbs([{ id: "telegram_imports", name: "Telegram Channel Imports" }]);
+    } else if (newSection === "admin") {
+      setBreadcrumbs([{ id: "admin", name: "Admin Control Center" }]);
     }
   };
 

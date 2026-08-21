@@ -22,6 +22,7 @@ export default function Header() {
     setViewMode,
     settings,
     setActiveModal,
+    navigateToSection,
     refresh,
     loading,
     currentUser,
@@ -30,6 +31,7 @@ export default function Header() {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef(null);
+  const isAdmin = currentUser?.role === "admin" || currentUser?.email === "devv5412@gmail.com";
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -178,16 +180,18 @@ export default function Header() {
 
               {/* Quick Actions */}
               <div className="py-1">
-                <button
-                  onClick={() => {
-                    setIsProfileOpen(false);
-                    setActiveModal("admin");
-                  }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-colors text-left font-semibold"
-                >
-                  <Shield className="w-4 h-4 text-purple-500" />
-                  <span>Admin Panel Control</span>
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      navigateToSection("admin");
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-colors text-left font-semibold"
+                  >
+                    <Shield className="w-4 h-4 text-purple-500" />
+                    <span>Admin Control Center</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setIsProfileOpen(false);
