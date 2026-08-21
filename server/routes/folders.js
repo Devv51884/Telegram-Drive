@@ -113,6 +113,11 @@ router.patch("/:id", async (req, res) => {
     const folder = await dbGetFolderById(id);
     if (!folder) return res.status(404).json({ success: false, error: "Folder not found" });
 
+    const isAdmin = req.user?.role === "admin" || req.user?.email === "devv5412@gmail.com";
+    if (folder.user_id && req.userId && folder.user_id !== req.userId && !isAdmin) {
+      return res.status(403).json({ success: false, error: "Access denied. You do not own this folder." });
+    }
+
     const updates = {};
     if (name !== undefined) updates.name = sanitizeFileName(name.trim());
     if (parentId !== undefined) {
@@ -136,6 +141,15 @@ router.patch("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const folder = await dbGetFolderById(id);
+
+    if (!folder) return res.status(404).json({ success: false, error: "Folder not found" });
+
+    const isAdmin = req.user?.role === "admin" || req.user?.email === "devv5412@gmail.com";
+    if (folder.user_id && req.userId && folder.user_id !== req.userId && !isAdmin) {
+      return res.status(403).json({ success: false, error: "Access denied. You do not own this folder." });
+    }
+
     await dbDeleteFolder(id);
     res.json({ success: true, message: "Folder permanently deleted" });
   } catch (err) {

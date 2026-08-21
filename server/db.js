@@ -173,55 +173,191 @@ export async function getSupabaseClient() {
   }
 }
 
+// Full bidirectional cloud sync from Supabase on server boot
+export async function syncFromSupabase() {
+  const supabase = await getSupabaseClient();
+  if (!supabase) {
+    console.log("ℹ️ Running in standalone SQLite mode (no Supabase configured).");
+    return;
+  }
+
+  const sqlite = await getSqliteDb();
+
+  try {
+    // 1. Sync Settings
+    const { data: settings } = await supabase.from("settings").select("*");
+    if (settings && settings.length > 0) {
+      for (const s of settings) {
+        await sqlite.run(
+          "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+          [s.key, s.value]
+        );
+      }
+    }
+
+    // 2. Sync Users
+    const { data: users, error: userErr } = await supabase.from("users").select("*");
+    if (userErr) {
+      console.warn("⚠️ Supabase sync users warning:", userErr.message);
+    } else if (users && users.length > 0) {
+      for (const u of users) {
+        await sqlite.run(
+          `INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, role, status, avatar_url, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            email = excluded.email,
+            password_hash = excluded.password_hash,
+            pin_hash = excluded.pin_hash,
+            is_2fa_enabled = excluded.is_2fa_enabled,
+            role = excluded.role,
+            status = excluded.status,
+            avatar_url = excluded.avatar_url`,
+          [
+            u.id,
+            u.name,
+            u.email.toLowerCase(),
+            u.password_hash,
+            u.pin_hash || null,
+            u.is_2fa_enabled || 0,
+            u.role || (u.email.toLowerCase() === "devv5412@gmail.com" ? "admin" : "user"),
+            u.status || "active",
+            u.avatar_url || null,
+            u.created_at || new Date().toISOString(),
+            u.updated_at || new Date().toISOString()
+          ]
+        );
+      }
+      console.log(`✅ Synced ${users.length} user(s) from Supabase.`);
+    }
+
+    // 3. Sync Folders
+    const { data: folders, error: folderErr } = await supabase.from("folders").select("*");
+    if (!folderErr && folders && folders.length > 0) {
+      for (const f of folders) {
+        await sqlite.run(
+          `INSERT INTO folders (id, user_id, name, color, parent_id, is_starred, is_trash, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            color = excluded.color,
+            parent_id = excluded.parent_id,
+            is_starred = excluded.is_starred,
+            is_trash = excluded.is_trash`,
+          [
+            f.id,
+            f.user_id || null,
+            f.name,
+            f.color || "#4285f4",
+            f.parent_id,
+            f.is_starred || 0,
+            f.is_trash || 0,
+            f.created_at || new Date().toISOString(),
+            f.updated_at || new Date().toISOString()
+          ]
+        );
+      }
+    }
+
+    // 4. Sync Files
+    const { data: files, error: fileErr } = await supabase.from("files").select("*");
+    if (!fileErr && files && files.length > 0) {
+      for (const file of files) {
+        await sqlite.run(
+          `INSERT INTO files (
+            id, user_id, name, folder_id, size, mime_type, type, source_type,
+            telegram_file_id, telegram_message_id, telegram_channel_id,
+            telegram_post_url, telegram_channel_title, telegram_access_hash,
+            telegram_file_reference, thumbnail_url, is_starred, is_trash, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            folder_id = excluded.folder_id,
+            size = excluded.size,
+            mime_type = excluded.mime_type,
+            type = excluded.type,
+            source_type = excluded.source_type,
+            telegram_file_id = excluded.telegram_file_id,
+            telegram_message_id = excluded.telegram_message_id,
+            telegram_channel_id = excluded.telegram_channel_id,
+            telegram_post_url = excluded.telegram_post_url,
+            telegram_channel_title = excluded.telegram_channel_title,
+            is_starred = excluded.is_starred,
+            is_trash = excluded.is_trash`,
+          [
+            file.id,
+            file.user_id || null,
+            file.name,
+            file.folder_id || null,
+            file.size || 0,
+            file.mime_type,
+            file.type,
+            file.source_type || "upload",
+            file.telegram_file_id || null,
+            file.telegram_message_id || null,
+            file.telegram_channel_id || null,
+            file.telegram_post_url || null,
+            file.telegram_channel_title || null,
+            file.telegram_access_hash || null,
+            file.telegram_file_reference || null,
+            file.thumbnail_url || null,
+            file.is_starred || 0,
+            file.is_trash || 0,
+            file.created_at || new Date().toISOString(),
+            file.updated_at || new Date().toISOString()
+          ]
+        );
+      }
+    }
+
+    // 5. Sync Telegram Active Session
+    const { data: sessionData, error: sessErr } = await supabase
+      .from("telegram_sessions")
+      .select("*")
+      .eq("is_active", 1)
+      .maybeSingle();
+
+    if (!sessErr && sessionData) {
+      const infoStr = typeof sessionData.user_info === "object" ? JSON.stringify(sessionData.user_info) : sessionData.user_info;
+      let parsedInfo = {};
+      try {
+        parsedInfo = JSON.parse(infoStr);
+      } catch {}
+
+      await sqlite.run(
+        `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+          session_string = excluded.session_string,
+          user_info = excluded.user_info,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          username = excluded.username,
+          is_active = excluded.is_active`,
+        [
+          sessionData.id,
+          sessionData.phone_number,
+          sessionData.session_string,
+          infoStr,
+          sessionData.first_name || parsedInfo.firstName || null,
+          sessionData.last_name || parsedInfo.lastName || null,
+          sessionData.username || parsedInfo.username || null,
+          sessionData.is_active
+        ]
+      );
+    }
+  } catch (err) {
+    console.error("❌ Supabase bootstrap sync error:", err.message);
+  }
+}
+
 // Initial Database Boot & Background Session Cache
 export async function getDb() {
   const sqlite = await getSqliteDb();
-  // Auto-sync active Telegram session from Supabase on boot
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        const { data } = await supabase
-          .from("telegram_sessions")
-          .select("*")
-          .eq("is_active", 1)
-          .maybeSingle();
-
-        if (data) {
-          const infoStr = typeof data.user_info === "object" ? JSON.stringify(data.user_info) : data.user_info;
-          let parsedInfo = {};
-          try {
-            parsedInfo = JSON.parse(infoStr);
-          } catch {}
-
-          await sqlite.run(
-            `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-              session_string = excluded.session_string,
-              user_info = excluded.user_info,
-              first_name = excluded.first_name,
-              last_name = excluded.last_name,
-              username = excluded.username,
-              is_active = excluded.is_active`,
-            [
-              data.id,
-              data.phone_number,
-              data.session_string,
-              infoStr,
-              parsedInfo.firstName || null,
-              parsedInfo.lastName || null,
-              parsedInfo.username || null,
-              data.is_active
-            ]
-          );
-        }
-      }
-    } catch (e) {
-      console.warn("Bootstrap telegram session cache warning:", e.message);
-    }
-  })();
-
+  // Auto-sync full cloud data from Supabase on boot asynchronously
+  syncFromSupabase().catch((e) => {
+    console.warn("Bootstrap cloud sync warning:", e.message);
+  });
   return sqlite;
 }
 
@@ -230,35 +366,107 @@ export async function getDb() {
 // ==========================================
 
 export async function dbFindUserByEmail(email) {
+  if (!email) return null;
+  const cleanEmail = email.trim().toLowerCase();
   const sqlite = await getSqliteDb();
-  const user = await sqlite.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
+  const user = await sqlite.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [cleanEmail]);
   if (user) return user;
 
   const supabase = await getSupabaseClient();
   if (supabase) {
-    const { data } = await supabase.from("users").select("*").ilike("email", email.trim()).maybeSingle();
-    if (data) return data;
+    try {
+      const { data, error } = await supabase.from("users").select("*").ilike("email", cleanEmail).maybeSingle();
+      if (error) {
+        console.warn("Supabase find user by email warning:", error.message);
+      }
+      if (data) {
+        // Cache user into SQLite for instant fast query resolution
+        await sqlite.run(
+          `INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, role, status, avatar_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            email = excluded.email,
+            password_hash = excluded.password_hash,
+            pin_hash = excluded.pin_hash,
+            is_2fa_enabled = excluded.is_2fa_enabled,
+            role = excluded.role,
+            status = excluded.status,
+            avatar_url = excluded.avatar_url`,
+          [
+            data.id,
+            data.name,
+            data.email.toLowerCase(),
+            data.password_hash,
+            data.pin_hash || null,
+            data.is_2fa_enabled || 0,
+            data.role || (data.email.toLowerCase() === "devv5412@gmail.com" ? "admin" : "user"),
+            data.status || "active",
+            data.avatar_url || null
+          ]
+        );
+        return data;
+      }
+    } catch (err) {
+      console.warn("Supabase dbFindUserByEmail catch:", err.message);
+    }
   }
   return null;
 }
 
 export async function dbFindUserById(id) {
+  if (!id) return null;
   const sqlite = await getSqliteDb();
   const user = await sqlite.get("SELECT * FROM users WHERE id = ?", [id]);
   if (user) return user;
 
   const supabase = await getSupabaseClient();
   if (supabase) {
-    const { data } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
-    if (data) return data;
+    try {
+      const { data, error } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
+      if (error) {
+        console.warn("Supabase find user by id warning:", error.message);
+      }
+      if (data) {
+        await sqlite.run(
+          `INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, role, status, avatar_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            email = excluded.email,
+            password_hash = excluded.password_hash,
+            pin_hash = excluded.pin_hash,
+            is_2fa_enabled = excluded.is_2fa_enabled,
+            role = excluded.role,
+            status = excluded.status,
+            avatar_url = excluded.avatar_url`,
+          [
+            data.id,
+            data.name,
+            data.email.toLowerCase(),
+            data.password_hash,
+            data.pin_hash || null,
+            data.is_2fa_enabled || 0,
+            data.role || (data.email.toLowerCase() === "devv5412@gmail.com" ? "admin" : "user"),
+            data.status || "active",
+            data.avatar_url || null
+          ]
+        );
+        return data;
+      }
+    } catch (err) {
+      console.warn("Supabase dbFindUserById catch:", err.message);
+    }
   }
   return null;
 }
 
 export async function dbCreateUser(userRecord) {
+  const role = userRecord.role || (userRecord.email.toLowerCase() === "devv5412@gmail.com" ? "admin" : "user");
+  const status = userRecord.status || "active";
   const sqlite = await getSqliteDb();
   await sqlite.run(
-    "INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, role, status, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       userRecord.id,
       userRecord.name,
@@ -266,6 +474,8 @@ export async function dbCreateUser(userRecord) {
       userRecord.password_hash,
       userRecord.pin_hash || null,
       userRecord.is_2fa_enabled || 0,
+      role,
+      status,
       userRecord.avatar_url || null
     ]
   );
@@ -281,6 +491,8 @@ export async function dbCreateUser(userRecord) {
           password_hash: userRecord.password_hash,
           pin_hash: userRecord.pin_hash || null,
           is_2fa_enabled: userRecord.is_2fa_enabled || 0,
+          role,
+          status,
           avatar_url: userRecord.avatar_url || null
         });
       }

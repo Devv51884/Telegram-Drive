@@ -344,6 +344,11 @@ router.patch("/:id", async (req, res) => {
     const file = await dbGetFileById(id);
     if (!file) return res.status(404).json({ success: false, error: "File not found" });
 
+    const isAdmin = req.user?.role === "admin" || req.user?.email === "devv5412@gmail.com";
+    if (file.user_id && req.userId && file.user_id !== req.userId && !isAdmin) {
+      return res.status(403).json({ success: false, error: "Access denied. You do not own this file." });
+    }
+
     const updates = {};
     if (name !== undefined) updates.name = sanitizeFileName(name.trim());
     if (folderId !== undefined) updates.folder_id = folderId === "root" || !folderId ? null : folderId;
@@ -364,6 +369,11 @@ router.delete("/:id", async (req, res) => {
     const file = await dbGetFileById(id);
 
     if (!file) return res.status(404).json({ success: false, error: "File not found" });
+
+    const isAdmin = req.user?.role === "admin" || req.user?.email === "devv5412@gmail.com";
+    if (file.user_id && req.userId && file.user_id !== req.userId && !isAdmin) {
+      return res.status(403).json({ success: false, error: "Access denied. You do not own this file." });
+    }
 
     if (file.telegram_message_id && file.telegram_channel_id && file.source_type === "upload") {
       await deleteTelegramMessage(file.telegram_message_id, file.telegram_channel_id);

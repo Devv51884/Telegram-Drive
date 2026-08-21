@@ -103,27 +103,23 @@ export async function verifySessionToken(token) {
   }
 }
 
-// 3. Ultra-Fast Authentication Middleware with in-memory caching
+// 3. Ultra-Fast Authentication Middleware with strict path checking
 export async function requireAuth(req, res, next) {
-  const fullUrl = req.originalUrl || req.url || "";
-  const path = req.path || "";
+  const reqPath = req.path || "";
+  const baseUrl = req.baseUrl || "";
+  const fullApiPath = (baseUrl + reqPath).split("?")[0];
 
-  // Public paths that do not require authentication
-  const isPublic =
-    path === "/health" ||
-    path === "/settings/auth/status" ||
-    path === "/settings/auth/login" ||
-    path === "/settings/auth/setup" ||
-    path === "/auth/login" ||
-    path === "/auth/signup" ||
-    fullUrl.includes("/api/health") ||
-    fullUrl.includes("/api/settings/auth/status") ||
-    fullUrl.includes("/api/settings/auth/login") ||
-    fullUrl.includes("/api/settings/auth/setup") ||
-    fullUrl.includes("/api/auth/login") ||
-    fullUrl.includes("/api/auth/signup");
+  // Whitelist of strictly public endpoints that do not require authentication
+  const publicPaths = [
+    "/api/health",
+    "/api/auth/login",
+    "/api/auth/signup",
+    "/api/settings/auth/status",
+    "/api/settings/auth/login",
+    "/api/settings/auth/setup"
+  ];
 
-  if (isPublic) {
+  if (publicPaths.includes(fullApiPath) || reqPath === "/health") {
     return next();
   }
 
@@ -138,16 +134,10 @@ export async function requireAuth(req, res, next) {
     token = req.headers["x-access-token"];
   }
 
-  // Master password fallback check if present
-  const masterHash = await getMasterPasswordHash();
-
   if (!token) {
-    if (!masterHash) {
-      return next();
-    }
     return res.status(401).json({
       success: false,
-      error: "Authentication required. Please login or enter your password to access TeleDrive."
+      error: "Authentication required. Please sign in to access TeleDrive."
     });
   }
 
@@ -155,7 +145,7 @@ export async function requireAuth(req, res, next) {
   if (!payload) {
     return res.status(401).json({
       success: false,
-      error: "Session invalid or expired. Please login again."
+      error: "Session invalid or expired. Please sign in again."
     });
   }
 

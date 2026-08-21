@@ -1,35 +1,57 @@
--- TeleDrive Supabase PostgreSQL Database Schema
+-- ========================================================
+-- TeleDrive Supabase PostgreSQL Database Schema & Migration
 -- Run this SQL in your Supabase Project -> SQL Editor
+-- ========================================================
 
--- 1. Create Users Table
+-- 1. Create / Update Users Table
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    pin_hash TEXT,
+    is_2fa_enabled INTEGER DEFAULT 0,
+    role TEXT DEFAULT 'user',
+    status TEXT DEFAULT 'active',
     avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 2. Create Settings table
+-- Migrations for existing user tables
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_2fa_enabled INTEGER DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+-- 2. Create / Update Settings Table
 CREATE TABLE IF NOT EXISTS public.settings (
     key TEXT PRIMARY KEY,
     value TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Create Telegram Sessions table
+-- 3. Create / Update Telegram Sessions Table
 CREATE TABLE IF NOT EXISTS public.telegram_sessions (
     id TEXT PRIMARY KEY,
     phone_number TEXT,
     session_string TEXT,
     user_info TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    username TEXT,
     is_active INTEGER DEFAULT 1,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Create Folders table
+ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS first_name TEXT;
+ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS last_name TEXT;
+ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- 4. Create / Update Folders Table
 CREATE TABLE IF NOT EXISTS public.folders (
     id TEXT PRIMARY KEY,
     user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
@@ -42,7 +64,11 @@ CREATE TABLE IF NOT EXISTS public.folders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. Create Files table
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS is_trash INTEGER DEFAULT 0;
+
+-- 5. Create / Update Files Table
 CREATE TABLE IF NOT EXISTS public.files (
     id TEXT PRIMARY KEY,
     user_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
@@ -50,8 +76,8 @@ CREATE TABLE IF NOT EXISTS public.files (
     folder_id TEXT REFERENCES public.folders(id) ON DELETE SET NULL,
     size BIGINT DEFAULT 0,
     mime_type TEXT,
-    type TEXT, -- video, image, pdf, audio, document, archive, other
-    source_type TEXT DEFAULT 'upload', -- 'upload', 'telegram_post', 'demo'
+    type TEXT,
+    source_type TEXT DEFAULT 'upload',
     telegram_file_id TEXT,
     telegram_message_id TEXT,
     telegram_channel_id TEXT,
@@ -66,14 +92,30 @@ CREATE TABLE IF NOT EXISTS public.files (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable Row Level Security (RLS)
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'upload';
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_channel_title TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS is_trash INTEGER DEFAULT 0;
+
+-- 6. Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.folders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
 
--- Create open access policies for anon / service role
+-- 7. Drop and Recreate Open Access Policies for Backend Service/Anon Key
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Allow all operations on users" ON public.users;
+    DROP POLICY IF EXISTS "Allow all operations on settings" ON public.settings;
+    DROP POLICY IF EXISTS "Allow all operations on telegram_sessions" ON public.telegram_sessions;
+    DROP POLICY IF EXISTS "Allow all operations on folders" ON public.folders;
+    DROP POLICY IF EXISTS "Allow all operations on files" ON public.files;
+END
+$$;
+
 CREATE POLICY "Allow all operations on users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on settings" ON public.settings FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on telegram_sessions" ON public.telegram_sessions FOR ALL USING (true) WITH CHECK (true);

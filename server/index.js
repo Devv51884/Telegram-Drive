@@ -24,6 +24,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Enable reverse proxy trust for Render / Cloudflare rate-limiting
+app.set("trust proxy", 1);
+
 // Security Middleware 1: Helmet HTTP Headers
 app.use(
   helmet({
