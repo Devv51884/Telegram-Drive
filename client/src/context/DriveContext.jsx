@@ -7,6 +7,7 @@ export function DriveProvider({ children }) {
   // Authentication & Security State
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   // Helper to persist navigation across page reloads
   const getInitialFolder = () => {
     try {
