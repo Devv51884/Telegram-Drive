@@ -12,7 +12,8 @@ import {
   Cloud,
   CheckCircle2,
   UserCheck,
-  Lock
+  Lock,
+  Shield
 } from "lucide-react";
 
 export default function Sidebar() {
