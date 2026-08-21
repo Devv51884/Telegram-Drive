@@ -716,9 +716,10 @@ export function DriveProvider({ children }) {
     logoutUser,
     checkAuth,
 
-    // Navigation
+    // Location & Navigation
     section,
     setSection: navigateToSection,
+    navigateToSection,
     currentFolderId,
     openFolder,
     breadcrumbs,

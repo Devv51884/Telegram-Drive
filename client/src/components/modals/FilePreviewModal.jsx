@@ -39,6 +39,29 @@ export default function FilePreviewModal() {
 
   const videoRef = useRef(null);
 
+  const handleClose = () => {
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+        videoRef.current.removeAttribute("src");
+        videoRef.current.load();
+      } catch {}
+    }
+    setPreviewItem(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (videoRef.current) {
+        try {
+          videoRef.current.pause();
+          videoRef.current.removeAttribute("src");
+          videoRef.current.load();
+        } catch {}
+      }
+    };
+  }, []);
+
   const formatBytes = (bytes) => {
     if (!bytes || bytes === 0) return "0 B";
     const k = 1024;
@@ -276,7 +299,7 @@ export default function FilePreviewModal() {
           <div className="h-4 w-px bg-slate-800 mx-1" />
 
           <button
-            onClick={() => setPreviewItem(null)}
+            onClick={handleClose}
             className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             title="Close"
           >
@@ -328,9 +351,10 @@ export default function FilePreviewModal() {
               <video
                 key={previewItem.id}
                 ref={videoRef}
+                src={streamUrl}
                 controls
                 autoPlay
-                preload="auto"
+                preload="metadata"
                 playsInline
                 onLoadedMetadata={() => setVideoLoading(false)}
                 onLoadedData={() => {
@@ -350,7 +374,6 @@ export default function FilePreviewModal() {
                 }}
                 className="w-full h-full max-h-[78vh] object-contain rounded-3xl"
               >
-                <source src={streamUrl} type="video/mp4" />
                 Your browser does not support HTML5 video streaming.
               </video>
             )}
