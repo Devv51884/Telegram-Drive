@@ -99,52 +99,69 @@ export default function UploadModal() {
     const controller = new AbortController();
     let lastLoaded = 0;
     let lastTime = Date.now();
+    let pollInterval = null;
 
     updateItem(item.id, {
       status: "uploading",
       percent: 1,
       loadedBytes: 0,
-      phase: "Starting upload...",
+      phase: "Connecting to Telegram Cloud...",
       controller
     });
 
-    try {
-      await DriveAPI.uploadFile(
-        item.file,
-        currentFolderId,
-        (progress) => {
+    // Start background real-time byte stream poller from backend
+    pollInterval = setInterval(async () => {
+      if (controller.signal.aborted) {
+        clearInterval(pollInterval);
+        return;
+      }
+      try {
+        const res = await DriveAPI.getUploadProgress(item.id);
+        if (res.success && res.progress) {
+          const p = res.progress;
           const now = Date.now();
           const timeDiff = (now - lastTime) / 1000;
           let speedStr = "";
           let etaStr = "";
 
-          if (timeDiff >= 0.3 && progress.loaded > lastLoaded) {
-            const bytesDiff = progress.loaded - lastLoaded;
+          if (timeDiff >= 0.3 && p.loaded > lastLoaded) {
+            const bytesDiff = p.loaded - lastLoaded;
             const bytesPerSec = bytesDiff / timeDiff;
             speedStr = `${formatBytes(bytesPerSec)}/s`;
             if (bytesPerSec > 0) {
-              const remainingBytes = item.size - progress.loaded;
+              const remainingBytes = (p.total || item.size) - p.loaded;
               etaStr = formatETA(remainingBytes / bytesPerSec);
             }
-            lastLoaded = progress.loaded;
+            lastLoaded = p.loaded;
             lastTime = now;
           }
 
-          const percent = progress.percent;
+          const currentPercent = Math.min(99, Math.max(1, p.percent || 1));
           updateItem(item.id, {
-            loadedBytes: progress.loaded,
-            percent: percent,
+            loadedBytes: p.loaded || 0,
+            percent: currentPercent,
             speed: speedStr || item.speed,
             eta: etaStr || item.eta,
-            phase:
-              percent >= 100
-                ? "Storing in Telegram Storage Channel..."
-                : `Uploading (${percent}%)`
+            phase: `Uploading to Telegram Cloud (${currentPercent}%)`
           });
-        },
+
+          if (p.status === "done") {
+            clearInterval(pollInterval);
+          }
+        }
+      } catch {}
+    }, 250);
+
+    try {
+      await DriveAPI.uploadFile(
+        item.file,
+        currentFolderId,
+        null,
         controller.signal,
         item.id
       );
+
+      clearInterval(pollInterval);
 
       updateItem(item.id, {
         status: "done",
@@ -156,6 +173,7 @@ export default function UploadModal() {
       });
       refresh();
     } catch (err) {
+      clearInterval(pollInterval);
       if (err.name === "CanceledError" || err.message === "canceled" || controller.signal.aborted) {
         updateItem(item.id, {
           status: "cancelled",
@@ -307,10 +325,10 @@ export default function UploadModal() {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800 dark:text-white">
-                Upload Files to Telegram
+                Upload Files to Telegram Cloud
               </h3>
               <p className="text-xs text-slate-400">
-                Live byte tracking, speed, ETA & cancel support
+                100% Real-time byte sync, speed & remaining time
               </p>
             </div>
           </div>

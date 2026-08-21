@@ -598,50 +598,69 @@ export async function parseAndFetchTelegramPost(postUrl) {
   }
 }
 
+// In-memory media location cache to eliminate MTProto roundtrips on range requests
+const mediaLocationCache = new Map();
+
 // Download/Stream chunk from GramJS MTProto message with HTTP Range support
 export async function streamGramMedia(channelId, messageId, rangeHeader, req, res, mimeType, fileName) {
   const client = await getGramClient();
-  let peer = channelId;
-  const msgId = parseInt(messageId, 10);
-
-  const messages = await client.getMessages(peer, { ids: [msgId] });
-  if (!messages || messages.length === 0 || !messages[0] || !messages[0].media) {
-    res.status(404).send("Telegram media not found");
+  if (!client) {
+    res.status(503).send("Telegram streaming service unavailable");
     return;
   }
 
-  const msg = messages[0];
-  const media = msg.media;
-  let totalSize = 0;
-  let location = null;
-  let dcId = undefined;
+  const cacheKey = `${channelId}_${messageId}`;
+  let mediaCache = mediaLocationCache.get(cacheKey);
 
-  if (media.document) {
-    const doc = media.document;
-    totalSize = Number(doc.size || 0);
-    location = new Api.InputDocumentFileLocation({
-      id: doc.id,
-      accessHash: doc.accessHash,
-      fileReference: doc.fileReference,
-      thumbSize: ""
-    });
-    dcId = doc.dcId;
-  } else if (media.photo) {
-    const photo = media.photo;
-    const sizes = photo.sizes || [];
-    const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
-    totalSize = Number(largest?.size || (largest?.bytes ? largest.bytes.length : 1024 * 500));
-    location = new Api.InputPhotoFileLocation({
-      id: photo.id,
-      accessHash: photo.accessHash,
-      fileReference: photo.fileReference,
-      thumbSize: largest?.type || "y"
-    });
-    dcId = photo.dcId;
-  } else {
-    res.status(400).send("Unsupported media type for streaming");
-    return;
+  if (!mediaCache) {
+    let peer = channelId;
+    const msgId = parseInt(messageId, 10);
+
+    const messages = await client.getMessages(peer, { ids: [msgId] });
+    if (!messages || messages.length === 0 || !messages[0] || !messages[0].media) {
+      res.status(404).send("Telegram media not found");
+      return;
+    }
+
+    const msg = messages[0];
+    const media = msg.media;
+    let totalSize = 0;
+    let location = null;
+    let dcId = undefined;
+
+    if (media.document) {
+      const doc = media.document;
+      totalSize = Number(doc.size || 0);
+      location = new Api.InputDocumentFileLocation({
+        id: doc.id,
+        accessHash: doc.accessHash,
+        fileReference: doc.fileReference,
+        thumbSize: ""
+      });
+      dcId = doc.dcId;
+    } else if (media.photo) {
+      const photo = media.photo;
+      const sizes = photo.sizes || [];
+      const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
+      totalSize = Number(largest?.size || (largest?.bytes ? largest.bytes.length : 1024 * 500));
+      location = new Api.InputPhotoFileLocation({
+        id: photo.id,
+        accessHash: photo.accessHash,
+        fileReference: photo.fileReference,
+        thumbSize: largest?.type || "y"
+      });
+      dcId = photo.dcId;
+    } else {
+      res.status(400).send("Unsupported media type for streaming");
+      return;
+    }
+
+    mediaCache = { totalSize, location, dcId };
+    mediaLocationCache.set(cacheKey, mediaCache);
+    setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
   }
+
+  const { totalSize, location, dcId } = mediaCache;
 
   const lowerName = (fileName || "").toLowerCase();
   let contentType = mimeType || "application/octet-stream";

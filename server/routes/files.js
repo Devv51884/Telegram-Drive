@@ -216,8 +216,8 @@ router.get("/:id/stream", async (req, res) => {
 
     const range = req.headers.range;
 
-    // Strategy 1: Bot API File Id (Fast Direct Bot CDN Streaming for all uploaded files)
-    if (file.telegram_file_id) {
+    // Strategy 1: Bot API File Id (Fast Direct Bot CDN Streaming for small files <= 20MB)
+    if (file.telegram_file_id && (!file.size || file.size <= 20 * 1024 * 1024)) {
       try {
         const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
         const headers = { "User-Agent": "TeleDrive/1.0" };
@@ -228,7 +228,7 @@ router.get("/:id/stream", async (req, res) => {
           url: downloadUrl,
           responseType: "stream",
           headers,
-          timeout: 0
+          timeout: 5000
         });
 
         const isPdf = file.name?.toLowerCase().endsWith(".pdf") || file.mime_type === "application/pdf";
