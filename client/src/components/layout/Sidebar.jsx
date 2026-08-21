@@ -150,6 +150,15 @@ export default function Sidebar() {
             <Trash2 className="w-4 h-4 text-rose-500" />
             <span>Trash</span>
           </div>
+
+          {/* Admin Panel Button */}
+          <div
+            onClick={() => setActiveModal("admin")}
+            className="flex items-center gap-3 px-4 py-2 mt-2 rounded-full text-sm font-medium cursor-pointer transition-all bg-gradient-to-r from-purple-500/10 to-indigo-500/10 hover:from-purple-500/20 hover:to-indigo-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+          >
+            <Shield className="w-4 h-4 text-purple-500" />
+            <span className="font-semibold">Admin Panel</span>
+          </div>
         </nav>
       </div>
 

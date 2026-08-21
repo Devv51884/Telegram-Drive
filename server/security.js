@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
-import { dbGetSetting, dbSetSetting } from "./db.js";
+import { dbGetSetting, dbSetSetting, dbFindUserById } from "./db.js";
 
 // Persistent in-memory cached server secret key for HMAC token signing
 let cachedServerSecret = null;
@@ -162,6 +162,27 @@ export async function requireAuth(req, res, next) {
   req.user = payload;
   req.userId = payload.userId || null;
 
+  next();
+}
+
+// Admin authorization middleware
+export async function requireAdmin(req, res, next) {
+  const userId = req.userId || req.user?.userId;
+  if (!userId) {
+    return res.status(401).json({ success: false, error: "Authentication required for admin access." });
+  }
+
+  const user = await dbFindUserById(userId);
+  if (!user) {
+    return res.status(401).json({ success: false, error: "User account not found." });
+  }
+
+  const isAdmin = user.role === "admin" || user.email === "devv5412@gmail.com";
+  if (!isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied. Administrator privileges required." });
+  }
+
+  req.adminUser = user;
   next();
 }
 

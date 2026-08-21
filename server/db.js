@@ -44,6 +44,8 @@ export async function getSqliteDb() {
       password_hash TEXT NOT NULL,
       pin_hash TEXT,
       is_2fa_enabled INTEGER DEFAULT 0,
+      role TEXT DEFAULT 'user',
+      status TEXT DEFAULT 'active',
       avatar_url TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -110,6 +112,15 @@ export async function getSqliteDb() {
   } catch {}
   try {
     await db.exec("ALTER TABLE users ADD COLUMN is_2fa_enabled INTEGER DEFAULT 0;");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user';");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';");
+  } catch {}
+  try {
+    await db.exec("UPDATE users SET role = 'admin' WHERE email = 'devv5412@gmail.com' OR id IN (SELECT id FROM users ORDER BY created_at ASC LIMIT 1);");
   } catch {}
   try {
     await db.exec("ALTER TABLE folders ADD COLUMN user_id TEXT;");
@@ -717,4 +728,107 @@ export function detectFileType(mimeType, fileName = "") {
     return "archive";
   }
   return "other";
+}
+
+// ==========================================
+// ADMIN DASHBOARD & MANAGEMENT QUERIES
+// ==========================================
+
+export async function dbGetAdminOverview() {
+  const sqlite = await getSqliteDb();
+  const totalUsers = (await sqlite.get("SELECT COUNT(*) as count FROM users"))?.count || 0;
+  const totalFiles = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE is_trash = 0"))?.count || 0;
+  const totalFolders = (await sqlite.get("SELECT COUNT(*) as count FROM folders WHERE is_trash = 0"))?.count || 0;
+  const totalStorage = (await sqlite.get("SELECT SUM(size) as total FROM files WHERE is_trash = 0"))?.total || 0;
+  const totalUploaded = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE source_type = 'upload' AND is_trash = 0"))?.count || 0;
+  const totalImports = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE source_type = 'telegram_post' AND is_trash = 0"))?.count || 0;
+  const todayUploads = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE created_at >= datetime('now', '-1 day')"))?.count || 0;
+  const todayBandwidth = (await sqlite.get("SELECT SUM(size) as total FROM files WHERE created_at >= datetime('now', '-1 day')"))?.total || 0;
+
+  const typeStats = await sqlite.all("SELECT type, COUNT(*) as count, SUM(size) as size FROM files WHERE is_trash = 0 GROUP BY type");
+  const recentFiles = await sqlite.all(`
+    SELECT f.id, f.name, f.size, f.type, f.mime_type, f.source_type, f.created_at, f.telegram_channel_id, f.telegram_message_id, u.name as user_name, u.email as user_email 
+    FROM files f 
+    LEFT JOIN users u ON f.user_id = u.id 
+    ORDER BY f.created_at DESC 
+    LIMIT 10
+  `);
+
+  return {
+    totalUsers,
+    totalFiles,
+    totalFolders,
+    totalStorage,
+    totalUploaded,
+    totalImports,
+    todayUploads,
+    todayBandwidth,
+    typeStats,
+    recentFiles
+  };
+}
+
+export async function dbGetAllUsersWithStats() {
+  const sqlite = await getSqliteDb();
+  const users = await sqlite.all(`
+    SELECT 
+      u.id, 
+      u.name, 
+      u.email, 
+      COALESCE(u.role, 'user') as role, 
+      COALESCE(u.status, 'active') as status, 
+      u.is_2fa_enabled, 
+      u.avatar_url, 
+      u.created_at, 
+      u.updated_at,
+      COUNT(f.id) as file_count,
+      COALESCE(SUM(f.size), 0) as storage_used
+    FROM users u
+    LEFT JOIN files f ON f.user_id = u.id AND f.is_trash = 0
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+  `);
+  return users;
+}
+
+export async function dbGetAllFilesAdmin({ search, type, limit = 50, offset = 0 } = {}) {
+  const sqlite = await getSqliteDb();
+  let whereClauses = ["1=1"];
+  let params = [];
+
+  if (search) {
+    whereClauses.push("(f.name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (type && type !== "all") {
+    whereClauses.push("f.type = ?");
+    params.push(type);
+  }
+
+  const whereStr = whereClauses.join(" AND ");
+  const countRow = await sqlite.get(`SELECT COUNT(*) as total FROM files f LEFT JOIN users u ON f.user_id = u.id WHERE ${whereStr}`, params);
+  const files = await sqlite.all(`
+    SELECT 
+      f.*,
+      u.name as user_name,
+      u.email as user_email
+    FROM files f
+    LEFT JOIN users u ON f.user_id = u.id
+    WHERE ${whereStr}
+    ORDER BY f.created_at DESC
+    LIMIT ? OFFSET ?
+  `, [...params, limit, offset]);
+
+  return {
+    total: countRow?.total || 0,
+    files
+  };
+}
+
+export async function dbDeleteUserCascade(userId) {
+  const sqlite = await getSqliteDb();
+  await sqlite.run("DELETE FROM files WHERE user_id = ?", [userId]);
+  await sqlite.run("DELETE FROM folders WHERE user_id = ?", [userId]);
+  await sqlite.run("DELETE FROM users WHERE id = ?", [userId]);
+  return { success: true };
 }

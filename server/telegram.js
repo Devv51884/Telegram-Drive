@@ -705,12 +705,13 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
+      const sender = dcId ? await client.getSender(dcId) : client;
       let currentPos = start;
       while (currentPos <= end && !clientDisconnected && !res.writableEnded && !res.destroyed) {
         const alignedOffset = Math.floor(currentPos / RPC_CHUNK_SIZE) * RPC_CHUNK_SIZE;
         const offsetDiff = currentPos - alignedOffset;
 
-        const chunkResult = await client.invoke(
+        const chunkResult = await sender.send(
           new Api.upload.GetFile({
             location: location,
             offset: bigInt(alignedOffset),
@@ -758,9 +759,10 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
+      const sender = dcId ? await client.getSender(dcId) : client;
       let currentPos = 0;
       while (currentPos < totalSize && !clientDisconnected && !res.writableEnded && !res.destroyed) {
-        const chunkResult = await client.invoke(
+        const chunkResult = await sender.send(
           new Api.upload.GetFile({
             location: location,
             offset: bigInt(currentPos),

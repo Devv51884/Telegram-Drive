@@ -181,6 +181,16 @@ export default function Header() {
                 <button
                   onClick={() => {
                     setIsProfileOpen(false);
+                    setActiveModal("admin");
+                  }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-colors text-left font-semibold"
+                >
+                  <Shield className="w-4 h-4 text-purple-500" />
+                  <span>Admin Panel Control</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setIsProfileOpen(false);
                     setActiveModal("settings");
                   }}
                   className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"

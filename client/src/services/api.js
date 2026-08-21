@@ -105,7 +105,18 @@ export const DriveAPI = {
     return api.post("/settings/telegram-auth/send-code", payload).then((r) => r.data);
   },
   loginTelegram: (data) => api.post("/settings/telegram-auth/login", data).then((r) => r.data),
-  logoutTelegram: () => api.post("/settings/telegram-auth/logout").then((r) => r.data)
+  logoutTelegram: () => api.post("/settings/telegram-auth/logout").then((r) => r.data),
+
+  // Admin Panel APIs
+  getAdminOverview: () => api.get("/admin/overview").then((r) => r.data),
+  getAdminUsers: () => api.get("/admin/users").then((r) => r.data),
+  updateUserRole: (id, role) => api.post(`/admin/users/${id}/role`, { role }).then((r) => r.data),
+  updateUserStatus: (id, status) => api.post(`/admin/users/${id}/status`, { status }).then((r) => r.data),
+  adminResetPassword: (id, newPassword) => api.post(`/admin/users/${id}/reset-password`, { newPassword }).then((r) => r.data),
+  deleteAdminUser: (id) => api.delete(`/admin/users/${id}`).then((r) => r.data),
+  getAdminFiles: (params) => api.get("/admin/files", { params }).then((r) => r.data),
+  deleteAdminFile: (id) => api.delete(`/admin/files/${id}`).then((r) => r.data),
+  pingTelegramSystem: () => api.post("/admin/system/ping").then((r) => r.data)
 };
 
 export default DriveAPI;

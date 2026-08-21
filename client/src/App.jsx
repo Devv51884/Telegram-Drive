@@ -15,6 +15,7 @@ import MoveModal from "./components/modals/MoveModal.jsx";
 import RenameModal from "./components/modals/RenameModal.jsx";
 import FilePreviewModal from "./components/modals/FilePreviewModal.jsx";
 import SettingsModal from "./components/modals/SettingsModal.jsx";
+import AdminPanelModal from "./components/admin/AdminPanelModal.jsx";
 import DetailsDrawer from "./components/modals/DetailsDrawer.jsx";
 import AuthScreen from "./components/auth/AuthScreen.jsx";
 import { Loader2, CheckCircle2, AlertCircle, Info } from "lucide-react";
@@ -96,6 +97,7 @@ function DriveMain() {
       <RenameModal />
       <FilePreviewModal />
       <SettingsModal />
+      <AdminPanelModal />
 
       {/* Toast Notification Alert */}
       {toast && (
