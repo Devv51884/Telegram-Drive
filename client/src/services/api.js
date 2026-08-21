@@ -55,13 +55,13 @@ export const DriveAPI = {
   // Files
   uploadFile: (file, folderId, onProgress, signal, uploadId) => {
     const formData = new FormData();
-    formData.append("file", file);
-    if (folderId && folderId !== "root") {
-      formData.append("folderId", folderId);
-    }
     if (uploadId) {
       formData.append("uploadId", uploadId);
     }
+    if (folderId && folderId !== "root") {
+      formData.append("folderId", folderId);
+    }
+    formData.append("file", file);
     return api
       .post("/files/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },

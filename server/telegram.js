@@ -676,19 +676,19 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
   else if (lowerName.endsWith(".gif")) contentType = "image/gif";
   else if (lowerName.endsWith(".webp")) contentType = "image/webp";
 
-  const requestSize = 512 * 1024; // 512 KB chunk size
+  const RPC_CHUNK_SIZE = 512 * 1024; // 512 KB aligned chunks
 
   if (rangeHeader && totalSize > 0) {
     // Parse Range: bytes=start-end
     const parts = rangeHeader.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
-    const chunkSize = end - start + 1;
+    const requestedLength = end - start + 1;
 
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${totalSize}`,
       "Accept-Ranges": "bytes",
-      "Content-Length": chunkSize,
+      "Content-Length": requestedLength,
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(fileName || "media")}"`,
       "Cache-Control": "public, max-age=3600"
@@ -702,31 +702,40 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
-      const downloadIter = client.iterDownload({
-        file: location,
-        dcId: dcId,
-        offset: bigInt(start),
-        fileSize: bigInt(totalSize),
-        requestSize: requestSize,
-        stride: requestSize
-      });
+      let currentPos = start;
+      while (currentPos <= end && !clientDisconnected && !res.writableEnded && !res.destroyed) {
+        const alignedOffset = Math.floor(currentPos / RPC_CHUNK_SIZE) * RPC_CHUNK_SIZE;
+        const offsetDiff = currentPos - alignedOffset;
 
-      let bytesSent = 0;
-      for await (const chunk of downloadIter) {
-        if (clientDisconnected || res.writableEnded || res.destroyed) {
+        const chunkResult = await client.invoke(
+          new Api.upload.GetFile({
+            location: location,
+            offset: bigInt(alignedOffset),
+            limit: RPC_CHUNK_SIZE,
+            precise: true
+          })
+        );
+
+        if (!chunkResult || !chunkResult.bytes || chunkResult.bytes.length === 0) {
           break;
         }
-        const needed = chunkSize - bytesSent;
-        if (needed <= 0) break;
-        const chunkToSend = chunk.length > needed ? chunk.subarray(0, needed) : chunk;
-        res.write(chunkToSend);
-        bytesSent += chunkToSend.length;
-        if (bytesSent >= chunkSize) break;
+
+        const chunkBytes = chunkResult.bytes;
+        const availableInChunk = chunkBytes.length - offsetDiff;
+        if (availableInChunk <= 0) break;
+
+        const remainingToStream = end - currentPos + 1;
+        const sendLength = Math.min(availableInChunk, remainingToStream);
+
+        const sliceToSend = chunkBytes.subarray(offsetDiff, offsetDiff + sendLength);
+        res.write(sliceToSend);
+
+        currentPos += sendLength;
       }
       res.end();
     } catch (streamErr) {
-      console.error("GramJS range streaming error:", streamErr.message);
       if (!res.headersSent) res.status(500).send("Error streaming media");
+      else res.end();
     }
   } else {
     // Full content download / stream
@@ -746,23 +755,28 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
-      const downloadIter = client.iterDownload({
-        file: location,
-        dcId: dcId,
-        requestSize: requestSize,
-        stride: requestSize
-      });
+      let currentPos = 0;
+      while (currentPos < totalSize && !clientDisconnected && !res.writableEnded && !res.destroyed) {
+        const chunkResult = await client.invoke(
+          new Api.upload.GetFile({
+            location: location,
+            offset: bigInt(currentPos),
+            limit: RPC_CHUNK_SIZE,
+            precise: true
+          })
+        );
 
-      for await (const chunk of downloadIter) {
-        if (clientDisconnected || res.writableEnded || res.destroyed) {
+        if (!chunkResult || !chunkResult.bytes || chunkResult.bytes.length === 0) {
           break;
         }
-        res.write(chunk);
+
+        res.write(chunkResult.bytes);
+        currentPos += chunkResult.bytes.length;
       }
       res.end();
     } catch (streamErr) {
-      console.error("GramJS full stream error:", streamErr.message);
-      if (!res.headersSent) res.status(500).send("Error streaming media");
+      if (!res.headersSent) res.status(500).send("Error downloading file");
+      else res.end();
     }
   }
 }
