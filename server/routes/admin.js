@@ -1,5 +1,4 @@
 import express from "express";
-import bcrypt from "bcryptjs";
 import {
   dbGetAdminOverview,
   dbGetAllUsersWithStats,
@@ -12,10 +11,10 @@ import {
   dbGetSetting,
   dbSetSetting
 } from "../db.js";
-import { requireAdmin } from "../security.js";
+import { requireAdmin, hashPassword } from "../security.js";
 import {
   getGramClient,
-  getTelegramUserStatus,
+  getConnectedTelegramUser,
   deleteTelegramMessage
 } from "../telegram.js";
 import axios from "axios";
@@ -48,7 +47,7 @@ router.get("/overview", async (req, res) => {
     let mtprotoConnected = false;
     let mtprotoUser = null;
     try {
-      const tgStatus = await getTelegramUserStatus();
+      const tgStatus = await getConnectedTelegramUser();
       if (tgStatus.connected) {
         mtprotoConnected = true;
         mtprotoUser = tgStatus.info;
@@ -154,7 +153,7 @@ router.post("/users/:id/reset-password", async (req, res) => {
     const user = await dbFindUserById(id);
     if (!user) return res.status(404).json({ success: false, error: "User not found" });
 
-    const password_hash = await bcrypt.hash(newPassword, 10);
+    const password_hash = await hashPassword(newPassword);
     await dbUpdateUser(id, { password_hash });
 
     res.json({ success: true, message: `Password for ${user.name} has been reset successfully.` });
