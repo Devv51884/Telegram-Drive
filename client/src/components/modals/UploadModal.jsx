@@ -102,7 +102,7 @@ export default function UploadModal() {
       status: "uploading",
       percent: 1,
       loadedBytes: 0,
-      phase: "Connecting to Telegram Cloud...",
+      phase: "Uploading to server...",
       controller
     });
 
@@ -116,35 +116,15 @@ export default function UploadModal() {
         const res = await DriveAPI.getUploadProgress(item.id);
         if (res?.success && res?.progress) {
           const p = res.progress;
-          const now = Date.now();
-          const timeDiff = Math.max(0.1, (now - lastTime) / 1000);
-          let speedStr = "";
-          let etaStr = "";
-
           const pLoaded = Number(p.loaded) || 0;
           const pTotal = Number(p.total) || item.size || 1;
-
-          if (timeDiff >= 0.3 && pLoaded > lastLoaded) {
-            const bytesDiff = pLoaded - lastLoaded;
-            const bytesPerSec = bytesDiff / timeDiff;
-            speedStr = `${formatBytes(bytesPerSec)}/s`;
-            if (bytesPerSec > 0) {
-              const remainingBytes = Math.max(0, pTotal - pLoaded);
-              etaStr = formatETA(remainingBytes / bytesPerSec);
-            }
-            lastLoaded = pLoaded;
-            lastTime = now;
-          }
-
           const rawPercent = Number(p.percent) || Math.round((pLoaded * 100) / pTotal);
           const currentPercent = Math.min(99, Math.max(1, rawPercent));
 
           updateItem(item.id, {
             loadedBytes: pLoaded,
             percent: currentPercent,
-            speed: speedStr || item.speed || "",
-            eta: etaStr || item.eta || "",
-            phase: `Uploading to Telegram Cloud (${currentPercent}%)`
+            phase: `Saving to Telegram Cloud (${currentPercent}%)`
           });
 
           if (p.status === "done") {
@@ -152,13 +132,42 @@ export default function UploadModal() {
           }
         }
       } catch {}
-    }, 250);
+    }, 500);
 
     try {
       await DriveAPI.uploadFile(
         item.file,
         currentFolderId,
-        null,
+        (browserProgress) => {
+          const loaded = Number(browserProgress.loaded) || 0;
+          const total = Number(browserProgress.total) || item.size || 1;
+          const percent = Math.min(95, Math.round((loaded * 100) / total));
+
+          const now = Date.now();
+          const timeDiff = Math.max(0.1, (now - lastTime) / 1000);
+          let speedStr = "";
+          let etaStr = "";
+
+          if (timeDiff >= 0.3 && loaded > lastLoaded) {
+            const bytesDiff = loaded - lastLoaded;
+            const bytesPerSec = bytesDiff / timeDiff;
+            speedStr = `${formatBytes(bytesPerSec)}/s`;
+            if (bytesPerSec > 0) {
+              const remainingBytes = Math.max(0, total - loaded);
+              etaStr = formatETA(remainingBytes / bytesPerSec);
+            }
+            lastLoaded = loaded;
+            lastTime = now;
+          }
+
+          updateItem(item.id, {
+            loadedBytes: loaded,
+            percent: percent,
+            speed: speedStr,
+            eta: etaStr,
+            phase: percent >= 95 ? "Processing on Telegram Cloud..." : `Uploading (${percent}%)`
+          });
+        },
         controller.signal,
         item.id
       );
