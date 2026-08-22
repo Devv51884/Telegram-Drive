@@ -647,8 +647,7 @@ const mediaLocationCache = new Map();
 export async function streamGramMedia(channelId, messageId, rangeHeader, req, res, mimeType, fileName) {
   const client = await getGramClient();
   if (!client) {
-    res.status(503).send("Telegram streaming service unavailable");
-    return;
+    throw new Error("Telegram MTProto streaming client unavailable");
   }
 
   const cacheKey = `${channelId}_${messageId}`;
@@ -663,23 +662,25 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
       messages = await client.getMessages(peer, { ids: [msgId] });
     } catch (err1) {
       try {
-        if (typeof channelId === "string" && (channelId.startsWith("-100") || /^-?\d+$/.test(channelId))) {
-          const numId = bigInt(channelId);
+        const cleanId = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+        const numId = bigInt(cleanId);
+        try {
+          const inputPeer = await client.getInputEntity(numId);
+          messages = await client.getMessages(inputPeer, { ids: [msgId] });
+        } catch {
           try {
-            const inputPeer = await client.getInputEntity(numId);
-            messages = await client.getMessages(inputPeer, { ids: [msgId] });
-          } catch {
             messages = await client.getMessages(numId, { ids: [msgId] });
+          } catch {
+            messages = await client.getMessages(bigInt(`-100${cleanId}`), { ids: [msgId] });
           }
         }
       } catch (err2) {
-        console.error("Failed to get Telegram message for streaming:", err2.message);
+        console.warn("Peer resolution attempt failed:", err2.message);
       }
     }
 
     if (!messages || messages.length === 0 || !messages[0] || !messages[0].media) {
-      res.status(404).send("Telegram media not found");
-      return;
+      throw new Error(`Telegram media post #${msgId} not found in channel ${channelId}`);
     }
 
     const msg = messages[0];
@@ -711,8 +712,7 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
       });
       dcId = photo.dcId;
     } else {
-      res.status(400).send("Unsupported media type for streaming");
-      return;
+      throw new Error("Unsupported media type for MTProto streaming");
     }
 
     mediaCache = { totalSize, location, dcId };

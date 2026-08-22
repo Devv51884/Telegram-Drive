@@ -204,6 +204,132 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
   }
 });
 
+// Helper: Stream file via Telegram Bot CDN with precise HTTP 206 Range slicing
+async function streamTelegramBotFile(file, range, req, res) {
+  if (!file.telegram_file_id) {
+    throw new Error("No telegram_file_id available for Bot streaming");
+  }
+
+  const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
+  const totalSize = Number(file.size) || 0;
+
+  const lowerName = (file.name || "").toLowerCase();
+  let contentType = file.mime_type || "application/octet-stream";
+  if (lowerName.endsWith(".mp4") || file.mime_type?.includes("mp4")) contentType = "video/mp4";
+  else if (lowerName.endsWith(".webm") || file.mime_type?.includes("webm")) contentType = "video/webm";
+  else if (lowerName.endsWith(".mkv") || file.mime_type?.includes("matroska")) contentType = "video/x-matroska";
+  else if (lowerName.endsWith(".mov") || file.mime_type?.includes("quicktime")) contentType = "video/quicktime";
+  else if (lowerName.endsWith(".avi") || file.mime_type?.includes("avi")) contentType = "video/x-msvideo";
+  else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || file.mime_type?.includes("audio")) contentType = "audio/mpeg";
+  else if (lowerName.endsWith(".pdf") || file.mime_type === "application/pdf") contentType = "application/pdf";
+  else if (lowerName.endsWith(".png")) contentType = "image/png";
+  else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) contentType = "image/jpeg";
+  else if (lowerName.endsWith(".gif")) contentType = "image/gif";
+  else if (lowerName.endsWith(".webp")) contentType = "image/webp";
+
+  const axiosHeaders = { "User-Agent": "TeleDrive/1.0" };
+  if (range) axiosHeaders.Range = range;
+
+  const response = await axios({
+    method: "GET",
+    url: downloadUrl,
+    responseType: "stream",
+    headers: axiosHeaders,
+    timeout: 30000
+  });
+
+  const remoteContentLength = parseInt(response.headers["content-length"] || "0", 10);
+  const actualTotalSize = totalSize > 0 ? totalSize : remoteContentLength;
+
+  if (range && actualTotalSize > 0) {
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10) || 0;
+    const rawEnd = parts[1] ? parseInt(parts[1], 10) : actualTotalSize - 1;
+    const end = Math.min(rawEnd, actualTotalSize - 1);
+    const chunkLength = end - start + 1;
+
+    // If Telegram CDN natively returned 206
+    if (response.status === 206 && response.headers["content-range"]) {
+      res.writeHead(206, {
+        "Content-Range": response.headers["content-range"],
+        "Accept-Ranges": "bytes",
+        "Content-Length": response.headers["content-length"] || chunkLength,
+        "Content-Type": contentType,
+        "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
+        "Cache-Control": "public, max-age=86400"
+      });
+      response.data.pipe(res);
+      return;
+    }
+
+    // Telegram CDN returned HTTP 200 -> Slice stream in real-time into compliant HTTP 206
+    res.writeHead(206, {
+      "Content-Range": `bytes ${start}-${end}/${actualTotalSize}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunkLength,
+      "Content-Type": contentType,
+      "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
+      "Cache-Control": "public, max-age=86400"
+    });
+
+    let bytesRead = 0;
+    let bytesSent = 0;
+    let clientClosed = false;
+
+    req.on("close", () => {
+      clientClosed = true;
+      if (response.data?.destroy) response.data.destroy();
+    });
+
+    response.data.on("data", (chunk) => {
+      if (clientClosed || res.writableEnded || res.destroyed) return;
+      const chunkStart = bytesRead;
+      const chunkEnd = bytesRead + chunk.length - 1;
+      bytesRead += chunk.length;
+
+      // Skip chunks before requested range start
+      if (chunkEnd < start) return;
+
+      // Finish if chunk is beyond requested range end
+      if (chunkStart > end) {
+        if (!res.writableEnded && !res.destroyed) res.end();
+        if (response.data?.destroy) response.data.destroy();
+        return;
+      }
+
+      const sliceStart = Math.max(0, start - chunkStart);
+      const sliceEnd = Math.min(chunk.length, end - chunkStart + 1);
+      const slice = chunk.subarray(sliceStart, sliceEnd);
+
+      res.write(slice);
+      bytesSent += slice.length;
+
+      if (bytesSent >= chunkLength) {
+        if (!res.writableEnded && !res.destroyed) res.end();
+        if (response.data?.destroy) response.data.destroy();
+      }
+    });
+
+    response.data.on("end", () => {
+      if (!res.writableEnded && !res.destroyed) res.end();
+    });
+
+    response.data.on("error", () => {
+      if (!res.writableEnded && !res.destroyed) res.end();
+    });
+  } else {
+    // Full Stream (HTTP 200)
+    res.writeHead(200, {
+      "Content-Length": actualTotalSize > 0 ? actualTotalSize : undefined,
+      "Content-Type": contentType,
+      "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "public, max-age=86400"
+    });
+    response.data.pipe(res);
+  }
+}
+
 // GET /api/files/:id/stream - Video/Audio/PDF/Document Streaming
 router.get("/:id/stream", async (req, res) => {
   try {
@@ -231,50 +357,21 @@ router.get("/:id/stream", async (req, res) => {
         );
         return;
       } catch (mtprotoErr) {
-        console.warn("MTProto streaming fallback to Bot API:", mtprotoErr.message);
+        console.warn("MTProto streaming fallback to Bot API CDN:", mtprotoErr.message);
       }
     }
 
-    // Strategy 2: Telegram Bot API Stream Fallback
-    if (file.telegram_file_id && (!file.size || file.size <= 20 * 1024 * 1024)) {
+    // Strategy 2: Telegram Bot API CDN Stream with Real-time Range Slicing (Files <= 50MB)
+    if (file.telegram_file_id) {
       try {
-        const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
-        const headers = { "User-Agent": "TeleDrive/1.0" };
-        if (range) headers.Range = range;
-
-        const response = await axios({
-          method: "GET",
-          url: downloadUrl,
-          responseType: "stream",
-          headers,
-          timeout: 15000
-        });
-
-        const isPdf = file.name?.toLowerCase().endsWith(".pdf") || file.mime_type === "application/pdf";
-        const contentType = isPdf ? "application/pdf" : file.mime_type || "application/octet-stream";
-
-        res.status(response.status);
-        res.setHeader("Content-Type", contentType);
-        res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
-
-        if (response.headers["content-range"]) {
-          res.setHeader("Content-Range", response.headers["content-range"]);
-        }
-        if (response.headers["content-length"]) {
-          res.setHeader("Content-Length", response.headers["content-length"]);
-        }
-        if (response.headers["accept-ranges"]) {
-          res.setHeader("Accept-Ranges", response.headers["accept-ranges"]);
-        }
-
-        response.data.pipe(res);
+        await streamTelegramBotFile(file, range, req, res);
         return;
       } catch (botErr) {
-        console.warn("Bot stream failed:", botErr.message);
+        console.warn("Bot stream slicing failed:", botErr.message);
       }
     }
 
-    res.status(400).send("No valid Telegram reference found for this file");
+    res.status(400).send("No valid Telegram streaming reference found for this file");
   } catch (err) {
     console.error("Stream error:", err.message);
     if (!res.headersSent) {
