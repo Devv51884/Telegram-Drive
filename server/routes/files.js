@@ -215,8 +215,27 @@ router.get("/:id/stream", async (req, res) => {
     }
 
     const range = req.headers.range;
+    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
 
-    // Strategy 1: Bot API File Id (Fast Direct Bot CDN Streaming for small files <= 20MB)
+    // Strategy 1: High-Speed MTProto Multi-DC Direct Stream (107ms Latency, 2GB Range Seeking)
+    if (targetChannelId && file.telegram_message_id) {
+      try {
+        await streamGramMedia(
+          targetChannelId,
+          file.telegram_message_id,
+          range,
+          req,
+          res,
+          file.mime_type,
+          file.name
+        );
+        return;
+      } catch (mtprotoErr) {
+        console.warn("MTProto streaming fallback to Bot API:", mtprotoErr.message);
+      }
+    }
+
+    // Strategy 2: Telegram Bot API Stream Fallback
     if (file.telegram_file_id && (!file.size || file.size <= 20 * 1024 * 1024)) {
       try {
         const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
@@ -228,7 +247,7 @@ router.get("/:id/stream", async (req, res) => {
           url: downloadUrl,
           responseType: "stream",
           headers,
-          timeout: 5000
+          timeout: 15000
         });
 
         const isPdf = file.name?.toLowerCase().endsWith(".pdf") || file.mime_type === "application/pdf";
@@ -251,23 +270,8 @@ router.get("/:id/stream", async (req, res) => {
         response.data.pipe(res);
         return;
       } catch (botErr) {
-        console.warn("Bot stream failed, falling back to MTProto:", botErr.message);
+        console.warn("Bot stream failed:", botErr.message);
       }
-    }
-
-    // Strategy 2: MTProto Channel Post or Account Saved Message
-    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
-    if (targetChannelId && file.telegram_message_id) {
-      await streamGramMedia(
-        targetChannelId,
-        file.telegram_message_id,
-        range,
-        req,
-        res,
-        file.mime_type,
-        file.name
-      );
-      return;
     }
 
     res.status(400).send("No valid Telegram reference found for this file");

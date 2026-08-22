@@ -643,7 +643,7 @@ export async function parseAndFetchTelegramPost(postUrl) {
 // In-memory media location cache to eliminate MTProto roundtrips on range requests
 const mediaLocationCache = new Map();
 
-// Download/Stream chunk from GramJS MTProto message with HTTP Range support
+// Download/Stream chunk from GramJS MTProto message with HTTP Range support (107ms Multi-DC Streaming)
 export async function streamGramMedia(channelId, messageId, rangeHeader, req, res, mimeType, fileName) {
   const client = await getGramClient();
   if (!client) {
@@ -724,19 +724,18 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
 
   const lowerName = (fileName || "").toLowerCase();
   let contentType = mimeType || "application/octet-stream";
-  if (lowerName.endsWith(".mp4")) contentType = "video/mp4";
-  else if (lowerName.endsWith(".webm")) contentType = "video/webm";
-  else if (lowerName.endsWith(".mkv")) contentType = "video/x-matroska";
-  else if (lowerName.endsWith(".mov")) contentType = "video/quicktime";
-  else if (lowerName.endsWith(".avi")) contentType = "video/x-msvideo";
-  else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a")) contentType = "audio/mpeg";
-  else if (lowerName.endsWith(".pdf")) contentType = "application/pdf";
+  if (lowerName.endsWith(".mp4") || mimeType?.includes("mp4")) contentType = "video/mp4";
+  else if (lowerName.endsWith(".webm") || mimeType?.includes("webm")) contentType = "video/webm";
+  else if (lowerName.endsWith(".mkv") || mimeType?.includes("matroska")) contentType = "video/x-matroska";
+  else if (lowerName.endsWith(".mov") || mimeType?.includes("quicktime")) contentType = "video/quicktime";
+  else if (lowerName.endsWith(".avi") || mimeType?.includes("avi")) contentType = "video/x-msvideo";
+  else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || mimeType?.includes("audio")) contentType = "audio/mpeg";
+  else if (lowerName.endsWith(".pdf") || mimeType?.includes("pdf")) contentType = "application/pdf";
   else if (lowerName.endsWith(".png")) contentType = "image/png";
   else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) contentType = "image/jpeg";
   else if (lowerName.endsWith(".gif")) contentType = "image/gif";
   else if (lowerName.endsWith(".webp")) contentType = "image/webp";
 
-  const RPC_CHUNK_SIZE = 512 * 1024; // 512 KB aligned chunks
   const MAX_STREAM_RESPONSE_CHUNK = 4 * 1024 * 1024; // 4MB per HTTP 206 chunk for blazing fast buffering
 
   if (rangeHeader && totalSize > 0) {
@@ -765,55 +764,24 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
-      let sender = dcId ? await client.getSender(dcId) : client;
-      let currentPos = start;
+      const iter = client.iterDownload({
+        file: location,
+        offset: bigInt(start),
+        limit: requestedLength,
+        requestSize: 512 * 1024,
+        dcId: dcId
+      });
 
-      while (currentPos <= end && !clientDisconnected && !res.writableEnded && !res.destroyed) {
-        const alignedOffset = Math.floor(currentPos / RPC_CHUNK_SIZE) * RPC_CHUNK_SIZE;
-        const offsetDiff = currentPos - alignedOffset;
-
-        let chunkResult = null;
-        try {
-          chunkResult = await sender.send(
-            new Api.upload.GetFile({
-              location: location,
-              offset: bigInt(alignedOffset),
-              limit: RPC_CHUNK_SIZE,
-              precise: true
-            })
-          );
-        } catch (rpcErr) {
-          // Retry once on sender reconnection or refresh
-          if (dcId) {
-            sender = await client.getSender(dcId);
-            chunkResult = await sender.send(
-              new Api.upload.GetFile({
-                location: location,
-                offset: bigInt(alignedOffset),
-                limit: RPC_CHUNK_SIZE,
-                precise: true
-              })
-            );
-          } else {
-            throw rpcErr;
-          }
+      let bytesSent = 0;
+      for await (const chunk of iter) {
+        if (clientDisconnected || res.writableEnded || res.destroyed) break;
+        if (chunk && chunk.length > 0) {
+          const remaining = requestedLength - bytesSent;
+          if (remaining <= 0) break;
+          const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
+          res.write(slice);
+          bytesSent += slice.length;
         }
-
-        if (!chunkResult || !chunkResult.bytes || chunkResult.bytes.length === 0) {
-          break;
-        }
-
-        const chunkBytes = chunkResult.bytes;
-        const availableInChunk = chunkBytes.length - offsetDiff;
-        if (availableInChunk <= 0) break;
-
-        const remainingToStream = end - currentPos + 1;
-        const sendLength = Math.min(availableInChunk, remainingToStream);
-
-        const sliceToSend = chunkBytes.subarray(offsetDiff, offsetDiff + sendLength);
-        res.write(sliceToSend);
-
-        currentPos += sendLength;
       }
       if (!res.writableEnded && !res.destroyed) {
         res.end();
@@ -821,6 +789,9 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     } catch (streamErr) {
       if (!clientDisconnected) {
         console.warn("MTProto streaming stream interrupted:", streamErr.message);
+      }
+      if (streamErr.message?.includes("FILE_REFERENCE") || streamErr.message?.includes("FILEREF")) {
+        mediaLocationCache.delete(cacheKey);
       }
       if (!res.headersSent) {
         res.status(500).send("Error streaming media");
@@ -846,29 +817,27 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
-      const sender = dcId ? await client.getSender(dcId) : client;
-      let currentPos = 0;
-      while (currentPos < totalSize && !clientDisconnected && !res.writableEnded && !res.destroyed) {
-        const chunkResult = await sender.send(
-          new Api.upload.GetFile({
-            location: location,
-            offset: bigInt(currentPos),
-            limit: RPC_CHUNK_SIZE,
-            precise: true
-          })
-        );
+      const iter = client.iterDownload({
+        file: location,
+        requestSize: 512 * 1024,
+        dcId: dcId
+      });
 
-        if (!chunkResult || !chunkResult.bytes || chunkResult.bytes.length === 0) {
-          break;
+      for await (const chunk of iter) {
+        if (clientDisconnected || res.writableEnded || res.destroyed) break;
+        if (chunk && chunk.length > 0) {
+          res.write(chunk);
         }
-
-        res.write(chunkResult.bytes);
-        currentPos += chunkResult.bytes.length;
       }
-      res.end();
+      if (!res.writableEnded && !res.destroyed) {
+        res.end();
+      }
     } catch (streamErr) {
+      if (streamErr.message?.includes("FILE_REFERENCE") || streamErr.message?.includes("FILEREF")) {
+        mediaLocationCache.delete(cacheKey);
+      }
       if (!res.headersSent) res.status(500).send("Error downloading file");
-      else res.end();
+      else if (!res.writableEnded && !res.destroyed) res.end();
     }
   }
 }
