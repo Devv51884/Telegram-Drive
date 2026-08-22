@@ -171,7 +171,96 @@ export async function uploadFileToTelegram(
     fileSize = fileInput.length;
   }
 
-  // 1. Primary Strategy: Upload via Telegram Bot API to central Storage Channel (Files <= 50MB)
+  // ==========================================
+  // Strategy 1 (PRIMARY): MTProto GramJS Upload
+  // Works for ALL file sizes up to 2GB
+  // Produces message_id + channel_id required for instant MTProto streaming
+  // ==========================================
+  const gramClient = await getGramClient();
+  if (gramClient) {
+    try {
+      const targetPeer = config.chatId || "me";
+      const res = await gramClient.sendFile(targetPeer, {
+        file: fileInput,
+        caption: caption || originalname,
+        forceDocument: true,
+        workers: 4,
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            const percent = Math.min(99, Math.round(progress * 100));
+            const loaded = Math.round(progress * fileSize);
+            progressCallback({ loaded, total: fileSize, percent });
+          }
+        },
+        attributes: [
+          new Api.DocumentAttributeFilename({
+            fileName: originalname
+          })
+        ]
+      });
+
+      if (res && res.media && (res.media.document || res.media.photo)) {
+        if (progressCallback) {
+          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
+        }
+        const doc = res.media.document || res.media.photo;
+
+        // Pre-populate mediaLocationCache so first stream request is instant
+        const msgId = res.id?.toString();
+        const channelId = targetPeer.toString();
+        if (msgId && doc) {
+          try {
+            let location = null;
+            if (res.media.document) {
+              location = new Api.InputDocumentFileLocation({
+                id: doc.id,
+                accessHash: doc.accessHash,
+                fileReference: doc.fileReference,
+                thumbSize: ""
+              });
+            } else if (res.media.photo) {
+              const sizes = doc.sizes || [];
+              const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
+              location = new Api.InputPhotoFileLocation({
+                id: doc.id,
+                accessHash: doc.accessHash,
+                fileReference: doc.fileReference,
+                thumbSize: largest?.type || "y"
+              });
+            }
+            if (location) {
+              const cacheKey = `${channelId}_${msgId}`;
+              mediaLocationCache.set(cacheKey, {
+                totalSize: Number(doc.size || fileSize),
+                location,
+                dcId: doc.dcId
+              });
+              setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
+            }
+          } catch {}
+        }
+
+        return {
+          sourceType: "upload",
+          fileId: null,
+          fileUniqueId: doc.id?.toString(),
+          fileSize: Number(doc.size || fileSize),
+          messageId: res.id.toString(),
+          channelId: targetPeer.toString(),
+          accessHash: doc.accessHash?.toString() || null,
+          fileReference: doc.fileReference ? Buffer.from(doc.fileReference).toString("base64") : null
+        };
+      }
+    } catch (gramErr) {
+      console.warn("MTProto upload failed, falling back to Bot API:", gramErr.message);
+    }
+  }
+
+  // ==========================================
+  // Strategy 2 (FALLBACK): Telegram Bot API Upload
+  // Works only for files <= 50MB
+  // WARNING: streaming via Bot CDN getFile is limited to 20MB files
+  // ==========================================
   if (config.botToken && config.chatId && fileSize <= 50 * 1024 * 1024) {
     try {
       const formData = new FormData();
@@ -232,59 +321,15 @@ export async function uploadFileToTelegram(
         };
       }
     } catch (botErr) {
-      console.warn(
-        "Bot API upload issue, falling back to MTProto Account:",
+      console.error(
+        "Bot API upload failed:",
         botErr.response?.data?.description || botErr.message
       );
     }
   }
 
-  // 2. Secondary Strategy: Large File Upload (up to 2GB) via MTProto to Storage Channel / Cloud
-  const gramClient = await getGramClient();
-  if (gramClient) {
-    try {
-      const targetPeer = config.chatId || "me";
-      const res = await gramClient.sendFile(targetPeer, {
-        file: fileInput,
-        caption: caption || originalname,
-        forceDocument: true,
-        workers: 4,
-        progressCallback: (progress) => {
-          if (progressCallback) {
-            const percent = Math.min(99, Math.round(progress * 100));
-            const loaded = Math.round(progress * fileSize);
-            progressCallback({ loaded, total: fileSize, percent });
-          }
-        },
-        attributes: [
-          new Api.DocumentAttributeFilename({
-            fileName: originalname
-          })
-        ]
-      });
-
-      if (res && res.media && (res.media.document || res.media.photo)) {
-        if (progressCallback) {
-          progressCallback({ loaded: fileSize, total: fileSize, percent: 100 });
-        }
-        const doc = res.media.document || res.media.photo;
-        return {
-          sourceType: "upload",
-          fileId: null,
-          fileUniqueId: doc.id?.toString(),
-          fileSize: Number(doc.size || fileSize),
-          messageId: res.id.toString(),
-          channelId: targetPeer.toString()
-        };
-      }
-    } catch (gramErr) {
-      console.error("MTProto storage channel upload failed:", gramErr.message);
-      throw new Error(`Upload failed: ${gramErr.message}`);
-    }
-  }
-
   throw new Error(
-    "Upload failed: No connected Telegram account or active storage channel available."
+    "Upload failed: No connected Telegram account or active storage channel available. Please configure your Telegram bot token and storage channel in Settings."
   );
 }
 
