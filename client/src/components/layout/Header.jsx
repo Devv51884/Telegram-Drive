@@ -11,7 +11,8 @@ import {
   Settings,
   ChevronDown,
   Shield,
-  X
+  X,
+  Menu
 } from "lucide-react";
 
 export default function Header() {
@@ -26,7 +27,9 @@ export default function Header() {
     refresh,
     loading,
     currentUser,
-    logoutUser
+    logoutUser,
+    isMobileSidebarOpen,
+    setIsMobileSidebarOpen
   } = useDrive();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -54,51 +57,61 @@ export default function Header() {
   };
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] px-4 md:px-6 flex items-center justify-between sticky top-0 z-20">
-      {/* Brand Logo */}
-      <div className="flex items-center gap-3 w-64 flex-shrink-0">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-          <Send className="w-5 h-5 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
+    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] px-3 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 gap-2 sm:gap-4">
+      {/* Brand Logo & Mobile Menu Toggle */}
+      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+        {/* Hamburger Toggle Button (Mobile / Tablet) */}
+        <button
+          onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+          className="lg:hidden p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c] transition-colors"
+          title="Open Menu"
+          aria-label="Toggle navigation menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 flex-shrink-0">
+          <Send className="w-4 h-4 sm:w-5 sm:h-5 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
         </div>
-        <div>
-          <span className="font-bold text-lg text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
+        <div className="hidden xs:block sm:block">
+          <span className="font-bold text-base sm:text-lg text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
             TeleDrive
             <span className="text-[10px] uppercase font-semibold tracking-wider bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 px-1.5 py-0.5 rounded">
               Cloud
             </span>
           </span>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">Telegram Cloud Storage</p>
+          <p className="hidden md:block text-[11px] text-slate-500 dark:text-slate-400">Telegram Cloud Storage</p>
         </div>
       </div>
 
       {/* Search & Filter Bar */}
-      <div className="flex-1 max-w-2xl mx-4">
+      <div className="flex-1 max-w-xl mx-1 sm:mx-2 md:mx-4">
         <div className="relative flex items-center">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search in Drive or Telegram channel posts..."
+            placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-2 text-sm bg-slate-100 dark:bg-[#282a2c] text-slate-800 dark:text-slate-200 placeholder-slate-400 rounded-full border border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-[#1e1f20] outline-none transition-all"
+            className="w-full pl-9 pr-8 sm:pr-10 py-1.5 sm:py-2 text-xs sm:text-sm bg-slate-100 dark:bg-[#282a2c] text-slate-800 dark:text-slate-200 placeholder-slate-400 rounded-full border border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-[#1e1f20] outline-none transition-all"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+              className="absolute right-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
       </div>
 
       {/* Action Controls & User Profile */}
-      <div className="flex items-center gap-3 flex-shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
         {/* Telegram Account Status Indicator */}
         <button
           onClick={() => setActiveModal("settings")}
-          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] transition-colors border border-slate-200/60 dark:border-slate-700"
+          className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] transition-colors border border-slate-200/60 dark:border-slate-700"
           title="Telegram Account"
         >
           <span
@@ -108,10 +121,10 @@ export default function Header() {
                 : "bg-blue-500"
             }`}
           />
-          <span className="text-slate-700 dark:text-slate-300">
+          <span className="text-slate-700 dark:text-slate-300 truncate max-w-[120px]">
             {settings?.telegramUser?.connected
               ? `@${settings.telegramUser.info?.username || settings.telegramUser.info?.firstName || "Connected"}`
-              : "Connect Telegram"}
+              : "Connect"}
           </span>
         </button>
 
@@ -119,7 +132,7 @@ export default function Header() {
         <button
           onClick={refresh}
           disabled={loading}
-          className="p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c] transition-colors disabled:opacity-50"
+          className="p-1.5 sm:p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c] transition-colors disabled:opacity-50"
           title="Refresh Drive"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-500" : ""}`} />
@@ -136,7 +149,7 @@ export default function Header() {
             }`}
             title="Grid View"
           >
-            <LayoutGrid className="w-4 h-4" />
+            <LayoutGrid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
           <button
             onClick={() => setViewMode("list")}
@@ -147,7 +160,7 @@ export default function Header() {
             }`}
             title="List View"
           >
-            <List className="w-4 h-4" />
+            <List className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
@@ -155,15 +168,15 @@ export default function Header() {
         <div className="relative" ref={profileRef}>
           <button
             onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-slate-100 dark:hover:bg-[#282a2c] border border-slate-200 dark:border-slate-700 transition-all"
+            className="flex items-center gap-1.5 p-1 pl-1 pr-1.5 sm:pr-2 rounded-full hover:bg-slate-100 dark:hover:bg-[#282a2c] border border-slate-200 dark:border-slate-700 transition-all"
           >
-            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-sm">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-sm flex-shrink-0">
               {getInitials(currentUser?.name)}
             </div>
-            <span className="hidden md:inline text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-[100px] truncate">
-              {currentUser?.name || "My Account"}
+            <span className="hidden lg:inline text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-[90px] truncate">
+              {currentUser?.name || "Account"}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronDown className="w-3 h-3 text-slate-400" />
           </button>
 
           {isProfileOpen && (

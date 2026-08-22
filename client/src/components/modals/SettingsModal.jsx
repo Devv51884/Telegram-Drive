@@ -230,21 +230,21 @@ export default function SettingsModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-100">
-      <div className="bg-white dark:bg-[#282a2c] w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-100">
+      <div className="bg-white dark:bg-[#282a2c] w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 p-4 sm:p-6 animate-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between mb-5 flex-shrink-0">
+        <div className="flex items-center justify-between mb-4 sm:mb-5 flex-shrink-0 gap-2">
           <div>
-            <h3 className="text-lg font-bold text-slate-800 dark:text-white">
+            <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white">
               Account Settings & Security
             </h3>
-            <p className="text-xs text-slate-400">
-              Manage your personal profile, 2-Factor PIN lock, and Telegram connection
+            <p className="text-[11px] sm:text-xs text-slate-400">
+              Manage your personal profile, 2FA PIN lock, and Telegram connection
             </p>
           </div>
           <button
             onClick={() => setActiveModal(null)}
-            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           >
             <X className="w-5 h-5" />
           </button>

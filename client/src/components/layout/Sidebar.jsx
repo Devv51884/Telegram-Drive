@@ -13,20 +13,20 @@ import {
   CheckCircle2,
   UserCheck,
   Lock,
-  Shield
+  Shield,
+  X
 } from "lucide-react";
 
 export default function Sidebar() {
   const {
     section,
-    setSection,
     navigateToSection,
-    openFolder,
     stats,
     settings,
     setActiveModal,
-    lockMaster,
-    currentUser
+    currentUser,
+    isMobileSidebarOpen,
+    setIsMobileSidebarOpen
   } = useDrive();
 
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
@@ -41,9 +41,32 @@ export default function Sidebar() {
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.email === "devv5412@gmail.com";
 
-  return (
-    <aside className="w-64 h-[calc(100vh-4rem)] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] flex flex-col justify-between p-3 flex-shrink-0 overflow-y-auto">
+  const handleNavClick = (sectionName) => {
+    navigateToSection(sectionName);
+    setIsMobileSidebarOpen(false);
+  };
+
+  const renderSidebarContent = (isMobile = false) => (
+    <div className="flex flex-col justify-between h-full p-3 space-y-4">
       <div className="space-y-4">
+        {/* Mobile Header with Close Button */}
+        {isMobile && (
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+                <Send className="w-4 h-4 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
+              </div>
+              <span className="font-bold text-base text-slate-800 dark:text-white">TeleDrive</span>
+            </div>
+            <button
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
         {/* "+ New" Dropdown Button */}
         <div className="relative">
           <button
@@ -59,13 +82,14 @@ export default function Sidebar() {
           {isNewMenuOpen && (
             <>
               <div
-                className="fixed inset-0 z-30"
+                className="fixed inset-0 z-40"
                 onClick={() => setIsNewMenuOpen(false)}
               />
-              <div className="absolute top-14 left-0 w-60 bg-white dark:bg-[#282a2c] rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-40 animate-in fade-in zoom-in-95 duration-100">
+              <div className="absolute top-14 left-0 w-60 bg-white dark:bg-[#282a2c] rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
                 <button
                   onClick={() => {
                     setIsNewMenuOpen(false);
+                    if (isMobile) setIsMobileSidebarOpen(false);
                     setActiveModal("new_folder");
                   }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"
@@ -77,6 +101,7 @@ export default function Sidebar() {
                 <button
                   onClick={() => {
                     setIsNewMenuOpen(false);
+                    if (isMobile) setIsMobileSidebarOpen(false);
                     setActiveModal("upload");
                   }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"
@@ -87,6 +112,7 @@ export default function Sidebar() {
                 <button
                   onClick={() => {
                     setIsNewMenuOpen(false);
+                    if (isMobile) setIsMobileSidebarOpen(false);
                     setActiveModal("import_link");
                   }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"
@@ -99,12 +125,12 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Clean Navigation Sections */}
+        {/* Navigation Sections */}
         <nav className="space-y-1">
           {/* My Drive */}
           <div
-            onClick={() => navigateToSection("my_drive")}
-            className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
+            onClick={() => handleNavClick("my_drive")}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "my_drive"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
                 : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
@@ -116,8 +142,8 @@ export default function Sidebar() {
 
           {/* Telegram Imports */}
           <div
-            onClick={() => navigateToSection("telegram_imports")}
-            className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
+            onClick={() => handleNavClick("telegram_imports")}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "telegram_imports"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
                 : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
@@ -129,8 +155,8 @@ export default function Sidebar() {
 
           {/* Starred */}
           <div
-            onClick={() => navigateToSection("starred")}
-            className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
+            onClick={() => handleNavClick("starred")}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "starred"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
                 : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
@@ -142,8 +168,8 @@ export default function Sidebar() {
 
           {/* Trash */}
           <div
-            onClick={() => navigateToSection("trash")}
-            className={`flex items-center gap-3 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors ${
+            onClick={() => handleNavClick("trash")}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-colors ${
               section === "trash"
                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
                 : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
@@ -153,11 +179,11 @@ export default function Sidebar() {
             <span>Trash</span>
           </div>
 
-          {/* Admin Panel Button - Only visible for Admin Accounts */}
+          {/* Admin Panel Button */}
           {isAdmin && (
             <div
-              onClick={() => navigateToSection("admin")}
-              className={`flex items-center gap-3 px-4 py-2 mt-2 rounded-full text-sm font-medium cursor-pointer transition-all ${
+              onClick={() => handleNavClick("admin")}
+              className={`flex items-center gap-3 px-4 py-2.5 mt-2 rounded-full text-sm font-medium cursor-pointer transition-all ${
                 section === "admin"
                   ? "bg-purple-600 text-white font-semibold shadow-md shadow-purple-500/20"
                   : "bg-gradient-to-r from-purple-500/10 to-indigo-500/10 hover:from-purple-500/20 hover:to-indigo-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20"
@@ -200,7 +226,10 @@ export default function Sidebar() {
         {/* Telegram Connection Widget & Lock button */}
         <div className="flex items-center gap-2">
           <div
-            onClick={() => setActiveModal("settings")}
+            onClick={() => {
+              if (isMobile) setIsMobileSidebarOpen(false);
+              setActiveModal("settings");
+            }}
             className="flex-1 p-2.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors cursor-pointer text-xs"
           >
             <div className="flex items-center gap-2">
@@ -225,7 +254,10 @@ export default function Sidebar() {
           </div>
 
           <button
-            onClick={() => setActiveModal("settings")}
+            onClick={() => {
+              if (isMobile) setIsMobileSidebarOpen(false);
+              setActiveModal("settings");
+            }}
             title="Account & Security Settings"
             className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-[#282a2c] transition-colors"
           >
@@ -233,6 +265,31 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* 1. Permanent Desktop Sidebar */}
+      <aside className="hidden lg:flex w-64 h-[calc(100vh-4rem)] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] flex-col justify-between flex-shrink-0 overflow-y-auto">
+        {renderSidebarContent(false)}
+      </aside>
+
+      {/* 2. Mobile & Tablet Off-Canvas Drawer */}
+      {isMobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop Blur Overlay */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+
+          {/* Slide-In Sidebar Drawer */}
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-[#1e1f20] shadow-2xl z-50 animate-in slide-in-from-left duration-200 flex flex-col overflow-y-auto border-r border-slate-200 dark:border-slate-800">
+            {renderSidebarContent(true)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

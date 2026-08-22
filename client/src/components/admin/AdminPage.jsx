@@ -242,32 +242,32 @@ export default function AdminPage() {
   return (
     <div className="flex flex-col h-screen bg-slate-50 dark:bg-[#131314] text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
       {/* Top Admin Navigation Bar */}
-      <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] px-4 md:px-8 flex items-center justify-between flex-shrink-0 z-20">
-        <div className="flex items-center gap-4">
+      <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] px-3 sm:px-4 md:px-8 flex items-center justify-between flex-shrink-0 z-20 gap-2">
+        <div className="flex items-center gap-2 sm:gap-4 truncate">
           <button
             onClick={() => setSection("my_drive")}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all border border-slate-200/80 dark:border-slate-700"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all border border-slate-200/80 dark:border-slate-700 flex-shrink-0"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Exit Admin</span>
+            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden xs:inline">Exit Admin</span>
           </button>
 
-          <div className="h-5 w-px bg-slate-200 dark:border-slate-700" />
+          <div className="h-5 w-px bg-slate-200 dark:border-slate-700 flex-shrink-0" />
 
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
-              <Shield className="w-5 h-5" />
+          <div className="flex items-center gap-2 sm:gap-2.5 truncate">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 flex-shrink-0">
+              <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-black text-base text-slate-800 dark:text-white tracking-tight">
-                  TeleDrive Admin Control Center
+            <div className="truncate">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="font-black text-sm sm:text-base text-slate-800 dark:text-white tracking-tight truncate">
+                  Admin Control Center
                 </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
                   Owner Portal
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="hidden md:block text-[11px] text-slate-400">
                 Full infrastructure management, live analytics & user controls
               </p>
             </div>
@@ -275,7 +275,7 @@ export default function AdminPage() {
         </div>
 
         {/* Header Right Badges & Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
           <button
             onClick={handlePing}
             disabled={pinging}
@@ -293,7 +293,7 @@ export default function AdminPage() {
               if (activeTab === "files") fetchFiles();
             }}
             disabled={loading}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-600 dark:text-slate-300 transition-colors border border-slate-200/80 dark:border-slate-700"
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-600 dark:text-slate-300 transition-colors border border-slate-200/80 dark:border-slate-700"
             title="Refresh All Admin Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-500" : ""}`} />
@@ -301,10 +301,61 @@ export default function AdminPage() {
         </div>
       </header>
 
+      {/* Mobile Top Navigation Tabs (< md screens) */}
+      <div className="flex md:hidden overflow-x-auto gap-1.5 p-2 bg-white dark:bg-[#1e1f20] border-b border-slate-200 dark:border-slate-800 no-scrollbar flex-shrink-0">
+        <button
+          onClick={() => setActiveTab("overview")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "overview"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+          <span>Overview</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("users")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "users"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>Users</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("files")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "files"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Files</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("system")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "system"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <Server className="w-3.5 h-3.5" />
+          <span>System</span>
+        </button>
+      </div>
+
       {/* Main Admin Workspace Layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Admin Navigation Sidebar */}
-        <aside className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] p-3 flex flex-col justify-between flex-shrink-0 overflow-y-auto">
+        {/* Left Admin Navigation Sidebar (md+ screens) */}
+        <aside className="hidden md:flex w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f20] p-3 flex-col justify-between flex-shrink-0 overflow-y-auto">
           <div className="space-y-1.5">
             <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Navigation
@@ -376,7 +427,7 @@ export default function AdminPage() {
         </aside>
 
         {/* Right Main Admin Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50/50 dark:bg-[#161718] space-y-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 bg-slate-50/50 dark:bg-[#161718] space-y-6">
           {/* TAB 1: OVERVIEW & ANALYTICS */}
           {activeTab === "overview" && overviewData && (
             <div className="space-y-6 animate-in fade-in duration-150 max-w-7xl mx-auto">

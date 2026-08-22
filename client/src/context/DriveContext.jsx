@@ -57,6 +57,7 @@ export function DriveProvider({ children }) {
   const [previewItem, setPreviewItem] = useState(null);
   const [modalTargetItem, setModalTargetItem] = useState(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const handleSetPreviewItem = (item) => {
     setPreviewItem(item);
@@ -772,6 +773,8 @@ export function DriveProvider({ children }) {
     setModalTargetItem,
     isDetailsOpen,
     setIsDetailsOpen,
+    isMobileSidebarOpen,
+    setIsMobileSidebarOpen,
 
     // Toast
     toast,

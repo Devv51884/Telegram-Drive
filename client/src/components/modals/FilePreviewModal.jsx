@@ -204,8 +204,8 @@ export default function FilePreviewModal() {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-150">
       {/* Top Header Bar */}
-      <div className="h-16 px-6 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3 truncate max-w-xl">
+      <div className="h-16 px-3 sm:px-6 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 truncate max-w-xs sm:max-w-xl">
           <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 flex-shrink-0">
             {previewItem.type === "video" ? (
               <Film className="w-4 h-4" />
@@ -219,15 +219,15 @@ export default function FilePreviewModal() {
               <File className="w-4 h-4" />
             )}
           </div>
-          <span className="font-semibold text-white text-sm truncate">
+          <span className="font-semibold text-white text-xs sm:text-sm truncate">
             {previewItem.name}
           </span>
-          <span className="text-xs text-slate-400 font-mono">
+          <span className="hidden sm:inline text-xs text-slate-400 font-mono flex-shrink-0">
             {formatBytes(previewItem.size)}
           </span>
 
           {previewItem.source_type === "telegram_post" && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-sky-400 bg-sky-950/60 border border-sky-800/80 px-2 py-0.5 rounded-full">
+            <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-sky-400 bg-sky-950/60 border border-sky-800/80 px-2 py-0.5 rounded-full flex-shrink-0">
               <Send className="w-2.5 h-2.5" />
               {previewItem.telegram_channel_title || "Telegram Channel"}
             </span>
@@ -235,15 +235,15 @@ export default function FilePreviewModal() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {isText && textContent && (
             <button
               onClick={handleCopyText}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
               title="Copy Content"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? "Copied" : "Copy"}</span>
+              <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
             </button>
           )}
 
@@ -252,11 +252,11 @@ export default function FilePreviewModal() {
               href={streamUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
               title="Open PDF in Full Tab"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Open Full Tab</span>
+              <span className="hidden sm:inline">Open Tab</span>
             </a>
           )}
 
@@ -265,20 +265,20 @@ export default function FilePreviewModal() {
               href={previewItem.telegram_post_url}
               target="_blank"
               rel="noreferrer"
-              className="p-2 rounded-xl text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors"
               title="Open Telegram Post"
             >
-              <ExternalLink className="w-5 h-5" />
+              <ExternalLink className="w-4 h-4 sm:w-5 sm:h-5" />
             </a>
           )}
 
           <button
             onClick={() => toggleStar(previewItem)}
-            className="p-2 rounded-xl text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
             title="Star"
           >
             <Star
-              className={`w-5 h-5 ${
+              className={`w-4 h-4 sm:w-5 sm:h-5 ${
                 previewItem.is_starred ? "fill-amber-400 text-amber-400" : ""
               }`}
             />
@@ -289,27 +289,27 @@ export default function FilePreviewModal() {
             download={previewItem.name}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
             title="Download File"
           >
-            <Download className="w-4 h-4" />
-            <span>Download</span>
+            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Download</span>
           </a>
 
-          <div className="h-4 w-px bg-slate-800 mx-1" />
+          <div className="h-4 w-px bg-slate-800 mx-0.5 sm:mx-1" />
 
           <button
             onClick={handleClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             title="Close"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
       </div>
 
       {/* Main Preview Player / Viewer Canvas */}
-      <div className="flex-1 flex items-center justify-center p-4 md:p-8 overflow-auto">
+      <div className="flex-1 flex items-center justify-center p-2 sm:p-4 md:p-8 overflow-auto">
         {/* 1. VIDEO PREVIEW */}
         {previewItem.type === "video" ? (
           <div className="relative w-full max-w-5xl max-h-[80vh] flex items-center justify-center bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800">
