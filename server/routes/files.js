@@ -75,9 +75,18 @@ router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) =>
   const uploadId = req.body.uploadId || null;
 
   try {
-    const { folderId } = req.body;
     const cleanName = sanitizeFileName(req.file.originalname);
-    const mimeType = req.file.mimetype || "application/octet-stream";
+    const lowerName = cleanName.toLowerCase();
+    let mimeType = req.file.mimetype || "application/octet-stream";
+    if (lowerName.endsWith(".mp4") || mimeType === "video/mp2t" || mimeType.includes("mp4")) mimeType = "video/mp4";
+    else if (lowerName.endsWith(".webm")) mimeType = "video/webm";
+    else if (lowerName.endsWith(".mkv")) mimeType = "video/x-matroska";
+    else if (lowerName.endsWith(".mov")) mimeType = "video/quicktime";
+    else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a")) mimeType = "audio/mpeg";
+    else if (lowerName.endsWith(".pdf")) mimeType = "application/pdf";
+    else if (lowerName.endsWith(".png")) mimeType = "image/png";
+    else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) mimeType = "image/jpeg";
+    
     const type = detectFileType(mimeType, cleanName);
     const targetFolder = folderId === "root" || !folderId ? null : folderId;
 
@@ -213,19 +222,25 @@ async function streamTelegramBotFile(file, range, req, res) {
   const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
   const totalSize = Number(file.size) || 0;
 
-  const lowerName = (file.name || "").toLowerCase();
-  let contentType = file.mime_type || "application/octet-stream";
-  if (lowerName.endsWith(".mp4") || file.mime_type?.includes("mp4")) contentType = "video/mp4";
-  else if (lowerName.endsWith(".webm") || file.mime_type?.includes("webm")) contentType = "video/webm";
-  else if (lowerName.endsWith(".mkv") || file.mime_type?.includes("matroska")) contentType = "video/x-matroska";
-  else if (lowerName.endsWith(".mov") || file.mime_type?.includes("quicktime")) contentType = "video/quicktime";
-  else if (lowerName.endsWith(".avi") || file.mime_type?.includes("avi")) contentType = "video/x-msvideo";
-  else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || file.mime_type?.includes("audio")) contentType = "audio/mpeg";
-  else if (lowerName.endsWith(".pdf") || file.mime_type === "application/pdf") contentType = "application/pdf";
-  else if (lowerName.endsWith(".png")) contentType = "image/png";
-  else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) contentType = "image/jpeg";
-  else if (lowerName.endsWith(".gif")) contentType = "image/gif";
-  else if (lowerName.endsWith(".webp")) contentType = "image/webp";
+  const lowerName = (file.name || "").toLowerCase().trim();
+  let contentType = "application/octet-stream";
+  if (lowerName.endsWith(".mp4") || lowerName.endsWith(".m4v") || file.mime_type?.includes("mp4") || file.mime_type === "video/mp2t" || file.type === "video") {
+    if (lowerName.endsWith(".webm") || file.mime_type?.includes("webm")) contentType = "video/webm";
+    else if (lowerName.endsWith(".mkv") || file.mime_type?.includes("matroska")) contentType = "video/x-matroska";
+    else contentType = "video/mp4";
+  } else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || file.mime_type?.includes("audio")) {
+    contentType = "audio/mpeg";
+  } else if (lowerName.endsWith(".pdf") || file.mime_type === "application/pdf") {
+    contentType = "application/pdf";
+  } else if (lowerName.endsWith(".png")) {
+    contentType = "image/png";
+  } else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+    contentType = "image/jpeg";
+  } else if (lowerName.endsWith(".webp")) {
+    contentType = "image/webp";
+  } else if (file.mime_type && file.mime_type !== "video/mp2t") {
+    contentType = file.mime_type;
+  }
 
   const axiosHeaders = { "User-Agent": "TeleDrive/1.0" };
   if (range) axiosHeaders.Range = range;

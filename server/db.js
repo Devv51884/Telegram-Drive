@@ -137,6 +137,9 @@ export async function getSqliteDb() {
   try {
     await db.exec("ALTER TABLE telegram_sessions ADD COLUMN username TEXT;");
   } catch {}
+  try {
+    await db.exec("UPDATE files SET mime_type = 'video/mp4' WHERE mime_type = 'video/mp2t' OR name LIKE '%.mp4';");
+  } catch {}
 
   sqliteDbInstance = db;
   return sqliteDbInstance;
