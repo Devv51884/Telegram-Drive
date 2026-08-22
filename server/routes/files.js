@@ -243,15 +243,13 @@ async function streamTelegramBotFile(file, range, req, res) {
     contentType = file.mime_type;
   }
 
-  const axiosHeaders = { "User-Agent": "TeleDrive/1.0" };
-  if (range) axiosHeaders.Range = range;
-
   const response = await axios({
     method: "GET",
     url: downloadUrl,
     responseType: "stream",
-    headers: axiosHeaders,
-    timeout: 30000
+    headers: { "User-Agent": "TeleDrive/1.0" },
+    timeout: 0,
+    validateStatus: (status) => status < 400
   });
 
   const remoteContentLength = parseInt(response.headers["content-length"] || "0", 10);

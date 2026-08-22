@@ -96,43 +96,14 @@ export default function UploadModal() {
     const controller = new AbortController();
     let lastLoaded = 0;
     let lastTime = Date.now();
-    let pollInterval = null;
 
     updateItem(item.id, {
       status: "uploading",
       percent: 1,
       loadedBytes: 0,
-      phase: "Uploading to server...",
+      phase: "Starting upload...",
       controller
     });
-
-    // Background live byte stream poller from backend
-    pollInterval = setInterval(async () => {
-      if (controller.signal.aborted) {
-        clearInterval(pollInterval);
-        return;
-      }
-      try {
-        const res = await DriveAPI.getUploadProgress(item.id);
-        if (res?.success && res?.progress) {
-          const p = res.progress;
-          const pLoaded = Number(p.loaded) || 0;
-          const pTotal = Number(p.total) || item.size || 1;
-          const rawPercent = Number(p.percent) || Math.round((pLoaded * 100) / pTotal);
-          const currentPercent = Math.min(99, Math.max(1, rawPercent));
-
-          updateItem(item.id, {
-            loadedBytes: pLoaded,
-            percent: currentPercent,
-            phase: `Saving to Telegram Cloud (${currentPercent}%)`
-          });
-
-          if (p.status === "done") {
-            clearInterval(pollInterval);
-          }
-        }
-      } catch {}
-    }, 500);
 
     try {
       await DriveAPI.uploadFile(
@@ -141,7 +112,7 @@ export default function UploadModal() {
         (browserProgress) => {
           const loaded = Number(browserProgress.loaded) || 0;
           const total = Number(browserProgress.total) || item.size || 1;
-          const percent = Math.min(95, Math.round((loaded * 100) / total));
+          const rawPercent = Math.min(99, Math.max(1, Math.round((loaded * 100) / total)));
 
           const now = Date.now();
           const timeDiff = Math.max(0.1, (now - lastTime) / 1000);
@@ -162,17 +133,15 @@ export default function UploadModal() {
 
           updateItem(item.id, {
             loadedBytes: loaded,
-            percent: percent,
-            speed: speedStr,
-            eta: etaStr,
-            phase: percent >= 95 ? "Processing on Telegram Cloud..." : `Uploading (${percent}%)`
+            percent: rawPercent,
+            speed: speedStr || item.speed || "",
+            eta: etaStr || item.eta || "",
+            phase: rawPercent >= 99 ? "Saving to Telegram Cloud..." : `Uploading to Telegram Cloud (${rawPercent}%)`
           });
         },
         controller.signal,
         item.id
       );
-
-      clearInterval(pollInterval);
 
       updateItem(item.id, {
         status: "done",
@@ -184,7 +153,6 @@ export default function UploadModal() {
       });
       refresh();
     } catch (err) {
-      clearInterval(pollInterval);
       if (err.name === "CanceledError" || err.message === "canceled" || controller.signal.aborted) {
         updateItem(item.id, {
           status: "cancelled",
@@ -192,7 +160,6 @@ export default function UploadModal() {
           speed: "",
           eta: ""
         });
-      } else {
         const errorMsg = err.response?.data?.error || err.message || "Upload failed";
         updateItem(item.id, {
           status: "error",
