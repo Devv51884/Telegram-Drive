@@ -351,10 +351,9 @@ export default function FilePreviewModal() {
               <video
                 key={previewItem.id}
                 ref={videoRef}
-                src={streamUrl}
                 controls
                 autoPlay
-                preload="metadata"
+                preload="auto"
                 playsInline
                 onLoadedMetadata={() => setVideoLoading(false)}
                 onLoadedData={() => {
@@ -374,6 +373,8 @@ export default function FilePreviewModal() {
                 }}
                 className="w-full h-full max-h-[78vh] object-contain rounded-3xl"
               >
+                <source src={streamUrl} type="video/mp4" />
+                <source src={streamUrl} type="video/webm" />
                 Your browser does not support HTML5 video streaming.
               </video>
             )}

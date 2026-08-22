@@ -270,7 +270,7 @@ async function streamTelegramBotFile(file, range, req, res) {
         "Content-Length": response.headers["content-length"] || chunkLength,
         "Content-Type": contentType,
         "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
-        "Cache-Control": "public, max-age=86400"
+        "Cache-Control": "no-cache, no-store, must-revalidate"
       });
       response.data.pipe(res);
       return;
@@ -283,7 +283,7 @@ async function streamTelegramBotFile(file, range, req, res) {
       "Content-Length": chunkLength,
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
-      "Cache-Control": "public, max-age=86400"
+      "Cache-Control": "no-cache, no-store, must-revalidate"
     });
 
     let bytesRead = 0;
@@ -338,7 +338,7 @@ async function streamTelegramBotFile(file, range, req, res) {
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=86400"
+      "Cache-Control": "no-cache, no-store, must-revalidate"
     });
     response.data.pipe(res);
   }

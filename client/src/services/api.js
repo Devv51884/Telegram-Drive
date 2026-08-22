@@ -91,11 +91,11 @@ export const DriveAPI = {
   deleteFile: (id) => api.delete(`/files/${id}`).then((r) => r.data),
   getStreamUrl: (id) => {
     const token = localStorage.getItem("teledrive_auth_token");
-    return token ? `${API_BASE}/files/${id}/stream?token=${encodeURIComponent(token)}` : `${API_BASE}/files/${id}/stream`;
+    return token ? `${API_BASE}/files/${id}/stream?token=${encodeURIComponent(token)}&_v=3` : `${API_BASE}/files/${id}/stream?_v=3`;
   },
   getDownloadUrl: (id) => {
     const token = localStorage.getItem("teledrive_auth_token");
-    return token ? `${API_BASE}/files/${id}/download?token=${encodeURIComponent(token)}` : `${API_BASE}/files/${id}/download`;
+    return token ? `${API_BASE}/files/${id}/download?token=${encodeURIComponent(token)}&_v=3` : `${API_BASE}/files/${id}/download?_v=3`;
   },
 
   // Settings & Telegram Auth

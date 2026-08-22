@@ -806,7 +806,7 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
       "Content-Length": requestedLength,
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(fileName || "media")}"`,
-      "Cache-Control": "public, max-age=86400"
+      "Cache-Control": "no-cache, no-store, must-revalidate"
     });
 
     let clientDisconnected = false;
@@ -859,7 +859,7 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(fileName || "file")}"`,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=3600"
+      "Cache-Control": "no-cache, no-store, must-revalidate"
     });
 
     let clientDisconnected = false;
