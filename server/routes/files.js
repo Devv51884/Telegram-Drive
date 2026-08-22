@@ -73,6 +73,7 @@ router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) =>
 
   const tempFilePath = req.file.path;
   const uploadId = req.body.uploadId || null;
+  const folderId = req.body.folderId || null;
 
   try {
     const cleanName = sanitizeFileName(req.file.originalname);

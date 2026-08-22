@@ -22,5 +22,9 @@
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "telegram": "^2.26.16"
+  },
+  "overrides": {
+    "tar": "^7.5.3",
+    "@tootallnate/once": "^2.0.1"
   }
 }
