@@ -225,13 +225,24 @@ async function streamTelegramBotFile(file, range, req, res) {
 
   const lowerName = (file.name || "").toLowerCase().trim();
   let contentType = "application/octet-stream";
-  if (lowerName.endsWith(".mp4") || lowerName.endsWith(".m4v") || file.mime_type?.includes("mp4") || file.mime_type === "video/mp2t" || file.type === "video") {
-    if (lowerName.endsWith(".webm") || file.mime_type?.includes("webm")) contentType = "video/webm";
-    else if (lowerName.endsWith(".mkv") || file.mime_type?.includes("matroska")) contentType = "video/x-matroska";
-    else contentType = "video/mp4";
-  } else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || file.mime_type?.includes("audio")) {
+  if (lowerName.endsWith(".webm") || file.mime_type?.includes("webm")) {
+    contentType = "video/webm";
+  } else if (lowerName.endsWith(".mkv") || file.mime_type?.includes("matroska")) {
+    contentType = "video/x-matroska";
+  } else if (
+    lowerName.endsWith(".mp4") ||
+    lowerName.endsWith(".m4v") ||
+    lowerName.endsWith(".mov") ||
+    lowerName.endsWith(".ts") ||
+    file.mime_type?.includes("mp4") ||
+    file.mime_type === "video/mp2t" ||
+    file.type === "video" ||
+    (!file.mime_type?.includes("audio") && !file.mime_type?.includes("image") && !file.mime_type?.includes("pdf") && !lowerName.match(/\.(png|jpg|jpeg|gif|webp|pdf|mp3|m4a|ogg|docx|txt|json)$/))
+  ) {
+    contentType = "video/mp4";
+  } else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || file.mime_type?.includes("audio") || file.type === "audio") {
     contentType = "audio/mpeg";
-  } else if (lowerName.endsWith(".pdf") || file.mime_type === "application/pdf") {
+  } else if (lowerName.endsWith(".pdf") || file.mime_type === "application/pdf" || file.type === "pdf") {
     contentType = "application/pdf";
   } else if (lowerName.endsWith(".png")) {
     contentType = "image/png";
@@ -241,6 +252,8 @@ async function streamTelegramBotFile(file, range, req, res) {
     contentType = "image/webp";
   } else if (file.mime_type && file.mime_type !== "video/mp2t") {
     contentType = file.mime_type;
+  } else {
+    contentType = "video/mp4";
   }
 
   // Forward incoming Range header directly to Telegram Bot API CDN for native HTTP 206 slicing

@@ -3,6 +3,7 @@ import { useDrive } from "../../context/DriveContext.jsx";
 import DriveAPI from "../../services/api.js";
 import PdfViewer from "./PdfViewer.jsx";
 import mammoth from "mammoth";
+import Hls from "hls.js";
 import {
   X,
   Download,
@@ -38,8 +39,15 @@ export default function FilePreviewModal() {
   const [copied, setCopied] = useState(false);
 
   const videoRef = useRef(null);
+  const hlsRef = useRef(null);
 
   const handleClose = () => {
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      } catch {}
+    }
     if (videoRef.current) {
       try {
         videoRef.current.pause();
@@ -52,6 +60,12 @@ export default function FilePreviewModal() {
 
   useEffect(() => {
     return () => {
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        } catch {}
+      }
       if (videoRef.current) {
         try {
           videoRef.current.pause();
@@ -83,6 +97,13 @@ export default function FilePreviewModal() {
     setDocLoading(false);
     setDocError("");
     setCopied(false);
+
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      } catch {}
+    }
 
     if (!previewItem) return;
 
@@ -191,12 +212,70 @@ export default function FilePreviewModal() {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const initHlsFallback = () => {
+    if (Hls.isSupported() && videoRef.current) {
+      try {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+        }
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          backBufferLength: 90
+        });
+        hlsRef.current = hls;
+        hls.loadSource(streamUrl);
+        hls.attachMedia(videoRef.current);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setVideoLoading(false);
+          setVideoError(false);
+          videoRef.current?.play().catch(() => {});
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            console.warn("HLS fatal error:", data);
+            setVideoLoading(false);
+            setVideoError(true);
+          }
+        });
+      } catch (err) {
+        console.error("HLS fallback init error:", err);
+        setVideoLoading(false);
+        setVideoError(true);
+      }
+    } else {
+      setVideoLoading(false);
+      setVideoError(true);
+    }
+  };
+
+  const handleVideoError = (e) => {
+    console.warn("Native video playback encountered error:", videoRef.current?.error);
+    // If native HTML5 decoder failed, fallback to HLS/Transmuxer engine
+    if (!hlsRef.current && Hls.isSupported()) {
+      console.log("Switching to HLS transmuxer engine...");
+      initHlsFallback();
+    } else {
+      setVideoLoading(false);
+      setVideoError(true);
+    }
+  };
+
   const handleRetryVideo = () => {
     setVideoError(false);
     setVideoLoading(true);
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      } catch {}
+    }
     if (videoRef.current) {
+      videoRef.current.src = streamUrl;
       videoRef.current.load();
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => {
+        initHlsFallback();
+      });
     }
   };
 
@@ -211,19 +290,19 @@ export default function FilePreviewModal() {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-150">
       {/* Top Header Bar */}
-      <div className="h-16 px-3 sm:px-6 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between flex-shrink-0 gap-2">
-        <div className="flex items-center gap-2 sm:gap-3 truncate max-w-xs sm:max-w-xl">
-          <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 flex-shrink-0">
+      <div className="h-14 sm:h-16 px-2.5 sm:px-6 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 truncate max-w-[60vw] sm:max-w-xl">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 flex-shrink-0">
             {previewItem.type === "video" ? (
-              <Film className="w-4 h-4" />
+              <Film className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             ) : previewItem.type === "image" ? (
-              <ImageIcon className="w-4 h-4" />
+              <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             ) : previewItem.type === "audio" ? (
-              <Music className="w-4 h-4" />
+              <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             ) : isPdf || isDocx ? (
-              <FileText className="w-4 h-4 text-blue-400" />
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
             ) : (
-              <File className="w-4 h-4" />
+              <File className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             )}
           </div>
           <span className="font-semibold text-white text-xs sm:text-sm truncate">
@@ -316,10 +395,10 @@ export default function FilePreviewModal() {
       </div>
 
       {/* Main Preview Player / Viewer Canvas */}
-      <div className="flex-1 flex items-center justify-center p-2 sm:p-4 md:p-8 overflow-auto">
+      <div className="flex-1 flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-auto">
         {/* 1. VIDEO PREVIEW */}
         {previewItem.type === "video" ? (
-          <div className="relative w-full max-w-5xl max-h-[80vh] flex items-center justify-center bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800">
+          <div className="relative w-full max-w-5xl max-h-[82vh] flex items-center justify-center bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800">
             {videoLoading && !videoError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-10 gap-3">
                 <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -330,7 +409,7 @@ export default function FilePreviewModal() {
             )}
 
             {videoError ? (
-              <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400 max-w-md">
+              <div className="flex flex-col items-center justify-center p-6 sm:p-8 text-center text-slate-400 max-w-md">
                 <AlertCircle className="w-12 h-12 text-rose-500 mb-3" />
                 <h4 className="text-base font-bold text-white mb-1">Video Stream Error</h4>
                 <p className="text-xs mb-4 text-slate-400">
@@ -376,12 +455,8 @@ export default function FilePreviewModal() {
                   setVideoLoading(false);
                   setVideoError(false);
                 }}
-                onError={(e) => {
-                  console.error("Video stream error:", videoRef.current?.error);
-                  setVideoLoading(false);
-                  setVideoError(true);
-                }}
-                className="w-full h-full max-h-[78vh] object-contain rounded-3xl"
+                onError={handleVideoError}
+                className="w-full h-full max-h-[80vh] object-contain rounded-3xl"
               >
                 <source src={streamUrl} type={getVideoMimeType(previewItem)} />
                 Your browser does not support HTML5 video streaming.
@@ -425,99 +500,82 @@ export default function FilePreviewModal() {
           />
         ) : isDocx ? (
           /* 4. WORD DOCUMENT (.DOCX) PREVIEW */
-          <div className="w-full max-w-4xl h-[82vh] bg-white dark:bg-[#1e1f20] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in zoom-in-95">
-            {/* Word Document Toolbar */}
-            <div className="px-6 py-3 bg-slate-100 dark:bg-[#282a2c] border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-400">
-                <BookOpen className="w-4 h-4" />
-                <span>Word Document Reader</span>
+          <div className="w-full max-w-4xl max-h-[80vh] bg-white text-slate-900 rounded-2xl shadow-2xl overflow-auto border border-slate-800 p-6 md:p-10">
+            {docLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                <p className="text-sm font-medium">Rendering Word Document...</p>
               </div>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                {previewItem.name}
-              </span>
-            </div>
-
-            {/* Document Content View */}
-            <div className="flex-1 p-8 md:p-12 overflow-y-auto bg-white dark:bg-[#1e1f20] text-slate-800 dark:text-slate-200">
-              {docLoading ? (
-                <div className="flex flex-col items-center justify-center h-64 gap-3">
-                  <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-                  <p className="text-xs text-slate-400 font-medium">Rendering Word Document...</p>
-                </div>
-              ) : docError ? (
-                <div className="text-center py-12 text-slate-400">
-                  <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">{docError}</p>
-                  <a
-                    href={downloadUrl}
-                    download={previewItem.name}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Download File</span>
-                  </a>
-                </div>
-              ) : (
-                <div
-                  className="prose dark:prose-invert max-w-none text-sm leading-relaxed space-y-4"
-                  dangerouslySetInnerHTML={{ __html: docHtml }}
-                />
-              )}
-            </div>
+            ) : docError ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center text-slate-600">
+                <AlertCircle className="w-12 h-12 text-amber-500 mb-3" />
+                <h4 className="text-base font-bold text-slate-800 mb-1">Document Formatting Notice</h4>
+                <p className="text-xs mb-4 text-slate-500 max-w-sm">{docError}</p>
+                <a
+                  href={downloadUrl}
+                  download={previewItem.name}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Document</span>
+                </a>
+              </div>
+            ) : (
+              <div
+                className="prose prose-slate max-w-none text-sm leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: docHtml }}
+              />
+            )}
           </div>
         ) : isText ? (
-          /* 5. TEXT / CODE / MARKDOWN / JSON / CSV PREVIEW */
-          <div className="w-full max-w-4xl h-[82vh] bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 flex flex-col overflow-hidden">
-            {/* Code/Text Toolbar */}
-            <div className="px-6 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
-              <span className="text-xs font-mono font-semibold text-slate-300">
-                {previewItem.name}
-              </span>
-              <span className="text-[11px] text-slate-400 font-mono">
-                {textContent.split("\n").length} lines
-              </span>
+          /* 5. TEXT / CODE PREVIEW */
+          <div className="w-full max-w-4xl max-h-[80vh] bg-slate-900 text-slate-100 rounded-2xl shadow-2xl overflow-hidden border border-slate-800 flex flex-col">
+            <div className="px-4 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span className="font-mono">{previewItem.name}</span>
+              <span>{textContent.split("\n").length} lines</span>
             </div>
-
-            {/* Content View */}
-            <div className="flex-1 p-6 overflow-auto font-mono text-xs text-slate-200 bg-slate-950 selection:bg-blue-600 selection:text-white">
+            <div className="p-4 overflow-auto font-mono text-xs leading-relaxed whitespace-pre-wrap select-text">
               {docLoading ? (
-                <div className="flex flex-col items-center justify-center h-64 gap-3">
-                  <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-                  <p className="text-xs text-slate-400 font-medium">Loading text file...</p>
+                <div className="flex items-center justify-center py-12 gap-2 text-slate-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Loading text...</span>
                 </div>
               ) : (
-                <pre className="whitespace-pre-wrap leading-relaxed">{textContent}</pre>
+                textContent
               )}
             </div>
           </div>
         ) : previewItem.type === "audio" ? (
           /* 6. AUDIO PREVIEW */
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 flex flex-col items-center text-center shadow-2xl">
-            <div className="w-24 h-24 rounded-3xl bg-purple-950/60 border border-purple-800 text-purple-400 flex items-center justify-center mb-6 shadow-inner">
-              <Music className="w-12 h-12" />
+          <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 max-w-md w-full">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-purple-500/20">
+              <Music className="w-10 h-10" />
             </div>
-            <h4 className="text-base font-bold text-white mb-1 truncate max-w-xs">
-              {previewItem.name}
-            </h4>
-            <p className="text-xs text-slate-400 mb-6">
-              {previewItem.telegram_channel_title || "Audio Track"}
-            </p>
-            <audio controls autoPlay className="w-full" src={streamUrl}>
-              Your browser does not support the audio element.
+            <div className="text-center truncate max-w-full">
+              <h3 className="text-base font-bold text-white truncate">{previewItem.name}</h3>
+              <p className="text-xs text-slate-400 font-mono mt-1">{formatBytes(previewItem.size)}</p>
+            </div>
+            <audio controls src={streamUrl} className="w-full" autoPlay>
+              Your browser does not support audio playback.
             </audio>
           </div>
         ) : (
-          /* 7. GENERIC FALLBACK */
-          <div className="text-center text-slate-400 max-w-sm">
-            <File className="w-16 h-16 mx-auto mb-4 text-slate-500" />
-            <h4 className="text-base font-bold text-white mb-2">{previewItem.name}</h4>
-            <p className="text-xs mb-6">
-              Preview is not available for this file type. You can download the file directly.
+          /* 7. GENERIC UNSUPPORTED FILE PREVIEW */
+          <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center text-center max-w-md w-full">
+            <div className="w-20 h-20 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-400 mb-4">
+              <File className="w-10 h-10" />
+            </div>
+            <h3 className="text-base font-bold text-white truncate max-w-full mb-1">
+              {previewItem.name}
+            </h3>
+            <p className="text-xs text-slate-400 mb-6 font-mono">{formatBytes(previewItem.size)}</p>
+            <p className="text-xs text-slate-400 mb-6">
+              Preview is not supported for this file type. You can download it directly.
             </p>
             <a
               href={downloadUrl}
               download={previewItem.name}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-lg shadow-blue-500/20"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-sm font-semibold text-white transition-colors shadow-lg shadow-blue-500/20"
             >
               <Download className="w-4 h-4" />
               <span>Download File</span>

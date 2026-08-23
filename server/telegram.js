@@ -771,10 +771,20 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
 
   const lowerName = (fileName || "").toLowerCase().trim();
   let contentType = "application/octet-stream";
-  if (lowerName.endsWith(".mp4") || lowerName.endsWith(".m4v") || mimeType?.includes("mp4") || mimeType === "video/mp2t" || (!mimeType?.includes("audio") && !mimeType?.includes("image") && !mimeType?.includes("pdf") && !lowerName.match(/\.(png|jpg|jpeg|gif|webp|pdf|mp3|m4a|ogg)$/))) {
-    if (lowerName.endsWith(".webm") || mimeType?.includes("webm")) contentType = "video/webm";
-    else if (lowerName.endsWith(".mkv") || mimeType?.includes("matroska")) contentType = "video/x-matroska";
-    else contentType = "video/mp4";
+  if (lowerName.endsWith(".webm") || mimeType?.includes("webm")) {
+    contentType = "video/webm";
+  } else if (lowerName.endsWith(".mkv") || mimeType?.includes("matroska")) {
+    contentType = "video/x-matroska";
+  } else if (
+    lowerName.endsWith(".mp4") ||
+    lowerName.endsWith(".m4v") ||
+    lowerName.endsWith(".mov") ||
+    lowerName.endsWith(".ts") ||
+    mimeType?.includes("mp4") ||
+    mimeType === "video/mp2t" ||
+    (!mimeType?.includes("audio") && !mimeType?.includes("image") && !mimeType?.includes("pdf") && !lowerName.match(/\.(png|jpg|jpeg|gif|webp|pdf|mp3|m4a|ogg|docx|txt|json)$/))
+  ) {
+    contentType = "video/mp4";
   } else if (lowerName.endsWith(".mp3") || lowerName.endsWith(".m4a") || mimeType?.includes("audio")) {
     contentType = "audio/mpeg";
   } else if (lowerName.endsWith(".pdf") || mimeType?.includes("pdf")) {
@@ -787,6 +797,8 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     contentType = "image/webp";
   } else if (mimeType && mimeType !== "video/mp2t") {
     contentType = mimeType;
+  } else {
+    contentType = "video/mp4";
   }
 
   const MAX_STREAM_RESPONSE_CHUNK = 4 * 1024 * 1024; // 4MB per HTTP 206 chunk for blazing fast buffering
