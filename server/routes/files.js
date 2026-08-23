@@ -384,17 +384,7 @@ router.get("/:id/stream", async (req, res) => {
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
 
-    // Strategy 1: Telegram Bot API CDN Stream (Only for files <= 20MB where telegram_file_id is valid)
-    if (file.telegram_file_id && fileSize > 0 && fileSize <= 20 * 1024 * 1024) {
-      try {
-        await streamTelegramBotFile(file, range, req, res);
-        return;
-      } catch (botErr) {
-        console.warn("Bot CDN stream attempt failed, falling back to MTProto:", botErr.message);
-      }
-    }
-
-    // Strategy 2: High-Speed MTProto Multi-DC Direct Stream (Works for files of any size up to 2GB)
+    // Strategy 1: High-Speed MTProto Multi-DC Direct Stream (Works for files of any size up to 2GB with instant 4KB-aligned Range seeking)
     if (targetChannelId && file.telegram_message_id) {
       try {
         await streamGramMedia(
@@ -410,7 +400,17 @@ router.get("/:id/stream", async (req, res) => {
         );
         return;
       } catch (mtprotoErr) {
-        console.warn("MTProto streaming failed:", mtprotoErr.message);
+        console.warn("MTProto streaming failed, falling back to Bot CDN:", mtprotoErr.message);
+      }
+    }
+
+    // Strategy 2: Telegram Bot API CDN Stream fallback (Only for files <= 20MB where telegram_file_id is valid)
+    if (file.telegram_file_id && fileSize > 0 && fileSize <= 20 * 1024 * 1024) {
+      try {
+        await streamTelegramBotFile(file, range, req, res);
+        return;
+      } catch (botErr) {
+        console.warn("Bot CDN stream attempt failed:", botErr.message);
       }
     }
 

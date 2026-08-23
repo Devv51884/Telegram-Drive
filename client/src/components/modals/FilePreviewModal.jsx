@@ -338,7 +338,7 @@ export default function FilePreviewModal() {
                 <p className="text-xs mb-4 text-slate-400">
                   {previewItem.source_type === "telegram_post"
                     ? "Could not buffer video stream. Ensure your bot or connected Telegram account has access to this channel post."
-                    : "Could not buffer video stream. Please check your storage bot connection or retry."}
+                    : "Could not buffer video stream in browser. If this video uses a specialized codec (like HEVC/H.265 or non-web audio), you can download and play it offline instantly."}
                 </p>
                 <div className="flex items-center gap-3">
                   <button
@@ -367,7 +367,10 @@ export default function FilePreviewModal() {
                 autoPlay
                 preload="metadata"
                 playsInline
-                onLoadedMetadata={() => setVideoLoading(false)}
+                onLoadedMetadata={() => {
+                  setVideoLoading(false);
+                  setVideoError(false);
+                }}
                 onLoadedData={() => {
                   setVideoLoading(false);
                   setVideoError(false);
@@ -379,7 +382,12 @@ export default function FilePreviewModal() {
                   setVideoError(false);
                 }}
                 onError={(e) => {
-                  console.error("Video stream error:", videoRef.current?.error);
+                  const mediaErr = videoRef.current?.error;
+                  console.error("Video stream error:", mediaErr);
+                  // Code 1 is MEDIA_ERR_ABORTED (user or browser seeking/canceling request) - do not show error screen
+                  if (mediaErr && mediaErr.code === 1) {
+                    return;
+                  }
                   setVideoLoading(false);
                   setVideoError(true);
                 }}
