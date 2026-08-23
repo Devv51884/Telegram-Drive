@@ -17,9 +17,9 @@ router.get("/contents", async (req, res) => {
 
     // Filter by user if logged in
     if (req.userId) {
-      folderQuery += " AND (user_id = ? OR user_id IS NULL)";
+      folderQuery += " AND user_id = ?";
       folderParams.push(req.userId);
-      fileQuery += " AND (user_id = ? OR user_id IS NULL)";
+      fileQuery += " AND user_id = ?";
       fileParams.push(req.userId);
     }
 
@@ -147,8 +147,8 @@ router.get("/stats", async (req, res) => {
     const folderParams = [];
 
     if (req.userId) {
-      countQuery += " AND (user_id = ? OR user_id IS NULL)";
-      folderCountQuery += " AND (user_id = ? OR user_id IS NULL)";
+      countQuery += " AND user_id = ?";
+      folderCountQuery += " AND user_id = ?";
       params.push(req.userId);
       folderParams.push(req.userId);
     }
@@ -378,8 +378,8 @@ router.post("/empty-trash", async (req, res) => {
     let trashFoldersQuery = "SELECT * FROM folders WHERE is_trash = 1";
     const params = [];
     if (req.userId) {
-      trashFilesQuery += " AND (user_id = ? OR user_id IS NULL)";
-      trashFoldersQuery += " AND (user_id = ? OR user_id IS NULL)";
+      trashFilesQuery += " AND user_id = ?";
+      trashFoldersQuery += " AND user_id = ?";
       params.push(req.userId);
     }
 

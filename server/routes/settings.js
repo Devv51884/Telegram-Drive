@@ -160,7 +160,7 @@ router.post("/auth/logout", (req, res) => {
 // GET /api/settings - Safe read-only status (no infrastructure/secret leakage)
 router.get("/", async (req, res) => {
   try {
-    const user = await getConnectedTelegramUser();
+    const user = await getConnectedTelegramUser(req.userId || null);
     res.json({
       success: true,
       settings: {
@@ -223,6 +223,7 @@ router.post("/telegram-auth/login", authLimiter, async (req, res) => {
     }
 
     const result = await completeTelegramLogin(
+      req.userId || null,
       phoneNumber,
       code ? code.trim() : "",
       password ? password.trim() : "",
@@ -258,7 +259,7 @@ router.post("/telegram-auth/login", authLimiter, async (req, res) => {
 // POST /api/settings/telegram-auth/logout - Disconnect account
 router.post("/telegram-auth/logout", async (req, res) => {
   try {
-    await logoutTelegramUser();
+    await logoutTelegramUser(req.userId || null);
     res.json({ success: true, message: "Telegram account disconnected" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

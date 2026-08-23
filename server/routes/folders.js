@@ -21,7 +21,7 @@ router.get("/", async (req, res) => {
     const params = [];
 
     if (req.userId) {
-      query += " AND (user_id = ? OR user_id IS NULL)";
+      query += " AND user_id = ?";
       params.push(req.userId);
     }
 
@@ -49,7 +49,7 @@ router.get("/tree", async (req, res) => {
     const params = [];
 
     if (req.userId) {
-      query += " AND (user_id = ? OR user_id IS NULL)";
+      query += " AND user_id = ?";
       params.push(req.userId);
     }
 

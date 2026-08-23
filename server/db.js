@@ -129,6 +129,9 @@ export async function getSqliteDb() {
     await db.exec("ALTER TABLE files ADD COLUMN user_id TEXT;");
   } catch {}
   try {
+    await db.exec("ALTER TABLE telegram_sessions ADD COLUMN user_id TEXT;");
+  } catch {}
+  try {
     await db.exec("ALTER TABLE telegram_sessions ADD COLUMN first_name TEXT;");
   } catch {}
   try {
@@ -139,6 +142,11 @@ export async function getSqliteDb() {
   } catch {}
   try {
     await db.exec("UPDATE files SET mime_type = 'video/mp4' WHERE mime_type = 'video/mp2t' OR name LIKE '%.mp4';");
+  } catch {}
+  try {
+    // Assign legacy unassigned files & folders to the main account
+    await db.exec("UPDATE files SET user_id = 'u_ed2e45a80d67df50' WHERE user_id IS NULL;");
+    await db.exec("UPDATE folders SET user_id = 'u_ed2e45a80d67df50' WHERE user_id IS NULL;");
   } catch {}
 
   sqliteDbInstance = db;
@@ -756,19 +764,24 @@ export async function dbDeleteFolder(id) {
 }
 
 // TELEGRAM SESSIONS
-export async function dbGetActiveTelegramSession() {
+export async function dbGetActiveTelegramSession(userId = null) {
   const sqlite = await getSqliteDb();
-  const session = await sqlite.get("SELECT * FROM telegram_sessions WHERE is_active = 1 LIMIT 1");
+  let session = null;
+  if (userId) {
+    session = await sqlite.get("SELECT * FROM telegram_sessions WHERE user_id = ? AND is_active = 1 LIMIT 1", [userId]);
+  } else {
+    session = await sqlite.get("SELECT * FROM telegram_sessions WHERE is_active = 1 LIMIT 1");
+  }
   if (session) return session;
 
   const supabase = await getSupabaseClient();
   if (supabase) {
     try {
-      const { data, error } = await supabase
-        .from("telegram_sessions")
-        .select("*")
-        .eq("is_active", 1)
-        .maybeSingle();
+      let query = supabase.from("telegram_sessions").select("*").eq("is_active", 1);
+      if (userId) {
+        query = query.eq("user_id", userId);
+      }
+      const { data, error } = await query.maybeSingle();
 
       if (!error && data) {
         const infoStr = typeof data.user_info === "object" ? JSON.stringify(data.user_info) : data.user_info;
@@ -778,9 +791,10 @@ export async function dbGetActiveTelegramSession() {
         } catch {}
 
         await sqlite.run(
-          `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO telegram_sessions (id, user_id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
+            user_id = excluded.user_id,
             session_string = excluded.session_string,
             user_info = excluded.user_info,
             first_name = excluded.first_name,
@@ -789,6 +803,7 @@ export async function dbGetActiveTelegramSession() {
             is_active = excluded.is_active`,
           [
             data.id,
+            data.user_id || userId || null,
             data.phone_number,
             data.session_string,
             infoStr,
@@ -807,11 +822,18 @@ export async function dbGetActiveTelegramSession() {
 
 export async function dbSaveTelegramSession(sessionRecord) {
   const sqlite = await getSqliteDb();
-  await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
+  const targetUserId = sessionRecord.user_id || null;
+  if (targetUserId) {
+    await sqlite.run("UPDATE telegram_sessions SET is_active = 0 WHERE user_id = ?", [targetUserId]);
+  } else {
+    await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
+  }
+
   await sqlite.run(
-    `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `INSERT INTO telegram_sessions (id, user_id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
      ON CONFLICT(id) DO UPDATE SET
+      user_id = excluded.user_id,
       session_string = excluded.session_string,
       user_info = excluded.user_info,
       first_name = excluded.first_name,
@@ -820,6 +842,7 @@ export async function dbSaveTelegramSession(sessionRecord) {
       is_active = 1`,
     [
       sessionRecord.id,
+      targetUserId,
       sessionRecord.phone_number,
       sessionRecord.session_string,
       sessionRecord.user_info,
@@ -833,9 +856,14 @@ export async function dbSaveTelegramSession(sessionRecord) {
     try {
       const supabase = await getSupabaseClient();
       if (supabase) {
-        await supabase.from("telegram_sessions").update({ is_active: 0 }).neq("id", sessionRecord.id);
+        if (targetUserId) {
+          await supabase.from("telegram_sessions").update({ is_active: 0 }).eq("user_id", targetUserId);
+        } else {
+          await supabase.from("telegram_sessions").update({ is_active: 0 }).neq("id", sessionRecord.id);
+        }
         await supabase.from("telegram_sessions").upsert({
           id: sessionRecord.id,
+          user_id: targetUserId,
           phone_number: sessionRecord.phone_number,
           session_string: sessionRecord.session_string,
           user_info: sessionRecord.user_info,
@@ -848,15 +876,23 @@ export async function dbSaveTelegramSession(sessionRecord) {
   })();
 }
 
-export async function dbDeactivateTelegramSessions() {
+export async function dbDeactivateTelegramSessions(userId = null) {
   const sqlite = await getSqliteDb();
-  await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
+  if (userId) {
+    await sqlite.run("UPDATE telegram_sessions SET is_active = 0 WHERE user_id = ?", [userId]);
+  } else {
+    await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
+  }
 
   (async () => {
     try {
       const supabase = await getSupabaseClient();
       if (supabase) {
-        await supabase.from("telegram_sessions").update({ is_active: 0 });
+        if (userId) {
+          await supabase.from("telegram_sessions").update({ is_active: 0 }).eq("user_id", userId);
+        } else {
+          await supabase.from("telegram_sessions").update({ is_active: 0 });
+        }
       }
     } catch (err) {
       console.warn("Supabase session deactivate warning:", err.message);

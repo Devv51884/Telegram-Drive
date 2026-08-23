@@ -11,7 +11,8 @@ import {
   dbSetSetting,
   dbGetActiveTelegramSession,
   dbSaveTelegramSession,
-  dbDeactivateTelegramSessions
+  dbDeactivateTelegramSessions,
+  generateId
 } from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,14 +41,14 @@ let activeBotToken = null;
 let activeBotSessionString = "";
 
 // Initialize or retrieve the authenticated GramJS client (Supports User Account Session & Bot Token MTProto fallback)
-export async function getGramClient() {
+export async function getGramClient(userId = null) {
   const config = await getTelegramConfig();
   if (!config.apiId || !config.apiHash) {
     return null;
   }
 
   // Strategy A: Authenticated User Account MTProto Session (Fastest, full channel access)
-  const sessionRow = await dbGetActiveTelegramSession();
+  const sessionRow = await dbGetActiveTelegramSession(userId);
   const sessionStr = sessionRow?.session_string || process.env.TELEGRAM_SESSION_STRING || "";
 
   if (sessionStr) {
@@ -413,7 +414,7 @@ export async function sendTelegramPhoneCode(phoneNumber) {
 }
 
 // Step 2: Complete Telegram Login with OTP (and 2FA if enabled)
-export async function completeTelegramLogin(phoneNumber, phoneCode, password2FA = "", phoneCodeHash = "") {
+export async function completeTelegramLogin(userId, phoneNumber, phoneCode, password2FA = "", phoneCodeHash = "") {
   const config = await getTelegramConfig();
   const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, "");
 
@@ -441,12 +442,14 @@ export async function completeTelegramLogin(phoneNumber, phoneCode, password2FA 
     });
 
     const sessionString = client.session.save();
+    const sessionId = generateId("tgsess_");
 
-    await dbDeactivateTelegramSessions();
+    await dbDeactivateTelegramSessions(userId);
     await dbSaveTelegramSession({
+      id: sessionId,
+      user_id: userId || null,
       phone_number: cleanPhone,
       session_string: sessionString,
-      user_id: user.id ? user.id.toString() : null,
       username: user.username || null,
       first_name: user.firstName || null,
       last_name: user.lastName || null,
@@ -481,8 +484,8 @@ export async function completeTelegramLogin(phoneNumber, phoneCode, password2FA 
 }
 
 // Get connected Telegram User information
-export async function getConnectedTelegramUser() {
-  const sessionRow = await dbGetActiveTelegramSession();
+export async function getConnectedTelegramUser(userId = null) {
+  const sessionRow = await dbGetActiveTelegramSession(userId);
   if (!sessionRow) {
     return { connected: false };
   }
@@ -499,7 +502,7 @@ export async function getConnectedTelegramUser() {
   const username = parsedInfo.username || sessionRow.username || "";
 
   try {
-    const client = await getGramClient();
+    const client = await getGramClient(userId);
     if (!client) {
       return {
         connected: true,
@@ -537,7 +540,7 @@ export async function getConnectedTelegramUser() {
 }
 
 // Logout & Disconnect Telegram User Account
-export async function logoutTelegramUser() {
+export async function logoutTelegramUser(userId = null) {
   if (activeGramClient) {
     try {
       await activeGramClient.disconnect();
@@ -545,7 +548,7 @@ export async function logoutTelegramUser() {
     activeGramClient = null;
     activeSessionString = null;
   }
-  await dbDeactivateTelegramSessions();
+  await dbDeactivateTelegramSessions(userId);
   return { success: true };
 }
 
@@ -585,7 +588,7 @@ export function parseTelegramPostUrl(url) {
 }
 
 // Parse and Fetch Telegram Post Media using GramJS MTProto Client
-export async function parseAndFetchTelegramPost(postUrl) {
+export async function parseAndFetchTelegramPost(postUrl, userId = null) {
   const parsed = parseTelegramPostUrl(postUrl);
   if (!parsed) {
     throw new Error(
@@ -593,7 +596,7 @@ export async function parseAndFetchTelegramPost(postUrl) {
     );
   }
 
-  const client = await getGramClient();
+  const client = await getGramClient(userId);
   if (!client) {
     throw new Error(
       "No Telegram user account is connected. Please connect your Telegram account in Settings to import channel media."
