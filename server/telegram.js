@@ -37,6 +37,7 @@ let activeGramClient = null;
 let activeSessionString = null;
 let activeBotGramClient = null;
 let activeBotToken = null;
+let activeBotSessionString = "";
 
 // Initialize or retrieve the authenticated GramJS client (Supports User Account Session & Bot Token MTProto fallback)
 export async function getGramClient() {
@@ -45,7 +46,7 @@ export async function getGramClient() {
     return null;
   }
 
-  // Strategy A: Authenticated User Account Session (if connected in Settings)
+  // Strategy A: Authenticated User Account MTProto Session (Fastest, full channel access)
   const sessionRow = await dbGetActiveTelegramSession();
   const sessionStr = sessionRow?.session_string || process.env.TELEGRAM_SESSION_STRING || "";
 
@@ -95,7 +96,7 @@ export async function getGramClient() {
     }
 
     try {
-      const botSession = new StringSession("");
+      const botSession = new StringSession(activeBotSessionString || "");
       const botClient = new TelegramClient(botSession, config.apiId, config.apiHash, {
         connectionRetries: 5,
         useWSS: false
@@ -105,6 +106,7 @@ export async function getGramClient() {
         botAuthToken: config.botToken
       });
 
+      activeBotSessionString = botClient.session.save();
       activeBotGramClient = botClient;
       activeBotToken = config.botToken;
       console.log("🤖 MTProto Bot Client active for high-speed 2GB streaming.");
@@ -701,36 +703,54 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
   let mediaCache = mediaLocationCache.get(cacheKey);
 
   if (!mediaCache) {
-    let peer = channelId;
     const msgId = parseInt(messageId, 10);
+    let msg = null;
 
-    let messages = [];
     try {
-      messages = await client.getMessages(peer, { ids: [msgId] });
-    } catch (err1) {
-      try {
-        const cleanId = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
-        const numId = bigInt(cleanId);
-        try {
-          const inputPeer = await client.getInputEntity(numId);
-          messages = await client.getMessages(inputPeer, { ids: [msgId] });
-        } catch {
-          try {
-            messages = await client.getMessages(numId, { ids: [msgId] });
-          } catch {
-            messages = await client.getMessages(bigInt(`-100${cleanId}`), { ids: [msgId] });
-          }
+      const entity = await client.getEntity(channelId);
+      if (entity) {
+        const inputChannel = new Api.InputChannel({
+          channelId: entity.id,
+          accessHash: entity.accessHash
+        });
+        const res = await client.invoke(
+          new Api.channels.GetMessages({
+            channel: inputChannel,
+            id: [new Api.InputMessageID({ id: msgId })]
+          })
+        );
+        if (res && res.messages?.length > 0 && res.messages[0]?.media) {
+          msg = res.messages[0];
         }
-      } catch (err2) {
-        console.warn("Peer resolution attempt failed:", err2.message);
+      }
+    } catch (chanErr) {
+      console.warn("channels.GetMessages resolution notice:", chanErr.message);
+    }
+
+    if (!msg || !msg.media) {
+      try {
+        const messages = await client.getMessages(channelId, { ids: [msgId] });
+        if (messages && messages[0] && messages[0].media) {
+          msg = messages[0];
+        }
+      } catch (err1) {
+        try {
+          const cleanId = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+          const numId = bigInt(cleanId);
+          const inputPeer = await client.getInputEntity(numId);
+          const messages = await client.getMessages(inputPeer, { ids: [msgId] });
+          if (messages && messages[0] && messages[0].media) {
+            msg = messages[0];
+          }
+        } catch (err2) {
+          console.warn("Peer resolution fallback error:", err2.message);
+        }
       }
     }
 
-    if (!messages || messages.length === 0 || !messages[0] || !messages[0].media) {
+    if (!msg || !msg.media) {
       throw new Error(`Telegram media post #${msgId} not found in channel ${channelId}`);
     }
-
-    const msg = messages[0];
     const media = msg.media;
     let totalSize = 0;
     let location = null;
