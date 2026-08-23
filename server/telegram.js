@@ -2,6 +2,7 @@ import axios from "axios";
 import FormData from "form-data";
 import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
+import { computeCheck } from "telegram/Password.js";
 import bigInt from "big-integer";
 import fs from "fs";
 import path from "path";
@@ -433,45 +434,41 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
     await client.connect();
   }
 
+  const targetHash = phoneCodeHash || authState?.phoneCodeHash;
+  if (!targetHash) {
+    throw new Error("Phone code hash is missing. Please request a new verification code.");
+  }
+
+  let user = null;
+
   try {
-    const user = await client.signIn({
-      phoneNumber: cleanPhone,
-      phoneCodeHash: phoneCodeHash || authState?.phoneCodeHash,
-      phoneCode: phoneCode,
-      password: async () => password2FA
-    });
-
-    const sessionString = client.session.save();
-    const sessionId = generateId("tgsess_");
-
-    await dbDeactivateTelegramSessions(userId);
-    await dbSaveTelegramSession({
-      id: sessionId,
-      user_id: userId || null,
-      phone_number: cleanPhone,
-      session_string: sessionString,
-      username: user.username || null,
-      first_name: user.firstName || null,
-      last_name: user.lastName || null,
-      is_active: 1
-    });
-
-    activeGramClient = client;
-    activeSessionString = sessionString;
-    activeAuthClients.delete(cleanPhone);
-
-    return {
-      success: true,
-      user: {
-        id: user.id.toString(),
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phone: cleanPhone
-      }
-    };
+    if (password2FA) {
+      // 2FA Password Check
+      const passwordSrpResult = await client.invoke(new Api.account.GetPassword());
+      const passwordSrpCheck = await computeCheck(passwordSrpResult, password2FA);
+      const res = await client.invoke(
+        new Api.auth.CheckPassword({
+          password: passwordSrpCheck
+        })
+      );
+      user = res.user;
+    } else {
+      // OTP Code Check
+      const res = await client.invoke(
+        new Api.auth.SignIn({
+          phoneNumber: cleanPhone,
+          phoneCodeHash: targetHash,
+          phoneCode: phoneCode.trim()
+        })
+      );
+      user = res.user;
+    }
   } catch (err) {
-    if (err.message && (err.message.includes("SESSION_PASSWORD_NEEDED") || err.message.includes("2FA"))) {
+    if (
+      err.message?.includes("SESSION_PASSWORD_NEEDED") ||
+      err.errorMessage === "SESSION_PASSWORD_NEEDED" ||
+      err.message?.includes("2FA")
+    ) {
       if (!password2FA) {
         return {
           requires2FA: true,
@@ -481,6 +478,40 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
     }
     throw err;
   }
+
+  if (!user) {
+    throw new Error("Telegram authentication failed. Please check code or try again.");
+  }
+
+  const sessionString = client.session.save();
+  const sessionId = generateId("tgsess_");
+
+  await dbDeactivateTelegramSessions(userId);
+  await dbSaveTelegramSession({
+    id: sessionId,
+    user_id: userId || null,
+    phone_number: cleanPhone,
+    session_string: sessionString,
+    username: user.username || null,
+    first_name: user.firstName || null,
+    last_name: user.lastName || null,
+    is_active: 1
+  });
+
+  activeGramClient = client;
+  activeSessionString = sessionString;
+  activeAuthClients.delete(cleanPhone);
+
+  return {
+    success: true,
+    user: {
+      id: user.id?.toString(),
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: cleanPhone
+    }
+  };
 }
 
 // Get connected Telegram User information
