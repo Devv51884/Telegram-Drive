@@ -195,7 +195,8 @@ export default function FilePreviewModal() {
     setVideoError(false);
     setVideoLoading(true);
     if (videoRef.current) {
-      videoRef.current.src = streamUrl;
+      const retryUrl = `${streamUrl}${streamUrl.includes("?") ? "&" : "?"}_t=${Date.now()}`;
+      videoRef.current.src = retryUrl;
       videoRef.current.load();
       videoRef.current.play().catch(() => {});
     }
@@ -384,7 +385,6 @@ export default function FilePreviewModal() {
                 }}
                 className="w-full h-full max-h-[80vh] object-contain rounded-3xl"
               >
-                <source src={streamUrl} type={getVideoMimeType(previewItem)} />
                 Your browser does not support HTML5 video streaming.
               </video>
             )}

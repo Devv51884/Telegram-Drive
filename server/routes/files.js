@@ -381,18 +381,20 @@ router.get("/:id/stream", async (req, res) => {
 
     const range = req.headers.range;
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    const fileSize = Number(file.size) || 0;
+    const isUploaded = file.source_type === "upload" || !file.source_type;
 
-    // Strategy 1: Telegram Bot API CDN Stream with Direct HTTP Range support (Ultra-fast for files <= 50MB)
-    if (file.telegram_file_id) {
+    // Strategy 1: Telegram Bot API CDN Stream (Only for files <= 20MB where telegram_file_id is valid)
+    if (file.telegram_file_id && fileSize > 0 && fileSize <= 20 * 1024 * 1024) {
       try {
         await streamTelegramBotFile(file, range, req, res);
         return;
       } catch (botErr) {
-        console.warn("Bot CDN stream attempt failed, checking MTProto fallback:", botErr.message);
+        console.warn("Bot CDN stream attempt failed, falling back to MTProto:", botErr.message);
       }
     }
 
-    // Strategy 2: High-Speed MTProto Multi-DC Direct Stream (For files > 50MB up to 2GB or channel posts)
+    // Strategy 2: High-Speed MTProto Multi-DC Direct Stream (Works for files of any size up to 2GB)
     if (targetChannelId && file.telegram_message_id) {
       try {
         await streamGramMedia(
@@ -402,7 +404,9 @@ router.get("/:id/stream", async (req, res) => {
           req,
           res,
           file.mime_type,
-          file.name
+          file.name,
+          false, // isDownload = false
+          isUploaded // useStorageBot = true for uploaded files
         );
         return;
       } catch (mtprotoErr) {
@@ -429,7 +433,12 @@ router.get("/:id/download", async (req, res) => {
       return res.status(404).send("File not found");
     }
 
-    if (file.telegram_file_id) {
+    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    const fileSize = Number(file.size) || 0;
+    const isUploaded = file.source_type === "upload" || !file.source_type;
+
+    // Strategy 1: Telegram Bot API direct download (Only for files <= 20MB where telegram_file_id is valid)
+    if (file.telegram_file_id && fileSize > 0 && fileSize <= 20 * 1024 * 1024) {
       try {
         const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
         const response = await axios({
@@ -454,7 +463,7 @@ router.get("/:id/download", async (req, res) => {
       }
     }
 
-    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    // Strategy 2: High-Speed MTProto Multi-DC Direct Stream (Works for files of any size up to 2GB)
     if (targetChannelId && file.telegram_message_id) {
       await streamGramMedia(
         targetChannelId,
@@ -463,7 +472,9 @@ router.get("/:id/download", async (req, res) => {
         req,
         res,
         file.mime_type,
-        file.name
+        file.name,
+        true, // isDownload = true
+        isUploaded // useStorageBot = true for uploaded files
       );
       return;
     }

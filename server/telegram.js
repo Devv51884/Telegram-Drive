@@ -41,52 +41,19 @@ let activeBotGramClient = null;
 let activeBotToken = null;
 let activeBotSessionString = "";
 
-// Initialize or retrieve the authenticated GramJS client (Supports User Account Session & Bot Token MTProto fallback)
-export async function getGramClient(userId = null) {
+// Dedicated Storage Bot MTProto Client (Streams and downloads files from Owner's Storage Channel up to 2GB)
+export async function getStorageGramClient() {
   const config = await getTelegramConfig();
   if (!config.apiId || !config.apiHash) {
     return null;
   }
 
-  // Strategy A: Authenticated User Account MTProto Session (Fastest, full channel access)
-  const sessionRow = await dbGetActiveTelegramSession(userId);
-  const sessionStr = sessionRow?.session_string || process.env.TELEGRAM_SESSION_STRING || "";
-
-  if (sessionStr) {
-    if (activeGramClient && activeSessionString === sessionStr) {
-      if (!activeGramClient.connected) {
-        await activeGramClient.connect();
-      }
-      return activeGramClient;
-    }
-
-    if (activeGramClient) {
-      try {
-        await activeGramClient.disconnect();
-      } catch {}
-    }
-
-    try {
-      const session = new StringSession(sessionStr);
-      const client = new TelegramClient(session, config.apiId, config.apiHash, {
-        connectionRetries: 5,
-        useWSS: false
-      });
-
-      await client.connect();
-      activeGramClient = client;
-      activeSessionString = sessionStr;
-      return activeGramClient;
-    } catch (userGramErr) {
-      console.warn("User MTProto session connect error, trying bot MTProto fallback:", userGramErr.message);
-    }
-  }
-
-  // Strategy B: Dedicated MTProto Bot Session (No phone OTP login required, streams up to 2GB)
   if (config.botToken) {
     if (activeBotGramClient && activeBotToken === config.botToken) {
       if (!activeBotGramClient.connected) {
-        await activeBotGramClient.connect();
+        try {
+          await activeBotGramClient.connect();
+        } catch {}
       }
       return activeBotGramClient;
     }
@@ -111,14 +78,71 @@ export async function getGramClient(userId = null) {
       activeBotSessionString = botClient.session.save();
       activeBotGramClient = botClient;
       activeBotToken = config.botToken;
-      console.log("🤖 MTProto Bot Client active for high-speed 2GB streaming.");
+      console.log("🤖 MTProto Storage Bot Client active for high-speed channel streaming/downloads.");
       return activeBotGramClient;
     } catch (botGramErr) {
-      console.error("Failed to initialize MTProto Bot Client:", botGramErr.message);
+      console.error("Failed to initialize MTProto Storage Bot Client:", botGramErr.message);
+    }
+  }
+
+  // Fallback to active telegram session if bot token fails
+  return getUserGramClient(null);
+}
+
+// User Account MTProto Client (Used for importing user's personal channel/group post links)
+export async function getUserGramClient(userId = null) {
+  const config = await getTelegramConfig();
+  if (!config.apiId || !config.apiHash) {
+    return null;
+  }
+
+  const sessionRow = await dbGetActiveTelegramSession(userId);
+  const sessionStr = sessionRow?.session_string || process.env.TELEGRAM_SESSION_STRING || "";
+
+  if (sessionStr) {
+    if (activeGramClient && activeSessionString === sessionStr) {
+      if (!activeGramClient.connected) {
+        try {
+          await activeGramClient.connect();
+        } catch {}
+      }
+      return activeGramClient;
+    }
+
+    if (activeGramClient) {
+      try {
+        await activeGramClient.disconnect();
+      } catch {}
+    }
+
+    try {
+      const session = new StringSession(sessionStr);
+      const client = new TelegramClient(session, config.apiId, config.apiHash, {
+        connectionRetries: 5,
+        useWSS: false
+      });
+
+      await client.connect();
+      activeGramClient = client;
+      activeSessionString = sessionStr;
+      return activeGramClient;
+    } catch (userGramErr) {
+      console.warn("User MTProto session connect error:", userGramErr.message);
     }
   }
 
   return null;
+}
+
+// General Gram Client resolver (Supports both Storage Bot and User Account)
+export async function getGramClient(userId = null, preferStorageBot = false) {
+  if (preferStorageBot) {
+    const storageClient = await getStorageGramClient();
+    if (storageClient) return storageClient;
+  }
+  const userClient = await getUserGramClient(userId);
+  if (userClient) return userClient;
+  return getStorageGramClient();
 }
 
 // Test Bot Token Connection
@@ -726,9 +750,26 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
 // In-memory media location cache to eliminate MTProto roundtrips on range requests
 const mediaLocationCache = new Map();
 
-// Download/Stream chunk from GramJS MTProto message with HTTP Range support (107ms Multi-DC Streaming)
-export async function streamGramMedia(channelId, messageId, rangeHeader, req, res, mimeType, fileName) {
-  const client = await getGramClient();
+// Download/Stream chunk from GramJS MTProto message with HTTP Range support & direct download (Multi-DC Streaming)
+export async function streamGramMedia(
+  channelId,
+  messageId,
+  rangeHeader = null,
+  req = null,
+  res = null,
+  mimeType = "",
+  fileName = "",
+  isDownload = false,
+  useStorageBot = true
+) {
+  // Use Storage Bot client for platform uploaded files; fall back to User account if needed
+  let client = null;
+  if (useStorageBot) {
+    client = await getStorageGramClient();
+  }
+  if (!client) {
+    client = await getGramClient();
+  }
   if (!client) {
     throw new Error("Telegram MTProto streaming client unavailable");
   }
@@ -740,51 +781,53 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     const msgId = parseInt(messageId, 10);
     let msg = null;
 
+    // 1. Try direct getMessages
     try {
-      const entity = await client.getEntity(channelId);
-      if (entity) {
-        const inputChannel = new Api.InputChannel({
-          channelId: entity.id,
-          accessHash: entity.accessHash
-        });
-        const res = await client.invoke(
-          new Api.channels.GetMessages({
-            channel: inputChannel,
-            id: [new Api.InputMessageID({ id: msgId })]
-          })
-        );
-        if (res && res.messages?.length > 0 && res.messages[0]?.media) {
-          msg = res.messages[0];
-        }
+      const messages = await client.getMessages(channelId, { ids: [msgId] });
+      if (messages && messages[0] && messages[0].media) {
+        msg = messages[0];
       }
-    } catch (chanErr) {
-      console.warn("channels.GetMessages resolution notice:", chanErr.message);
-    }
+    } catch (e1) {}
 
+    // 2. Try entity resolution
     if (!msg || !msg.media) {
       try {
-        const messages = await client.getMessages(channelId, { ids: [msgId] });
+        const entity = await client.getEntity(channelId);
+        if (entity) {
+          const inputChannel = new Api.InputChannel({
+            channelId: entity.id,
+            accessHash: entity.accessHash
+          });
+          const res = await client.invoke(
+            new Api.channels.GetMessages({
+              channel: inputChannel,
+              id: [new Api.InputMessageID({ id: msgId })]
+            })
+          );
+          if (res && res.messages?.length > 0 && res.messages[0]?.media) {
+            msg = res.messages[0];
+          }
+        }
+      } catch (e2) {}
+    }
+
+    // 3. Try numeric InputPeer resolution fallback
+    if (!msg || !msg.media) {
+      try {
+        const cleanId = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+        const numId = bigInt(cleanId);
+        const inputPeer = await client.getInputEntity(numId);
+        const messages = await client.getMessages(inputPeer, { ids: [msgId] });
         if (messages && messages[0] && messages[0].media) {
           msg = messages[0];
         }
-      } catch (err1) {
-        try {
-          const cleanId = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
-          const numId = bigInt(cleanId);
-          const inputPeer = await client.getInputEntity(numId);
-          const messages = await client.getMessages(inputPeer, { ids: [msgId] });
-          if (messages && messages[0] && messages[0].media) {
-            msg = messages[0];
-          }
-        } catch (err2) {
-          console.warn("Peer resolution fallback error:", err2.message);
-        }
-      }
+      } catch (e3) {}
     }
 
     if (!msg || !msg.media) {
       throw new Error(`Telegram media post #${msgId} not found in channel ${channelId}`);
     }
+
     const media = msg.media;
     let totalSize = 0;
     let location = null;
@@ -855,15 +898,26 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     contentType = "video/mp4";
   }
 
-  const MAX_STREAM_RESPONSE_CHUNK = 4 * 1024 * 1024; // 4MB per HTTP 206 chunk for blazing fast buffering
+  const dispositionType = isDownload ? "attachment" : "inline";
+  const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
+
+  const CHUNK_SIZE = 512 * 1024; // 512KB per request chunk
+  const ALIGNMENT = 4096; // 4KB
 
   if (rangeHeader && totalSize > 0) {
     // Parse Range: bytes=start-end
     const parts = rangeHeader.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10) || 0;
+
+    if (start >= totalSize) {
+      res.writeHead(416, {
+        "Content-Range": `bytes */${totalSize}`
+      });
+      return res.end();
+    }
+
     const rawEnd = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
-    // Cap chunk to MAX_STREAM_RESPONSE_CHUNK for instant start and smooth streaming
-    const end = Math.min(rawEnd, start + MAX_STREAM_RESPONSE_CHUNK - 1, totalSize - 1);
+    const end = Math.min(rawEnd, totalSize - 1);
     const requestedLength = Math.max(0, end - start + 1);
 
     res.writeHead(206, {
@@ -871,7 +925,7 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
       "Accept-Ranges": "bytes",
       "Content-Length": requestedLength,
       "Content-Type": contentType,
-      "Content-Disposition": `inline; filename="${encodeURIComponent(fileName || "media")}"`,
+      "Content-Disposition": contentDisposition,
       "Cache-Control": "no-cache, no-store, must-revalidate"
     });
 
@@ -883,18 +937,17 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
-      // Telegram MTProto requires offset and limit to align to 4096 bytes (4KB)
-      const ALIGNMENT = 4096;
       const alignedStart = Math.floor(start / ALIGNMENT) * ALIGNMENT;
       const skipBytes = start - alignedStart;
       const totalFetchLength = requestedLength + skipBytes;
-      const alignedLimit = Math.ceil(totalFetchLength / ALIGNMENT) * ALIGNMENT;
+      // In GramJS iterDownload, limit is the number of chunk request iterations!
+      const chunkCountLimit = Math.ceil(totalFetchLength / CHUNK_SIZE) + 1;
 
       const iter = client.iterDownload({
         file: location,
         offset: bigInt(alignedStart),
-        limit: alignedLimit,
-        requestSize: 512 * 1024,
+        limit: chunkCountLimit,
+        requestSize: CHUNK_SIZE,
         dcId: dcId
       });
 
@@ -924,12 +977,13 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
 
         if (bytesSent >= requestedLength) break;
       }
+
       if (!res.writableEnded && !res.destroyed) {
         res.end();
       }
     } catch (streamErr) {
       if (!clientDisconnected) {
-        console.warn("MTProto streaming stream interrupted:", streamErr.message);
+        console.warn("MTProto streaming interrupted:", streamErr.message);
       }
       if (streamErr.message?.includes("FILE_REFERENCE") || streamErr.message?.includes("FILEREF")) {
         mediaLocationCache.delete(cacheKey);
@@ -941,11 +995,11 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
       }
     }
   } else {
-    // Full content download / stream
+    // Full content download / stream (HTTP 200)
     res.writeHead(200, {
       "Content-Length": totalSize > 0 ? totalSize : undefined,
       "Content-Type": contentType,
-      "Content-Disposition": `inline; filename="${encodeURIComponent(fileName || "file")}"`,
+      "Content-Disposition": contentDisposition,
       "Accept-Ranges": "bytes",
       "Cache-Control": "no-cache, no-store, must-revalidate"
     });
@@ -960,7 +1014,7 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     try {
       const iter = client.iterDownload({
         file: location,
-        requestSize: 512 * 1024,
+        requestSize: CHUNK_SIZE,
         dcId: dcId
       });
 
@@ -974,6 +1028,9 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
         res.end();
       }
     } catch (streamErr) {
+      if (!clientDisconnected) {
+        console.warn("MTProto download error:", streamErr.message);
+      }
       if (streamErr.message?.includes("FILE_REFERENCE") || streamErr.message?.includes("FILEREF")) {
         mediaLocationCache.delete(cacheKey);
       }

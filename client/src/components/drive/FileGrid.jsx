@@ -122,7 +122,7 @@ export default function FileGrid() {
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-1">
             Folders ({folders.length})
           </h2>
-          <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
             {folders.map((folder) => {
               const isSelected = isItemSelected(folder.id);
               const isDragTarget = dragOverFolderId === folder.id;
@@ -154,11 +154,11 @@ export default function FileGrid() {
                       ? "bg-blue-50/90 dark:bg-blue-950/60 border-blue-500 shadow-md ring-2 ring-blue-500/20"
                       : isDragTarget
                       ? "bg-blue-100 dark:bg-blue-900/60 border-blue-500 scale-[1.02]"
-                      : "bg-white dark:bg-[#1e1f20] border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm"
+                      : "bg-[#f8fafd] dark:bg-[#1e1f20] border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] hover:shadow-sm"
                   }`}
                 >
                   <div
-                    className="flex items-center gap-2 truncate pr-1 flex-1"
+                    className="flex items-center gap-2 truncate pr-1 flex-1 min-w-0"
                     onClick={(e) => {
                       if (isLongPress()) return;
                       // On single selected folder in non-multi mode, allow opening
@@ -175,7 +175,7 @@ export default function FileGrid() {
                         e.stopPropagation();
                         toggleSelectItem(folderWithFlag, true);
                       }}
-                      className={`w-5 h-5 rounded-lg border items-center justify-center transition-all flex-shrink-0 ${
+                      className={`w-4 h-4 sm:w-5 sm:h-5 rounded-lg border items-center justify-center transition-all flex-shrink-0 ${
                         isMultiSelectMode
                           ? "flex opacity-100"
                           : "hidden sm:flex opacity-0 sm:group-hover:opacity-100"
@@ -185,25 +185,28 @@ export default function FileGrid() {
                           : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] hover:border-blue-500"
                       }`}
                     >
-                      {isSelected && isMultiSelectMode && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      {isSelected && isMultiSelectMode && <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[3]" />}
                     </button>
 
                     <Folder
-                      className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 transition-transform group-hover:scale-110"
+                      className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 transition-transform group-hover:scale-110 fill-current/20"
                       style={{ color: folder.color || "#4285f4" }}
                     />
-                    <span className="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                    <span
+                      className="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 truncate select-none"
+                      title={folder.name}
+                    >
                       {folder.name}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-0.5 sm:gap-1 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-0.5 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleStar(folderWithFlag);
                       }}
-                      className="p-1 hover:bg-slate-100 dark:hover:bg-[#282a2c] rounded-lg text-slate-400 hover:text-amber-500"
+                      className="p-1 hover:bg-slate-200/60 dark:hover:bg-[#333538] rounded-lg text-slate-400 hover:text-amber-500 transition-colors"
                       title="Star Folder"
                     >
                       <Star
@@ -214,7 +217,7 @@ export default function FileGrid() {
                     </button>
                     <button
                       onClick={(e) => handleContextMenu(e, folder, true)}
-                      className="p-1 hover:bg-slate-100 dark:hover:bg-[#282a2c] rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      className="p-1 hover:bg-slate-200/60 dark:hover:bg-[#333538] rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                       title="Folder Options"
                     >
                       <MoreVertical className="w-3.5 h-3.5" />
