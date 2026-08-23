@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useDrive } from "../../context/DriveContext.jsx";
 import ContextMenu from "./ContextMenu.jsx";
+import useLongPress from "../../hooks/useLongPress.js";
 import {
   Folder,
   Film,
@@ -25,6 +26,8 @@ export default function FileList() {
     selectedItem,
     setSelectedItem,
     selectedItems,
+    isMultiSelectMode,
+    enterMultiSelectMode,
     toggleSelectItem,
     selectAll,
     clearSelection,
@@ -35,6 +38,15 @@ export default function FileList() {
   } = useDrive();
 
   const [contextMenu, setContextMenu] = useState(null);
+
+  // Long press handler for touch / mobile
+  const { handlers: getLongPressHandlers, isLongPress } = useLongPress(
+    (item) => {
+      enterMultiSelectMode(item);
+    },
+    null,
+    { delay: 420 }
+  );
 
   const formatBytes = (bytes) => {
     if (!bytes || bytes === 0) return "-";
@@ -66,7 +78,7 @@ export default function FileList() {
     e.stopPropagation();
     const itemWithFlag = { ...item, isFolder };
     if (!isItemSelected(item.id)) {
-      toggleSelectItem(itemWithFlag, false);
+      toggleSelectItem(itemWithFlag, isMultiSelectMode);
     }
     setContextMenu({
       x: Math.min(e.clientX, window.innerWidth - 230),
@@ -109,6 +121,8 @@ export default function FileList() {
           {/* Folders */}
           {folders.map((folder) => {
             const isSelected = isItemSelected(folder.id);
+            const folderWithFlag = { ...folder, isFolder: true };
+            const longPressProps = getLongPressHandlers(folderWithFlag);
 
             return (
               <div
@@ -116,10 +130,12 @@ export default function FileList() {
                 data-item-id={folder.id}
                 data-item-folder="true"
                 data-item-name={folder.name}
+                {...longPressProps}
                 onClick={(e) => {
+                  if (isLongPress()) return;
                   e.stopPropagation();
-                  const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
-                  toggleSelectItem({ ...folder, isFolder: true }, isMulti);
+                  const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectMode;
+                  toggleSelectItem(folderWithFlag, isMulti);
                 }}
                 onDoubleClick={() => openFolder(folder.id)}
                 onContextMenu={(e) => handleContextMenu(e, folder, true)}
@@ -132,25 +148,31 @@ export default function FileList() {
                 <div
                   className="col-span-8 sm:col-span-6 md:col-span-5 flex items-center gap-2 sm:gap-2.5 truncate pr-1"
                   onClick={(e) => {
-                    if (isSelected) {
+                    if (isLongPress()) return;
+                    if (isSelected && !isMultiSelectMode) {
                       e.stopPropagation();
                       openFolder(folder.id);
                     }
                   }}
                 >
+                  {/* Multi-Select Checkbox */}
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleSelectItem({ ...folder, isFolder: true }, true);
+                      toggleSelectItem(folderWithFlag, true);
                     }}
-                    className={`w-4 h-4 rounded border flex items-center justify-center transition-all flex-shrink-0 ${
-                      isSelected
+                    className={`w-4 h-4 rounded border items-center justify-center transition-all flex-shrink-0 ${
+                      isMultiSelectMode
+                        ? "flex opacity-100"
+                        : "hidden sm:flex opacity-0 sm:group-hover:opacity-100"
+                    } ${
+                      isSelected && isMultiSelectMode
                         ? "bg-blue-600 border-blue-600 text-white"
-                        : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:border-blue-500"
+                        : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] hover:border-blue-500"
                     }`}
                   >
-                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                    {isSelected && isMultiSelectMode && <Check className="w-3 h-3 stroke-[3]" />}
                   </button>
 
                   <Folder
@@ -176,7 +198,7 @@ export default function FileList() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleStar({ ...folder, isFolder: true });
+                      toggleStar(folderWithFlag);
                     }}
                     className="p-1 hover:bg-slate-200 dark:hover:bg-[#323437] rounded text-slate-400 hover:text-amber-500"
                     title="Star Folder"
@@ -202,6 +224,8 @@ export default function FileList() {
           {/* Files */}
           {files.map((file) => {
             const isSelected = isItemSelected(file.id);
+            const fileWithFlag = { ...file, isFolder: false };
+            const longPressProps = getLongPressHandlers(fileWithFlag);
 
             return (
               <div
@@ -209,10 +233,12 @@ export default function FileList() {
                 data-item-id={file.id}
                 data-item-folder="false"
                 data-item-name={file.name}
+                {...longPressProps}
                 onClick={(e) => {
+                  if (isLongPress()) return;
                   e.stopPropagation();
-                  const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
-                  toggleSelectItem({ ...file, isFolder: false }, isMulti);
+                  const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectMode;
+                  toggleSelectItem(fileWithFlag, isMulti);
                 }}
                 onDoubleClick={() => setPreviewItem(file)}
                 onContextMenu={(e) => handleContextMenu(e, file, false)}
@@ -225,7 +251,8 @@ export default function FileList() {
                 <div
                   className="col-span-8 sm:col-span-6 md:col-span-5 flex items-center gap-2 sm:gap-2.5 truncate pr-1"
                   onClick={(e) => {
-                    if (isSelected) {
+                    if (isLongPress()) return;
+                    if (isSelected && !isMultiSelectMode) {
                       e.stopPropagation();
                       setPreviewItem(file);
                     }
@@ -235,15 +262,19 @@ export default function FileList() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleSelectItem({ ...file, isFolder: false }, true);
+                      toggleSelectItem(fileWithFlag, true);
                     }}
-                    className={`w-4 h-4 rounded border flex items-center justify-center transition-all flex-shrink-0 ${
-                      isSelected
+                    className={`w-4 h-4 rounded border items-center justify-center transition-all flex-shrink-0 ${
+                      isMultiSelectMode
+                        ? "flex opacity-100"
+                        : "hidden sm:flex opacity-0 sm:group-hover:opacity-100"
+                    } ${
+                      isSelected && isMultiSelectMode
                         ? "bg-blue-600 border-blue-600 text-white"
-                        : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:border-blue-500"
+                        : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] hover:border-blue-500"
                     }`}
                   >
-                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                    {isSelected && isMultiSelectMode && <Check className="w-3 h-3 stroke-[3]" />}
                   </button>
 
                   {getFileIcon(file.type)}

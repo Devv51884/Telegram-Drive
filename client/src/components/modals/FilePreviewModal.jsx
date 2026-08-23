@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useDrive } from "../../context/DriveContext.jsx";
 import DriveAPI from "../../services/api.js";
+import PdfViewer from "./PdfViewer.jsx";
 import mammoth from "mammoth";
 import {
   X,
@@ -28,7 +29,6 @@ export default function FilePreviewModal() {
   const [zoom, setZoom] = useState(1);
   const [videoLoading, setVideoLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(true);
 
   // Document & Text State
   const [docHtml, setDocHtml] = useState("");
@@ -78,7 +78,6 @@ export default function FilePreviewModal() {
     setZoom(1);
     setVideoLoading(true);
     setVideoError(false);
-    setPdfLoading(true);
     setDocHtml("");
     setTextContent("");
     setDocLoading(false);
@@ -327,7 +326,9 @@ export default function FilePreviewModal() {
                 <AlertCircle className="w-12 h-12 text-rose-500 mb-3" />
                 <h4 className="text-base font-bold text-white mb-1">Video Stream Error</h4>
                 <p className="text-xs mb-4 text-slate-400">
-                  Could not buffer video stream. Ensure your Telegram account is connected and has access to this channel post.
+                  {previewItem.source_type === "telegram_post"
+                    ? "Could not buffer video stream. Ensure your bot or connected Telegram account has access to this channel post."
+                    : "Could not buffer video stream. Please check your storage bot connection or retry."}
                 </p>
                 <div className="flex items-center gap-3">
                   <button
@@ -353,7 +354,7 @@ export default function FilePreviewModal() {
                 ref={videoRef}
                 controls
                 autoPlay
-                preload="auto"
+                preload="metadata"
                 playsInline
                 onLoadedMetadata={() => setVideoLoading(false)}
                 onLoadedData={() => {
@@ -373,8 +374,7 @@ export default function FilePreviewModal() {
                 }}
                 className="w-full h-full max-h-[78vh] object-contain rounded-3xl"
               >
-                <source src={streamUrl} type="video/mp4" />
-                <source src={streamUrl} type="video/webm" />
+                <source src={streamUrl} type={previewItem.mime_type || (ext === "webm" ? "video/webm" : "video/mp4")} />
                 Your browser does not support HTML5 video streaming.
               </video>
             )}
@@ -408,21 +408,12 @@ export default function FilePreviewModal() {
             </div>
           </div>
         ) : isPdf ? (
-          /* 3. PDF PREVIEW */
-          <div className="relative w-full max-w-5xl h-[82vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col">
-            {pdfLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-10 gap-3">
-                <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
-                <p className="text-xs text-slate-300 font-medium">Loading PDF document...</p>
-              </div>
-            )}
-            <iframe
-              src={streamUrl}
-              title={previewItem.name}
-              onLoad={() => setPdfLoading(false)}
-              className="w-full h-full border-0 rounded-3xl bg-white"
-            />
-          </div>
+          /* 3. PDF PREVIEW (Canvas-based with mobile support) */
+          <PdfViewer
+            url={streamUrl}
+            fileName={previewItem.name}
+            downloadUrl={downloadUrl}
+          />
         ) : isDocx ? (
           /* 4. WORD DOCUMENT (.DOCX) PREVIEW */
           <div className="w-full max-w-4xl h-[82vh] bg-white dark:bg-[#1e1f20] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in zoom-in-95">

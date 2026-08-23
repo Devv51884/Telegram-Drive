@@ -14,6 +14,7 @@ import {
 export default function BulkActionBar() {
   const {
     selectedItems,
+    isMultiSelectMode,
     clearSelection,
     selectAll,
     bulkTrash,
@@ -25,7 +26,7 @@ export default function BulkActionBar() {
     section
   } = useDrive();
 
-  if (!selectedItems || selectedItems.length === 0) return null;
+  if (!selectedItems || selectedItems.length === 0 || (!isMultiSelectMode && selectedItems.length <= 1)) return null;
 
   const count = selectedItems.length;
   const isTrashSection = section === "trash";

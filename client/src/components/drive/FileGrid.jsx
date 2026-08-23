@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useDrive } from "../../context/DriveContext.jsx";
 import DriveAPI from "../../services/api.js";
 import ContextMenu from "./ContextMenu.jsx";
+import useLongPress from "../../hooks/useLongPress.js";
 import {
   Folder,
   Film,
@@ -25,6 +26,8 @@ export default function FileGrid() {
     selectedItem,
     setSelectedItem,
     selectedItems,
+    isMultiSelectMode,
+    enterMultiSelectMode,
     toggleSelectItem,
     isItemSelected,
     setPreviewItem,
@@ -34,6 +37,15 @@ export default function FileGrid() {
 
   const [contextMenu, setContextMenu] = useState(null); // { x, y, item }
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
+
+  // Long press handler for touch / mobile
+  const { handlers: getLongPressHandlers, isLongPress } = useLongPress(
+    (item) => {
+      enterMultiSelectMode(item);
+    },
+    null,
+    { delay: 420 }
+  );
 
   const formatBytes = (bytes) => {
     if (!bytes || bytes === 0) return "0 B";
@@ -66,7 +78,7 @@ export default function FileGrid() {
     e.stopPropagation();
     const itemWithFlag = { ...item, isFolder };
     if (!isItemSelected(item.id)) {
-      toggleSelectItem(itemWithFlag, false);
+      toggleSelectItem(itemWithFlag, isMultiSelectMode);
     }
     setContextMenu({
       x: Math.min(e.clientX, window.innerWidth - 230),
@@ -114,6 +126,8 @@ export default function FileGrid() {
             {folders.map((folder) => {
               const isSelected = isItemSelected(folder.id);
               const isDragTarget = dragOverFolderId === folder.id;
+              const folderWithFlag = { ...folder, isFolder: true };
+              const longPressProps = getLongPressHandlers(folderWithFlag);
 
               return (
                 <div
@@ -126,14 +140,12 @@ export default function FileGrid() {
                   onDragOver={(e) => handleDragOver(e, folder.id)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, folder.id)}
+                  {...longPressProps}
                   onClick={(e) => {
+                    if (isLongPress()) return;
                     e.stopPropagation();
-                    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
-                    if (isMulti) {
-                      toggleSelectItem({ ...folder, isFolder: true }, true);
-                    } else {
-                      toggleSelectItem({ ...folder, isFolder: true }, false);
-                    }
+                    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectMode;
+                    toggleSelectItem(folderWithFlag, isMulti);
                   }}
                   onDoubleClick={() => openFolder(folder.id)}
                   onContextMenu={(e) => handleContextMenu(e, folder, true)}
@@ -148,27 +160,32 @@ export default function FileGrid() {
                   <div
                     className="flex items-center gap-2 truncate pr-1 flex-1"
                     onClick={(e) => {
-                      // On mobile/single click, double-click or enter folder on click if already selected
-                      if (isSelected) {
+                      if (isLongPress()) return;
+                      // On single selected folder in non-multi mode, allow opening
+                      if (isSelected && !isMultiSelectMode) {
                         e.stopPropagation();
                         openFolder(folder.id);
                       }
                     }}
                   >
-                    {/* Multi-Select Checkbox */}
+                    {/* Multi-Select Checkbox: Only visible in multi-select mode or on desktop hover */}
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleSelectItem({ ...folder, isFolder: true }, true);
+                        toggleSelectItem(folderWithFlag, true);
                       }}
-                      className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all flex-shrink-0 ${
-                        isSelected
+                      className={`w-5 h-5 rounded-lg border items-center justify-center transition-all flex-shrink-0 ${
+                        isMultiSelectMode
+                          ? "flex opacity-100"
+                          : "hidden sm:flex opacity-0 sm:group-hover:opacity-100"
+                      } ${
+                        isSelected && isMultiSelectMode
                           ? "bg-blue-600 border-blue-600 text-white"
-                          : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:border-blue-500"
+                          : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] hover:border-blue-500"
                       }`}
                     >
-                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      {isSelected && isMultiSelectMode && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                     </button>
 
                     <Folder
@@ -184,7 +201,7 @@ export default function FileGrid() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleStar({ ...folder, isFolder: true });
+                        toggleStar(folderWithFlag);
                       }}
                       className="p-1 hover:bg-slate-100 dark:hover:bg-[#282a2c] rounded-lg text-slate-400 hover:text-amber-500"
                       title="Star Folder"
@@ -219,6 +236,8 @@ export default function FileGrid() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
             {files.map((file) => {
               const isSelected = isItemSelected(file.id);
+              const fileWithFlag = { ...file, isFolder: false };
+              const longPressProps = getLongPressHandlers(fileWithFlag);
 
               return (
                 <div
@@ -228,14 +247,12 @@ export default function FileGrid() {
                   data-item-name={file.name}
                   draggable
                   onDragStart={(e) => handleDragStart(e, file, false)}
+                  {...longPressProps}
                   onClick={(e) => {
+                    if (isLongPress()) return;
                     e.stopPropagation();
-                    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
-                    if (isMulti) {
-                      toggleSelectItem({ ...file, isFolder: false }, true);
-                    } else {
-                      toggleSelectItem({ ...file, isFolder: false }, false);
-                    }
+                    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectMode;
+                    toggleSelectItem(fileWithFlag, isMulti);
                   }}
                   onDoubleClick={() => setPreviewItem(file)}
                   onContextMenu={(e) => handleContextMenu(e, file, false)}
@@ -248,20 +265,24 @@ export default function FileGrid() {
                   {/* File Card Header */}
                   <div className="flex items-center justify-between p-2 sm:p-2.5 bg-slate-50/60 dark:bg-[#252628] border-b border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-1.5 truncate">
-                      {/* Multi-Select Checkbox */}
+                      {/* Multi-Select Checkbox: Only visible in multi-select mode or on desktop hover */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleSelectItem({ ...file, isFolder: false }, true);
+                          toggleSelectItem(fileWithFlag, true);
                         }}
-                        className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all flex-shrink-0 ${
-                          isSelected
+                        className={`w-4 h-4 rounded-md border items-center justify-center transition-all flex-shrink-0 ${
+                          isMultiSelectMode
+                            ? "flex opacity-100"
+                            : "hidden sm:flex opacity-0 sm:group-hover:opacity-100"
+                        } ${
+                          isSelected && isMultiSelectMode
                             ? "bg-blue-600 border-blue-600 text-white"
-                            : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:border-blue-500"
+                            : "border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-[#282a2c] hover:border-blue-500"
                         }`}
                       >
-                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        {isSelected && isMultiSelectMode && <Check className="w-3 h-3 stroke-[3]" />}
                       </button>
 
                       {getFileIcon(file.type)}

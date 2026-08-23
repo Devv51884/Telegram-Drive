@@ -214,7 +214,7 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
   }
 });
 
-// Helper: Stream file via Telegram Bot CDN with precise HTTP 206 Range slicing
+// Helper: Stream file via Telegram Bot CDN with precise HTTP 206 Range slicing & Direct Range Forwarding
 async function streamTelegramBotFile(file, range, req, res) {
   if (!file.telegram_file_id) {
     throw new Error("No telegram_file_id available for Bot streaming");
@@ -243,11 +243,19 @@ async function streamTelegramBotFile(file, range, req, res) {
     contentType = file.mime_type;
   }
 
+  // Forward incoming Range header directly to Telegram Bot API CDN for native HTTP 206 slicing
+  const axiosHeaders = {
+    "User-Agent": "TeleDrive/1.0"
+  };
+  if (range) {
+    axiosHeaders["Range"] = range;
+  }
+
   const response = await axios({
     method: "GET",
     url: downloadUrl,
     responseType: "stream",
-    headers: { "User-Agent": "TeleDrive/1.0" },
+    headers: axiosHeaders,
     timeout: 0,
     validateStatus: (status) => status < 400
   });
@@ -255,28 +263,38 @@ async function streamTelegramBotFile(file, range, req, res) {
   const remoteContentLength = parseInt(response.headers["content-length"] || "0", 10);
   const actualTotalSize = totalSize > 0 ? totalSize : remoteContentLength;
 
+  let clientClosed = false;
+  req.on("close", () => {
+    clientClosed = true;
+    if (response.data?.destroy) {
+      try {
+        response.data.destroy();
+      } catch {}
+    }
+  });
+
+  // 1. If Telegram CDN natively returned HTTP 206 Partial Content
+  if (response.status === 206) {
+    res.writeHead(206, {
+      "Content-Range": response.headers["content-range"] || (range ? `${range.replace("=", " ")}/${actualTotalSize}` : undefined),
+      "Accept-Ranges": "bytes",
+      "Content-Length": response.headers["content-length"] || (remoteContentLength > 0 ? remoteContentLength : undefined),
+      "Content-Type": contentType,
+      "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
+      "Cache-Control": "no-cache, no-store, must-revalidate"
+    });
+    response.data.pipe(res);
+    return;
+  }
+
+  // 2. If client asked for Range but Telegram CDN returned HTTP 200 -> Slice stream in real-time
   if (range && actualTotalSize > 0) {
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10) || 0;
     const rawEnd = parts[1] ? parseInt(parts[1], 10) : actualTotalSize - 1;
     const end = Math.min(rawEnd, actualTotalSize - 1);
-    const chunkLength = end - start + 1;
+    const chunkLength = Math.max(0, end - start + 1);
 
-    // If Telegram CDN natively returned 206
-    if (response.status === 206 && response.headers["content-range"]) {
-      res.writeHead(206, {
-        "Content-Range": response.headers["content-range"],
-        "Accept-Ranges": "bytes",
-        "Content-Length": response.headers["content-length"] || chunkLength,
-        "Content-Type": contentType,
-        "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      });
-      response.data.pipe(res);
-      return;
-    }
-
-    // Telegram CDN returned HTTP 200 -> Slice stream in real-time into compliant HTTP 206
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${actualTotalSize}`,
       "Accept-Ranges": "bytes",
@@ -288,12 +306,6 @@ async function streamTelegramBotFile(file, range, req, res) {
 
     let bytesRead = 0;
     let bytesSent = 0;
-    let clientClosed = false;
-
-    req.on("close", () => {
-      clientClosed = true;
-      if (response.data?.destroy) response.data.destroy();
-    });
 
     response.data.on("data", (chunk) => {
       if (clientClosed || res.writableEnded || res.destroyed) return;
@@ -332,7 +344,7 @@ async function streamTelegramBotFile(file, range, req, res) {
       if (!res.writableEnded && !res.destroyed) res.end();
     });
   } else {
-    // Full Stream (HTTP 200)
+    // 3. Full Stream (HTTP 200)
     res.writeHead(200, {
       "Content-Length": actualTotalSize > 0 ? actualTotalSize : undefined,
       "Content-Type": contentType,
@@ -357,7 +369,17 @@ router.get("/:id/stream", async (req, res) => {
     const range = req.headers.range;
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
 
-    // Strategy 1: High-Speed MTProto Multi-DC Direct Stream (107ms Latency, 2GB Range Seeking)
+    // Strategy 1: Telegram Bot API CDN Stream with Direct HTTP Range support (Ultra-fast for files <= 50MB)
+    if (file.telegram_file_id) {
+      try {
+        await streamTelegramBotFile(file, range, req, res);
+        return;
+      } catch (botErr) {
+        console.warn("Bot CDN stream attempt failed, checking MTProto fallback:", botErr.message);
+      }
+    }
+
+    // Strategy 2: High-Speed MTProto Multi-DC Direct Stream (For files > 50MB up to 2GB or channel posts)
     if (targetChannelId && file.telegram_message_id) {
       try {
         await streamGramMedia(
@@ -371,17 +393,7 @@ router.get("/:id/stream", async (req, res) => {
         );
         return;
       } catch (mtprotoErr) {
-        console.warn("MTProto streaming fallback to Bot API CDN:", mtprotoErr.message);
-      }
-    }
-
-    // Strategy 2: Telegram Bot API CDN Stream with Real-time Range Slicing (Files <= 50MB)
-    if (file.telegram_file_id) {
-      try {
-        await streamTelegramBotFile(file, range, req, res);
-        return;
-      } catch (botErr) {
-        console.warn("Bot stream slicing failed:", botErr.message);
+        console.warn("MTProto streaming failed:", mtprotoErr.message);
       }
     }
 

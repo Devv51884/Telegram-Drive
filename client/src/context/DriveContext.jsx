@@ -51,6 +51,7 @@ export function DriveProvider({ children }) {
   // Selection & Multi-Select
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItems, setSelectedItems] = useState([]); // Array of items: [{ id, isFolder, name, is_starred, is_trash }]
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
 
   // Modals & Drawers
   const [activeModal, setActiveModal] = useState(null);
@@ -63,6 +64,7 @@ export function DriveProvider({ children }) {
     setPreviewItem(item);
     setSelectedItem(null);
     setSelectedItems([]);
+    setIsMultiSelectMode(false);
     try {
       const url = new URL(window.location);
       if (item && item.id) {
@@ -342,6 +344,29 @@ export function DriveProvider({ children }) {
 
   const isItemSelected = (id) => selectedItems.some((item) => item.id === id);
 
+  const enterMultiSelectMode = (item) => {
+    if (typeof window !== "undefined" && window.navigator && window.navigator.vibrate) {
+      try {
+        window.navigator.vibrate(40);
+      } catch {}
+    }
+    setIsMultiSelectMode(true);
+    if (item) {
+      const itemObj = {
+        id: item.id,
+        name: item.name,
+        isFolder: Boolean(item.isFolder || item.color),
+        is_starred: item.is_starred || 0,
+        is_trash: item.is_trash || 0
+      };
+      setSelectedItems((prev) => {
+        if (prev.some((i) => i.id === item.id)) return prev;
+        return [...prev, itemObj];
+      });
+      setSelectedItem(item);
+    }
+  };
+
   const toggleSelectItem = (item, isMulti = false) => {
     if (!item) return;
     const itemObj = {
@@ -352,21 +377,28 @@ export function DriveProvider({ children }) {
       is_trash: item.is_trash || 0
     };
 
-    if (isMulti) {
+    if (isMulti || isMultiSelectMode) {
       setSelectedItems((prev) => {
         const exists = prev.some((i) => i.id === item.id);
+        let next;
         if (exists) {
-          const next = prev.filter((i) => i.id !== item.id);
-          setSelectedItem(next[next.length - 1] || null);
-          return next;
+          next = prev.filter((i) => i.id !== item.id);
         } else {
-          setSelectedItem(item);
-          return [...prev, itemObj];
+          next = [...prev, itemObj];
         }
+        if (next.length === 0) {
+          setIsMultiSelectMode(false);
+          setSelectedItem(null);
+        } else {
+          setIsMultiSelectMode(true);
+          setSelectedItem(next[next.length - 1] || null);
+        }
+        return next;
       });
     } else {
       setSelectedItems([itemObj]);
       setSelectedItem(item);
+      setIsMultiSelectMode(false);
     }
   };
 
@@ -386,11 +418,13 @@ export function DriveProvider({ children }) {
       is_trash: f.is_trash
     }));
     setSelectedItems([...allFolderItems, ...allFileItems]);
+    setIsMultiSelectMode(true);
   };
 
   const clearSelection = () => {
     setSelectedItems([]);
     setSelectedItem(null);
+    setIsMultiSelectMode(false);
   };
 
   const bulkTrash = async () => {
@@ -752,6 +786,9 @@ export function DriveProvider({ children }) {
     setSelectedItem,
     selectedItems,
     setSelectedItems,
+    isMultiSelectMode,
+    setIsMultiSelectMode,
+    enterMultiSelectMode,
     toggleSelectItem,
     selectAll,
     clearSelection,
