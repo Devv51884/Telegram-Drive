@@ -3,7 +3,6 @@ import { useDrive } from "../../context/DriveContext.jsx";
 import DriveAPI from "../../services/api.js";
 import PdfViewer from "./PdfViewer.jsx";
 import mammoth from "mammoth";
-import Hls from "hls.js";
 import {
   X,
   Download,
@@ -39,15 +38,8 @@ export default function FilePreviewModal() {
   const [copied, setCopied] = useState(false);
 
   const videoRef = useRef(null);
-  const hlsRef = useRef(null);
 
   const handleClose = () => {
-    if (hlsRef.current) {
-      try {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      } catch {}
-    }
     if (videoRef.current) {
       try {
         videoRef.current.pause();
@@ -60,12 +52,6 @@ export default function FilePreviewModal() {
 
   useEffect(() => {
     return () => {
-      if (hlsRef.current) {
-        try {
-          hlsRef.current.destroy();
-          hlsRef.current = null;
-        } catch {}
-      }
       if (videoRef.current) {
         try {
           videoRef.current.pause();
@@ -97,13 +83,6 @@ export default function FilePreviewModal() {
     setDocLoading(false);
     setDocError("");
     setCopied(false);
-
-    if (hlsRef.current) {
-      try {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      } catch {}
-    }
 
     if (!previewItem) return;
 
@@ -212,70 +191,13 @@ export default function FilePreviewModal() {
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const initHlsFallback = () => {
-    if (Hls.isSupported() && videoRef.current) {
-      try {
-        if (hlsRef.current) {
-          hlsRef.current.destroy();
-        }
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          backBufferLength: 90
-        });
-        hlsRef.current = hls;
-        hls.loadSource(streamUrl);
-        hls.attachMedia(videoRef.current);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          setVideoLoading(false);
-          setVideoError(false);
-          videoRef.current?.play().catch(() => {});
-        });
-        hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            console.warn("HLS fatal error:", data);
-            setVideoLoading(false);
-            setVideoError(true);
-          }
-        });
-      } catch (err) {
-        console.error("HLS fallback init error:", err);
-        setVideoLoading(false);
-        setVideoError(true);
-      }
-    } else {
-      setVideoLoading(false);
-      setVideoError(true);
-    }
-  };
-
-  const handleVideoError = (e) => {
-    console.warn("Native video playback encountered error:", videoRef.current?.error);
-    // If native HTML5 decoder failed, fallback to HLS/Transmuxer engine
-    if (!hlsRef.current && Hls.isSupported()) {
-      console.log("Switching to HLS transmuxer engine...");
-      initHlsFallback();
-    } else {
-      setVideoLoading(false);
-      setVideoError(true);
-    }
-  };
-
   const handleRetryVideo = () => {
     setVideoError(false);
     setVideoLoading(true);
-    if (hlsRef.current) {
-      try {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      } catch {}
-    }
     if (videoRef.current) {
       videoRef.current.src = streamUrl;
       videoRef.current.load();
-      videoRef.current.play().catch(() => {
-        initHlsFallback();
-      });
+      videoRef.current.play().catch(() => {});
     }
   };
 
@@ -455,7 +377,11 @@ export default function FilePreviewModal() {
                   setVideoLoading(false);
                   setVideoError(false);
                 }}
-                onError={handleVideoError}
+                onError={(e) => {
+                  console.error("Video stream error:", videoRef.current?.error);
+                  setVideoLoading(false);
+                  setVideoError(true);
+                }}
                 className="w-full h-full max-h-[80vh] object-contain rounded-3xl"
               >
                 <source src={streamUrl} type={getVideoMimeType(previewItem)} />

@@ -829,24 +829,46 @@ export async function streamGramMedia(channelId, messageId, rangeHeader, req, re
     }
 
     try {
+      // Telegram MTProto requires offset and limit to align to 4096 bytes (4KB)
+      const ALIGNMENT = 4096;
+      const alignedStart = Math.floor(start / ALIGNMENT) * ALIGNMENT;
+      const skipBytes = start - alignedStart;
+      const totalFetchLength = requestedLength + skipBytes;
+      const alignedLimit = Math.ceil(totalFetchLength / ALIGNMENT) * ALIGNMENT;
+
       const iter = client.iterDownload({
         file: location,
-        offset: bigInt(start),
-        limit: requestedLength,
+        offset: bigInt(alignedStart),
+        limit: alignedLimit,
         requestSize: 512 * 1024,
         dcId: dcId
       });
 
       let bytesSent = 0;
+      let bufferOffset = 0;
+
       for await (const chunk of iter) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
-        if (chunk && chunk.length > 0) {
-          const remaining = requestedLength - bytesSent;
-          if (remaining <= 0) break;
-          const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
-          res.write(slice);
-          bytesSent += slice.length;
-        }
+        if (!chunk || chunk.length === 0) continue;
+
+        const chunkStart = bufferOffset;
+        const chunkEnd = bufferOffset + chunk.length - 1;
+        bufferOffset += chunk.length;
+
+        // Skip bytes before the exact unaligned start
+        if (chunkEnd < skipBytes) continue;
+
+        const sliceStart = Math.max(0, skipBytes - chunkStart);
+        const remainingNeeded = requestedLength - bytesSent;
+        if (remainingNeeded <= 0) break;
+
+        const sliceEnd = Math.min(chunk.length, sliceStart + remainingNeeded);
+        const slice = chunk.subarray(sliceStart, sliceEnd);
+
+        res.write(slice);
+        bytesSent += slice.length;
+
+        if (bytesSent >= requestedLength) break;
       }
       if (!res.writableEnded && !res.destroyed) {
         res.end();
