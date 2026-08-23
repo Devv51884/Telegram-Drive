@@ -212,6 +212,7 @@ export async function syncFromSupabase() {
       console.warn("⚠️ Supabase sync users warning:", userErr.message);
     } else if (users && users.length > 0) {
       for (const u of users) {
+        await sqlite.run("DELETE FROM users WHERE email = ? AND id != ?", [u.email.toLowerCase(), u.id]);
         await sqlite.run(
           `INSERT INTO users (id, name, email, password_hash, pin_hash, is_2fa_enabled, role, status, avatar_url, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

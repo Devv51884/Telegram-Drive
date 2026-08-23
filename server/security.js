@@ -119,7 +119,34 @@ export async function requireAuth(req, res, next) {
     "/api/settings/auth/setup"
   ];
 
-  if (publicPaths.includes(fullApiPath) || reqPath === "/health") {
+  const isPublicStreamOrDownload =
+    fullApiPath.includes("/stream") ||
+    fullApiPath.includes("/download") ||
+    reqPath.includes("/stream") ||
+    reqPath.includes("/download");
+
+  if (publicPaths.includes(fullApiPath) || reqPath === "/health" || isPublicStreamOrDownload) {
+    // If token is provided, optionally attach authenticated user context
+    let token = null;
+    const authHeader = req.headers["authorization"];
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7).trim();
+    } else if (req.query && req.query.token) {
+      token = req.query.token;
+    } else if (req.headers["x-access-token"]) {
+      token = req.headers["x-access-token"];
+    }
+
+    if (token) {
+      try {
+        const payload = await verifySessionToken(token);
+        if (payload) {
+          req.user = payload;
+          req.userId = payload.userId || null;
+        }
+      } catch {}
+    }
+
     return next();
   }
 

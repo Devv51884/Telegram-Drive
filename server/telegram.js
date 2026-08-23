@@ -21,15 +21,24 @@ const __dirname = path.dirname(__filename);
 
 // Helper to get Telegram Bot & Account credentials
 export async function getTelegramConfig() {
-  const botToken = (await dbGetSetting("BOT_TOKEN")) || process.env.BOT_TOKEN || "";
-  const chatId = (await dbGetSetting("STORAGE_CHAT_ID")) || process.env.STORAGE_CHAT_ID || "";
-  const apiId = (await dbGetSetting("API_ID")) || process.env.API_ID || "";
-  const apiHash = (await dbGetSetting("API_HASH")) || process.env.API_HASH || "";
+  const dbBot = await dbGetSetting("BOT_TOKEN");
+  const dbChat = (await dbGetSetting("STORAGE_CHAT_ID")) || (await dbGetSetting("STORAGE_CHANNEL_ID"));
+  const dbApiId = await dbGetSetting("API_ID");
+  const dbApiHash = await dbGetSetting("API_HASH");
+
+  const botToken = (dbBot && dbBot.trim()) || (process.env.BOT_TOKEN && process.env.BOT_TOKEN.trim()) || "";
+  const chatId =
+    (dbChat && dbChat.trim()) ||
+    (process.env.STORAGE_CHAT_ID && process.env.STORAGE_CHAT_ID.trim()) ||
+    (process.env.STORAGE_CHANNEL_ID && process.env.STORAGE_CHANNEL_ID.trim()) ||
+    "";
+  const apiId = (dbApiId && dbApiId.trim()) || (process.env.API_ID && process.env.API_ID.trim()) || "";
+  const apiHash = (dbApiHash && dbApiHash.trim()) || (process.env.API_HASH && process.env.API_HASH.trim()) || "";
 
   return {
     botToken: botToken.trim(),
     chatId: chatId.trim(),
-    apiId: apiId.trim() ? parseInt(apiId.trim(), 10) : undefined,
+    apiId: apiId ? parseInt(apiId.trim(), 10) : undefined,
     apiHash: apiHash.trim()
   };
 }
