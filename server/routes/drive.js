@@ -82,10 +82,21 @@ router.get("/contents", async (req, res) => {
     folderQuery += ` ORDER BY name ${sortOrder}`;
     fileQuery += ` ORDER BY ${sortField} ${sortOrder}`;
 
-    const [folders, files] = await Promise.all([
+    const [folders, rawFiles] = await Promise.all([
       sqlite.all(folderQuery, folderParams),
       sqlite.all(fileQuery, fileParams)
     ]);
+
+    const files = (rawFiles || []).map((f) => {
+      const lower = (f.name || "").toLowerCase().trim();
+      let mime = f.mime_type;
+      if (lower.endsWith(".mp4") || lower.endsWith(".m4v") || mime === "video/mp2t" || (!mime && f.type === "video")) {
+        mime = "video/mp4";
+      } else if (lower.endsWith(".pdf") || (!mime && f.type === "pdf")) {
+        mime = "application/pdf";
+      }
+      return { ...f, mime_type: mime };
+    });
 
     // Current folder info & breadcrumb path
     let currentFolder = null;

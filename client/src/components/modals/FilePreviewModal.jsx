@@ -200,6 +200,14 @@ export default function FilePreviewModal() {
     }
   };
 
+  const getVideoMimeType = (item) => {
+    if (!item) return "video/mp4";
+    const extension = getFileExtension(item.name);
+    if (extension === "webm" || item.mime_type === "video/webm") return "video/webm";
+    if (extension === "ogg" || extension === "ogv" || item.mime_type === "video/ogg") return "video/ogg";
+    return "video/mp4";
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-150">
       {/* Top Header Bar */}
@@ -352,6 +360,7 @@ export default function FilePreviewModal() {
               <video
                 key={previewItem.id}
                 ref={videoRef}
+                src={streamUrl}
                 controls
                 autoPlay
                 preload="metadata"
@@ -374,7 +383,7 @@ export default function FilePreviewModal() {
                 }}
                 className="w-full h-full max-h-[78vh] object-contain rounded-3xl"
               >
-                <source src={streamUrl} type={previewItem.mime_type || (ext === "webm" ? "video/webm" : "video/mp4")} />
+                <source src={streamUrl} type={getVideoMimeType(previewItem)} />
                 Your browser does not support HTML5 video streaming.
               </video>
             )}

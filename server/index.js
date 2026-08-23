@@ -33,13 +33,15 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdnjs.cloudflare.com"],
+        workerSrc: ["'self'", "blob:"],
+        childSrc: ["'self'", "blob:"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
         mediaSrc: ["'self'", "data:", "blob:", "https:", "http:"],
-        connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"],
-        frameSrc: ["'self'", "blob:"],
+        connectSrc: ["'self'", "data:", "blob:", "https:", "http:", "ws:", "wss:"],
+        frameSrc: ["'self'", "blob:", "https:"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: []
       }
