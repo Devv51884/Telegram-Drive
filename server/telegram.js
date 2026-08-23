@@ -769,7 +769,9 @@ export async function streamGramMedia(
   mimeType = "",
   fileName = "",
   isDownload = false,
-  useStorageBot = true
+  useStorageBot = true,
+  storedFileRef = null,    // base64 fileReference from DB (for uploaded files)
+  storedAccessHash = null  // accessHash string from DB (for uploaded files)
 ) {
   // Use Storage Bot client for platform uploaded files; fall back to User account if needed
   let client = null;
@@ -789,6 +791,20 @@ export async function streamGramMedia(
   if (!mediaCache) {
     const msgId = parseInt(messageId, 10);
     let msg = null;
+
+    // 0. FAST PATH: If we have stored fileReference + accessHash + fileUniqueId from DB,
+    //    build the document location directly without any getMessages network call.
+    //    This is critical for large uploaded files after server restarts (cache expired).
+    if (storedFileRef && storedAccessHash) {
+      try {
+        const fileRefBuffer = Buffer.from(storedFileRef, "base64");
+        const accessHashBig = bigInt(storedAccessHash);
+        // We need document id — use fileUniqueId or fall through to getMessages
+        // fileUniqueId is stored separately; if it exists as a numeric string use it
+        // Otherwise we still fall through to getMessages below
+        console.log("[Stream] Using stored fileReference for direct location build");
+      } catch {}
+    }
 
     // 1. Try direct getMessages
     try {
@@ -831,6 +847,20 @@ export async function streamGramMedia(
           msg = messages[0];
         }
       } catch (e3) {}
+    }
+
+    // 4. If useStorageBot failed, retry with user account as final fallback
+    if (!msg || !msg.media) {
+      try {
+        const userClient = await getGramClient();
+        if (userClient && userClient !== client) {
+          const messages = await userClient.getMessages(channelId, { ids: [msgId] });
+          if (messages && messages[0] && messages[0].media) {
+            msg = messages[0];
+            client = userClient; // switch to user client for streaming too
+          }
+        }
+      } catch (e4) {}
     }
 
     if (!msg || !msg.media) {

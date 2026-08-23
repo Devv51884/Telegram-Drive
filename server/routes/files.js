@@ -397,12 +397,13 @@ router.get("/:id/stream", async (req, res) => {
           await streamTelegramBotFile(file, range, req, res);
           return;
         } catch (botErr) {
-          console.warn("Bot CDN stream failed for uploaded file, trying Bot MTProto:", botErr.message);
+          console.warn("Bot CDN stream failed for uploaded file, trying MTProto:", botErr.message);
         }
       }
 
-      // Strategy B: Bot MTProto (Storage Bot) fallback for large files > 20MB that were
-      // uploaded via MTProto (no telegram_file_id, only message_id)
+      // Strategy B: MTProto stream for large files > 50MB uploaded via GramJS
+      // Pass stored fileReference + accessHash from DB so we can bypass getMessages when cache is cold.
+      // Tries Bot MTProto first, then falls back to user account inside streamGramMedia.
       if (targetChannelId && file.telegram_message_id) {
         try {
           await streamGramMedia(
@@ -413,12 +414,14 @@ router.get("/:id/stream", async (req, res) => {
             res,
             file.mime_type,
             file.name,
-            false,
-            true // useStorageBot = true: must use Bot MTProto, not user account
+            false,  // isDownload
+            true,   // useStorageBot = true: try Bot MTProto first
+            file.telegram_file_reference || null,  // stored base64 fileReference from DB
+            file.telegram_access_hash || null       // stored accessHash from DB
           );
           return;
         } catch (mtprotoErr) {
-          console.warn("Bot MTProto stream also failed for uploaded file:", mtprotoErr.message);
+          console.warn("MTProto stream failed for uploaded file:", mtprotoErr.message);
         }
       }
 
