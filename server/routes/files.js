@@ -384,7 +384,51 @@ router.get("/:id/stream", async (req, res) => {
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
 
-    // Strategy 1: High-Speed MTProto Multi-DC Direct Stream (Works for files of any size up to 2GB with instant 4KB-aligned Range seeking)
+    // ============================================================
+    // UPLOADED FILES: Use Bot API CDN streaming (Bot uploaded it,
+    // so Bot has access. User account does NOT have access to the
+    // private storage channel.)
+    // ============================================================
+    if (isUploaded) {
+      // Strategy A: Fresh Bot CDN URL stream (works for any size bot-uploaded file)
+      // We always call getTelegramFileStreamUrl fresh to avoid stale/expired file_id URLs.
+      if (file.telegram_file_id) {
+        try {
+          await streamTelegramBotFile(file, range, req, res);
+          return;
+        } catch (botErr) {
+          console.warn("Bot CDN stream failed for uploaded file, trying Bot MTProto:", botErr.message);
+        }
+      }
+
+      // Strategy B: Bot MTProto (Storage Bot) fallback for large files > 20MB that were
+      // uploaded via MTProto (no telegram_file_id, only message_id)
+      if (targetChannelId && file.telegram_message_id) {
+        try {
+          await streamGramMedia(
+            targetChannelId,
+            file.telegram_message_id,
+            range,
+            req,
+            res,
+            file.mime_type,
+            file.name,
+            false,
+            true // useStorageBot = true: must use Bot MTProto, not user account
+          );
+          return;
+        } catch (mtprotoErr) {
+          console.warn("Bot MTProto stream also failed for uploaded file:", mtprotoErr.message);
+        }
+      }
+
+      return res.status(500).send("Could not stream uploaded file. Please try downloading instead.");
+    }
+
+    // ============================================================
+    // IMPORTED TELEGRAM POSTS: Use MTProto (user account has access
+    // since they subscribed to that channel when importing)
+    // ============================================================
     if (targetChannelId && file.telegram_message_id) {
       try {
         await streamGramMedia(
@@ -395,22 +439,12 @@ router.get("/:id/stream", async (req, res) => {
           res,
           file.mime_type,
           file.name,
-          false, // isDownload = false
-          isUploaded // useStorageBot = true for uploaded files
+          false,
+          false // useStorageBot = false: use user's own MTProto account
         );
         return;
       } catch (mtprotoErr) {
-        console.warn("MTProto streaming failed, falling back to Bot CDN:", mtprotoErr.message);
-      }
-    }
-
-    // Strategy 2: Telegram Bot API CDN Stream fallback (Only for files <= 20MB where telegram_file_id is valid)
-    if (file.telegram_file_id && fileSize > 0 && fileSize <= 20 * 1024 * 1024) {
-      try {
-        await streamTelegramBotFile(file, range, req, res);
-        return;
-      } catch (botErr) {
-        console.warn("Bot CDN stream attempt failed:", botErr.message);
+        console.warn("MTProto streaming failed for imported post:", mtprotoErr.message);
       }
     }
 
