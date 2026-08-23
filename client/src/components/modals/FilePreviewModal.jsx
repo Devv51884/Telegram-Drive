@@ -21,11 +21,12 @@ import {
   AlertCircle,
   Copy,
   Check,
-  BookOpen
+  BookOpen,
+  Share2
 } from "lucide-react";
 
 export default function FilePreviewModal() {
-  const { previewItem, setPreviewItem, toggleStar, showToast } = useDrive();
+  const { previewItem, setPreviewItem, toggleStar, showToast, openShareModal } = useDrive();
   const [zoom, setZoom] = useState(1);
   const [videoLoading, setVideoLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
@@ -280,6 +281,15 @@ export default function FilePreviewModal() {
               <ExternalLink className="w-4 h-4 sm:w-5 sm:h-5" />
             </a>
           )}
+
+          <button
+            onClick={() => openShareModal(previewItem)}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white transition-colors"
+            title="Share / Get Link"
+          >
+            <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
 
           <button
             onClick={() => toggleStar(previewItem)}

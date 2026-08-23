@@ -13,6 +13,7 @@ import filesRouter from "./routes/files.js";
 import driveRouter from "./routes/drive.js";
 import settingsRouter from "./routes/settings.js";
 import adminRouter from "./routes/admin.js";
+import shareRouter from "./routes/share.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,6 +72,7 @@ app.use("/api/files", filesRouter);
 app.use("/api/drive", driveRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/share", shareRouter);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

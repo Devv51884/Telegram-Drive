@@ -15,6 +15,8 @@ import MoveModal from "./components/modals/MoveModal.jsx";
 import RenameModal from "./components/modals/RenameModal.jsx";
 import FilePreviewModal from "./components/modals/FilePreviewModal.jsx";
 import SettingsModal from "./components/modals/SettingsModal.jsx";
+import ShareModal from "./components/modals/ShareModal.jsx";
+import PublicShareView from "./components/share/PublicShareView.jsx";
 import AdminPage from "./components/admin/AdminPage.jsx";
 import DetailsDrawer from "./components/modals/DetailsDrawer.jsx";
 import AuthScreen from "./components/auth/AuthScreen.jsx";
@@ -30,8 +32,14 @@ function DriveMain() {
     setSelectedItem,
     isAuthenticated,
     authChecking,
-    section
+    section,
+    shareToken
   } = useDrive();
+
+  // 1. Direct Public Share Link View (No login required for public files)
+  if (shareToken) {
+    return <PublicShareView shareToken={shareToken} />;
+  }
 
   // Display security check loading screen
   if (authChecking) {
@@ -130,6 +138,7 @@ function DriveMain() {
       <RenameModal />
       <FilePreviewModal />
       <SettingsModal />
+      <ShareModal />
 
       {/* Toast Notification Alert */}
       {toast && (

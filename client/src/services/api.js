@@ -98,6 +98,15 @@ export const DriveAPI = {
     return token ? `${API_BASE}/files/${id}/download?token=${encodeURIComponent(token)}&_v=3` : `${API_BASE}/files/${id}/download?_v=3`;
   },
 
+  // Link Sharing APIs
+  getShareSettings: (type, id) => api.get(`/share/manage/${type}/${id}`).then((r) => r.data),
+  updateShareSettings: (type, id, data) => api.post(`/share/manage/${type}/${id}`, data).then((r) => r.data),
+  getPublicShareInfo: (token) => axios.get(`${API_BASE}/share/public/${token}`).then((r) => r.data),
+  getPublicShareStreamUrl: (token) => `${API_BASE}/share/public/${token}/stream?_v=3`,
+  getPublicShareDownloadUrl: (token) => `${API_BASE}/share/public/${token}/download?_v=3`,
+  getPublicFolderFileStreamUrl: (token, fileId) => `${API_BASE}/share/public/${token}/file/${fileId}/stream?_v=3`,
+  getPublicFolderFileDownloadUrl: (token, fileId) => `${API_BASE}/share/public/${token}/file/${fileId}/download?_v=3`,
+
   // Settings & Telegram Auth
   getSettings: () => api.get("/settings").then((r) => r.data),
   sendTelegramCode: (data) => {

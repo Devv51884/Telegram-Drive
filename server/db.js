@@ -144,6 +144,18 @@ export async function getSqliteDb() {
     await db.exec("UPDATE files SET mime_type = 'video/mp4' WHERE mime_type = 'video/mp2t' OR name LIKE '%.mp4';");
   } catch {}
   try {
+    await db.exec("ALTER TABLE files ADD COLUMN share_access TEXT DEFAULT 'private';");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE files ADD COLUMN share_token TEXT;");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE folders ADD COLUMN share_access TEXT DEFAULT 'private';");
+  } catch {}
+  try {
+    await db.exec("ALTER TABLE folders ADD COLUMN share_token TEXT;");
+  } catch {}
+  try {
     // Assign legacy unassigned files & folders to the main account
     await db.exec("UPDATE files SET user_id = 'u_ed2e45a80d67df50' WHERE user_id IS NULL;");
     await db.exec("UPDATE folders SET user_id = 'u_ed2e45a80d67df50' WHERE user_id IS NULL;");
@@ -1083,4 +1095,47 @@ export async function dbDeleteUserCascade(userId) {
   await sqlite.run("DELETE FROM folders WHERE user_id = ?", [userId]);
   await sqlite.run("DELETE FROM users WHERE id = ?", [userId]);
   return { success: true };
+}
+
+// ==========================================
+// PUBLIC LINK SHARING HELPERS
+// ==========================================
+
+export async function dbGetFileByShareToken(token) {
+  if (!token) return null;
+  const sqlite = await getSqliteDb();
+  const file = await sqlite.get("SELECT * FROM files WHERE share_token = ?", [token]);
+  if (file) return file;
+  const supabase = await getSupabaseClient();
+  if (supabase) {
+    const { data } = await supabase.from("files").select("*").eq("share_token", token).maybeSingle();
+    if (data) return data;
+  }
+  return null;
+}
+
+export async function dbGetFolderByShareToken(token) {
+  if (!token) return null;
+  const sqlite = await getSqliteDb();
+  const folder = await sqlite.get("SELECT * FROM folders WHERE share_token = ?", [token]);
+  if (folder) return folder;
+  const supabase = await getSupabaseClient();
+  if (supabase) {
+    const { data } = await supabase.from("folders").select("*").eq("share_token", token).maybeSingle();
+    if (data) return data;
+  }
+  return null;
+}
+
+export async function dbGetSharedFolderContents(folderId) {
+  const sqlite = await getSqliteDb();
+  const folders = await sqlite.all(
+    "SELECT id, name, color, parent_id, is_starred, share_access, share_token, created_at, updated_at FROM folders WHERE parent_id = ? AND is_trash = 0 ORDER BY name ASC",
+    [folderId]
+  );
+  const files = await sqlite.all(
+    "SELECT id, name, size, mime_type, type, source_type, thumbnail_url, is_starred, share_access, share_token, created_at, updated_at FROM files WHERE folder_id = ? AND is_trash = 0 ORDER BY name ASC",
+    [folderId]
+  );
+  return { folders, files };
 }

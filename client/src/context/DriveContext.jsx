@@ -60,6 +60,21 @@ export function DriveProvider({ children }) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Link Share State
+  const [shareToken, setShareToken] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("share") || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const openShareModal = (item) => {
+    setModalTargetItem(item);
+    setActiveModal("share");
+  };
+
   const handleSetPreviewItem = (item) => {
     setPreviewItem(item);
     setSelectedItem(null);
@@ -826,6 +841,11 @@ export function DriveProvider({ children }) {
     restoreFromTrash,
     deletePermanently,
     emptyTrash,
+
+    // Link Sharing
+    openShareModal,
+    shareToken,
+    setShareToken,
 
     // Aliases
     trashItem: moveToTrash,

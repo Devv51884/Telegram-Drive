@@ -11,7 +11,8 @@ import {
   RotateCcw,
   Info,
   ExternalLink,
-  FolderOpen
+  FolderOpen,
+  Share2
 } from "lucide-react";
 
 export default function ContextMenu({ x, y, item, onClose }) {
@@ -26,7 +27,8 @@ export default function ContextMenu({ x, y, item, onClose }) {
     restoreItem,
     deletePermanent,
     section,
-    setIsDetailsOpen
+    setIsDetailsOpen,
+    openShareModal
   } = useDrive();
 
   useEffect(() => {
@@ -96,6 +98,18 @@ export default function ContextMenu({ x, y, item, onClose }) {
           <span>Open Original Telegram Post</span>
         </a>
       )}
+
+      {/* Share / Get Link */}
+      <button
+        onClick={() => {
+          openShareModal(item);
+          onClose();
+        }}
+        className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left font-medium text-emerald-600 dark:text-emerald-400"
+      >
+        <Share2 className="w-4 h-4" />
+        <span>Share / Get link</span>
+      </button>
 
       <div className="h-px bg-slate-100 dark:bg-slate-700 my-1" />
 

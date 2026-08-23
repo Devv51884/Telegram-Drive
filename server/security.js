@@ -122,8 +122,10 @@ export async function requireAuth(req, res, next) {
   const isPublicStreamOrDownload =
     fullApiPath.includes("/stream") ||
     fullApiPath.includes("/download") ||
+    fullApiPath.includes("/api/share/public") ||
     reqPath.includes("/stream") ||
-    reqPath.includes("/download");
+    reqPath.includes("/download") ||
+    reqPath.includes("/share/public");
 
   if (publicPaths.includes(fullApiPath) || reqPath === "/health" || isPublicStreamOrDownload) {
     // If token is provided, optionally attach authenticated user context
