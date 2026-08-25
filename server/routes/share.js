@@ -15,7 +15,8 @@ import {
   dbRemoveUserPermission,
   dbGetItemPermissions,
   dbGetSharedWithMe,
-  dbHasUserAccessToItem
+  dbHasUserAccessToItem,
+  dbFindUserByEmail
 } from "../db.js";
 import {
   streamGramMedia,
@@ -292,6 +293,15 @@ router.post("/collaborators/:type/:id", async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+
+    // Verify recipient user exists in database
+    const recipientUser = await dbFindUserByEmail(cleanEmail);
+    if (!recipientUser) {
+      return res.status(404).json({
+        success: false,
+        error: `No registered TeleDrive account found for "${cleanEmail}". The user must first register an account with this Gmail on TeleDrive to receive shared access.`
+      });
+    }
 
     // Verify item exists
     let item = type === "folder" ? await dbGetFolderById(id) : await dbGetFileById(id);

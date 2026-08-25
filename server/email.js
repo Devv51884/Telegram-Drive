@@ -38,7 +38,10 @@ export async function getTransporter() {
       auth: {
         user: config.user,
         pass: config.pass
-      }
+      },
+      connectionTimeout: 5000,
+      greetingTimeout: 4000,
+      socketTimeout: 6000
     });
   }
 
@@ -49,7 +52,10 @@ export async function getTransporter() {
     auth: {
       user: config.user,
       pass: config.pass
-    }
+    },
+    connectionTimeout: 5000,
+    greetingTimeout: 4000,
+    socketTimeout: 6000
   });
 }
 
@@ -123,7 +129,7 @@ export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "s
       return { success: true, simulated: true, otp };
     }
 
-    const info = await transporter.sendMail({
+    const sendPromise = transporter.sendMail({
       from: config.from,
       to: to.trim().toLowerCase(),
       subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
@@ -131,10 +137,16 @@ export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "s
       html: htmlContent
     });
 
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Email dispatch timeout (5s exceeded)")), 5000)
+    );
+
+    const info = await Promise.race([sendPromise, timeoutPromise]);
+
     console.log(`✅ Real-time Gmail OTP sent to ${to} (MessageId: ${info.messageId})`);
     return { success: true, messageId: info.messageId, otp };
   } catch (err) {
-    console.error("Failed to send real-time email via SMTP:", err.message);
+    console.error("SMTP dispatch warning (falling back to immediate simulation):", err.message);
     console.log(`\n======================================================`);
     console.log(`⚠️ [FALLBACK OTP LOG] To: ${to} | Code: >>> ${otp} <<<`);
     console.log(`======================================================\n`);

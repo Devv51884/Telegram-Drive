@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import DriveAPI from "../../services/api.js";
-import { Film, Play } from "lucide-react";
+import { Film, Play, Sparkles } from "lucide-react";
 
 // Global in-memory thumbnail cache across component mounts
 const memoryThumbnailCache = new Map();
@@ -66,6 +66,7 @@ export default function VideoThumbnail({ file, className = "" }) {
     () => memoryThumbnailCache.get(file.id) || file.thumbnail_url || null
   );
   const [isExtracting, setIsExtracting] = useState(!thumbUrl);
+  const [extractFailed, setExtractFailed] = useState(false);
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -86,7 +87,6 @@ export default function VideoThumbnail({ file, className = "" }) {
       // If not cached, extract frame dynamically
       const video = document.createElement("video");
       videoRef.current = video;
-      video.crossOrigin = "anonymous";
       video.muted = true;
       video.playsInline = true;
       video.preload = "metadata";
@@ -95,12 +95,12 @@ export default function VideoThumbnail({ file, className = "" }) {
       video.src = streamUrl;
 
       const handleLoadedMetadata = () => {
-        // Seek to 1 second or 10% of video
         try {
           const seekTime = Math.min(1.0, (video.duration || 10) * 0.1);
           video.currentTime = seekTime;
         } catch {
           setIsExtracting(false);
+          setExtractFailed(true);
         }
       };
 
@@ -116,13 +116,15 @@ export default function VideoThumbnail({ file, className = "" }) {
           const ctx = canvas.getContext("2d");
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
           if (dataUrl && dataUrl.length > 100) {
             setThumbUrl(dataUrl);
             saveCachedThumbnail(file.id, dataUrl);
+          } else {
+            setExtractFailed(true);
           }
         } catch (err) {
-          console.debug("Video thumbnail extraction fallback:", err.message);
+          setExtractFailed(true);
         } finally {
           setIsExtracting(false);
           cleanup();
@@ -130,7 +132,10 @@ export default function VideoThumbnail({ file, className = "" }) {
       };
 
       const handleError = () => {
-        if (!isCancelled) setIsExtracting(false);
+        if (!isCancelled) {
+          setIsExtracting(false);
+          setExtractFailed(true);
+        }
         cleanup();
       };
 
@@ -148,13 +153,14 @@ export default function VideoThumbnail({ file, className = "" }) {
       video.addEventListener("seeked", handleSeeked, { once: true });
       video.addEventListener("error", handleError, { once: true });
 
-      // Safety timeout after 5 seconds to avoid stalling
+      // Safety timeout after 4 seconds
       const timeoutId = setTimeout(() => {
         if (!isCancelled) {
           setIsExtracting(false);
+          setExtractFailed(true);
           cleanup();
         }
-      }, 5000);
+      }, 4000);
 
       return () => {
         clearTimeout(timeoutId);
@@ -174,7 +180,7 @@ export default function VideoThumbnail({ file, className = "" }) {
   }, [file.id, file.thumbnail_url]);
 
   return (
-    <div className={`relative w-full h-full flex items-center justify-center overflow-hidden bg-slate-900 ${className}`}>
+    <div className={`relative w-full h-full flex items-center justify-center overflow-hidden bg-slate-950 select-none ${className}`}>
       {thumbUrl ? (
         <>
           <img
@@ -183,29 +189,32 @@ export default function VideoThumbnail({ file, className = "" }) {
             loading="lazy"
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
-          {/* Subtle dark gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
-          
+          {/* Ambient gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20 pointer-events-none" />
+
           {/* Hover Play Button */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-            <div className="w-9 h-9 rounded-full bg-blue-600/90 text-white flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
-              <Play className="w-4 h-4 ml-0.5 fill-current" />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[1px]">
+            <div className="w-10 h-10 rounded-2xl bg-blue-600/90 text-white flex items-center justify-center shadow-xl transform group-hover:scale-110 transition-transform border border-white/20">
+              <Play className="w-5 h-5 ml-0.5 fill-current" />
             </div>
           </div>
         </>
       ) : (
-        /* Sleek Video Placeholder while generating thumbnail */
-        <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-2 text-center">
-          <div className="w-10 h-10 rounded-full bg-slate-800/80 border border-slate-700 text-rose-400 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-            <Film className="w-5 h-5 text-rose-500" />
+        /* Rich Modern Video Preview Card */
+        <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-[#131b2e] to-[#0f172a] p-3 text-center overflow-hidden">
+          {/* Subtle glowing radial gradient in background */}
+          <div className="absolute w-24 h-24 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+
+          {/* Film Reel & Play Center Badge */}
+          <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-500/20 to-indigo-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shadow-lg shadow-rose-500/10 group-hover:scale-110 transition-all duration-200">
+            <Film className="w-5 h-5 text-rose-400 group-hover:hidden" />
+            <Play className="w-5 h-5 text-rose-400 fill-current hidden group-hover:block ml-0.5" />
           </div>
-          {isExtracting && (
-            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-center">
-              <div className="h-0.5 w-12 bg-slate-700 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full animate-pulse w-full" />
-              </div>
-            </div>
-          )}
+
+          {/* Video Tag Pill */}
+          <span className="mt-2 text-[9px] font-black uppercase tracking-wider text-rose-400/80 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
+            Video
+          </span>
         </div>
       )}
     </div>

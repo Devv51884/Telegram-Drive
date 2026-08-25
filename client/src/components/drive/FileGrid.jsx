@@ -377,40 +377,59 @@ export default function FileGrid() {
                     }}
                   >
                     {file.type === "video" ? (
-                      /* Real Video Frame Snapshot Thumbnail */
+                      /* Real Video Frame Snapshot Thumbnail / Rich Video Card */
                       <VideoThumbnail file={file} />
                     ) : file.type === "image" ? (
-                      <img
-                        src={DriveAPI.getStreamUrl(file.id)}
-                        alt={file.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                        }}
-                      />
+                      <div className="relative w-full h-full flex items-center justify-center bg-slate-900 overflow-hidden">
+                        <img
+                          src={DriveAPI.getStreamUrl(file.id)}
+                          alt={file.name}
+                          loading="lazy"
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none -z-0">
+                          <ImageIcon className="w-8 h-8 text-blue-500/40" />
+                        </div>
+                      </div>
                     ) : file.type === "pdf" ? (
-                      <div className="flex flex-col items-center justify-center text-red-500/80 gap-1.5 p-4 text-center">
-                        <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center justify-center shadow-sm">
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-red-500/10 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">
+                        <div className="absolute w-20 h-20 bg-red-500/10 rounded-full blur-xl pointer-events-none" />
+                        <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-red-500/20 to-orange-500/20 border border-red-500/30 text-red-500 flex items-center justify-center shadow-lg shadow-red-500/10 group-hover:scale-110 transition-transform">
                           <FileText className="w-6 h-6 text-red-500" />
                         </div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <span className="mt-2 text-[9px] font-black uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full">
                           PDF Document
                         </span>
                       </div>
                     ) : file.type === "audio" ? (
-                      <div className="flex flex-col items-center justify-center text-purple-500 gap-1.5 p-4 text-center">
-                        <div className="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 flex items-center justify-center shadow-sm">
-                          <Music className="w-6 h-6 text-purple-500" />
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-500/10 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">
+                        <div className="absolute w-20 h-20 bg-purple-500/10 rounded-full blur-xl pointer-events-none" />
+                        <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 border border-purple-500/30 text-purple-400 flex items-center justify-center shadow-lg shadow-purple-500/10 group-hover:scale-110 transition-transform">
+                          <Music className="w-6 h-6 text-purple-400" />
                         </div>
-                        <span className="text-[10px] font-medium text-slate-400">Audio Track</span>
+                        <span className="mt-2 text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full">
+                          Audio Track
+                        </span>
+                      </div>
+                    ) : file.type === "archive" ? (
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-amber-500/10 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">
+                        <div className="absolute w-20 h-20 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
+                        <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-yellow-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/10 group-hover:scale-110 transition-transform">
+                          <Archive className="w-6 h-6 text-amber-400" />
+                        </div>
+                        <span className="mt-2 text-[9px] font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                          Archive ZIP
+                        </span>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-slate-400 gap-1.5 p-4 text-center">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-200/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 flex items-center justify-center shadow-sm">
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-800/40 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">
+                        <div className="relative w-11 h-11 rounded-2xl bg-slate-800/80 border border-slate-700 text-slate-400 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                           <File className="w-6 h-6 text-slate-400" />
                         </div>
-                        <span className="text-[10px] font-medium text-slate-400 uppercase">
+                        <span className="mt-2 text-[9px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-800/60 border border-slate-700 px-2 py-0.5 rounded-full truncate max-w-[90px]">
                           {file.name.split(".").pop() || "File"}
                         </span>
                       </div>
