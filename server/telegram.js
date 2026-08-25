@@ -518,6 +518,13 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
 
   const sessionString = client.session.save();
   const sessionId = generateId("tgsess_");
+  const userInfoObj = {
+    id: user.id?.toString() || "",
+    firstName: user.firstName || "",
+    lastName: user.lastName || "",
+    username: user.username || "",
+    phoneNumber: cleanPhone
+  };
 
   await dbDeactivateTelegramSessions(userId);
   await dbSaveTelegramSession({
@@ -525,6 +532,7 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
     user_id: userId || null,
     phone_number: cleanPhone,
     session_string: sessionString,
+    user_info: JSON.stringify(userInfoObj),
     username: user.username || null,
     first_name: user.firstName || null,
     last_name: user.lastName || null,
@@ -550,7 +558,7 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
 // Get connected Telegram User information
 export async function getConnectedTelegramUser(userId = null) {
   const sessionRow = await dbGetActiveTelegramSession(userId);
-  if (!sessionRow) {
+  if (!sessionRow || !sessionRow.session_string) {
     return { connected: false };
   }
 
@@ -564,43 +572,19 @@ export async function getConnectedTelegramUser(userId = null) {
   const firstName = parsedInfo.firstName || sessionRow.first_name || "Telegram User";
   const lastName = parsedInfo.lastName || sessionRow.last_name || "";
   const username = parsedInfo.username || sessionRow.username || "";
+  const phone = sessionRow.phone_number || parsedInfo.phoneNumber || "";
+  const telegramId = parsedInfo.id || sessionRow.id || "";
 
-  try {
-    const client = await getGramClient(userId);
-    if (!client) {
-      return {
-        connected: true,
-        phoneNumber: sessionRow.phone_number,
-        info: {
-          firstName,
-          lastName,
-          username
-        }
-      };
+  return {
+    connected: true,
+    phoneNumber: phone,
+    info: {
+      id: telegramId,
+      firstName,
+      lastName,
+      username
     }
-
-    const me = await client.getMe();
-    return {
-      connected: true,
-      phoneNumber: sessionRow.phone_number,
-      info: {
-        id: me.id?.toString(),
-        firstName: me.firstName || firstName,
-        lastName: me.lastName || lastName,
-        username: me.username || username
-      }
-    };
-  } catch (err) {
-    return {
-      connected: true,
-      phoneNumber: sessionRow.phone_number,
-      info: {
-        firstName,
-        lastName,
-        username
-      }
-    };
-  }
+  };
 }
 
 // Logout & Disconnect Telegram User Account

@@ -780,24 +780,55 @@ export async function dbDeleteFolder(id) {
 export async function dbGetActiveTelegramSession(userId = null) {
   const sqlite = await getSqliteDb();
   let session = null;
+
+  // 1. Try finding active session for specific user
   if (userId) {
-    session = await sqlite.get("SELECT * FROM telegram_sessions WHERE user_id = ? AND is_active = 1 LIMIT 1", [userId]);
-  } else {
-    session = await sqlite.get("SELECT * FROM telegram_sessions WHERE is_active = 1 LIMIT 1");
+    session = await sqlite.get(
+      "SELECT * FROM telegram_sessions WHERE user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1",
+      [userId]
+    );
   }
-  if (session) return session;
+
+  // 2. If not found or userId not provided, fallback to any active system session
+  if (!session) {
+    session = await sqlite.get(
+      "SELECT * FROM telegram_sessions WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1"
+    );
+  }
+
+  if (session && session.session_string) return session;
 
   const supabase = await getSupabaseClient();
   if (supabase) {
     try {
-      let query = supabase.from("telegram_sessions").select("*").eq("is_active", 1);
+      let query = supabase.from("telegram_sessions").select("*").eq("is_active", 1).order("updated_at", { ascending: false });
       if (userId) {
-        query = query.eq("user_id", userId);
+        const { data: userSession } = await supabase
+          .from("telegram_sessions")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("is_active", 1)
+          .maybeSingle();
+        if (userSession && userSession.session_string) {
+          session = userSession;
+        }
       }
-      const { data, error } = await query.maybeSingle();
 
-      if (!error && data) {
-        const infoStr = typeof data.user_info === "object" ? JSON.stringify(data.user_info) : data.user_info;
+      if (!session) {
+        const { data: anySession } = await supabase
+          .from("telegram_sessions")
+          .select("*")
+          .eq("is_active", 1)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (anySession && anySession.session_string) {
+          session = anySession;
+        }
+      }
+
+      if (session) {
+        const infoStr = typeof session.user_info === "object" ? JSON.stringify(session.user_info) : session.user_info;
         let parsedInfo = {};
         try {
           parsedInfo = JSON.parse(infoStr);
@@ -815,20 +846,22 @@ export async function dbGetActiveTelegramSession(userId = null) {
             username = excluded.username,
             is_active = excluded.is_active`,
           [
-            data.id,
-            data.user_id || userId || null,
-            data.phone_number,
-            data.session_string,
+            session.id,
+            session.user_id || userId || null,
+            session.phone_number,
+            session.session_string,
             infoStr,
-            parsedInfo.firstName || null,
-            parsedInfo.lastName || null,
-            parsedInfo.username || null,
-            data.is_active
+            parsedInfo.firstName || session.first_name || null,
+            parsedInfo.lastName || session.last_name || null,
+            parsedInfo.username || session.username || null,
+            session.is_active || 1
           ]
         );
-        return data;
+        return session;
       }
-    } catch {}
+    } catch (sbErr) {
+      console.warn("Supabase session retrieval warning:", sbErr.message);
+    }
   }
   return null;
 }
@@ -1130,12 +1163,91 @@ export async function dbGetFolderByShareToken(token) {
 export async function dbGetSharedFolderContents(folderId) {
   const sqlite = await getSqliteDb();
   const folders = await sqlite.all(
-    "SELECT id, name, color, parent_id, is_starred, share_access, share_token, created_at, updated_at FROM folders WHERE parent_id = ? AND is_trash = 0 ORDER BY name ASC",
+    `SELECT 
+      f.id, f.name, f.color, f.parent_id, f.is_starred, f.share_access, f.share_token, f.created_at, f.updated_at,
+      (SELECT COUNT(*) FROM files WHERE folder_id = f.id AND is_trash = 0) as file_count,
+      (SELECT COUNT(*) FROM folders WHERE parent_id = f.id AND is_trash = 0) as folder_count
+    FROM folders f 
+    WHERE f.parent_id = ? AND f.is_trash = 0 
+    ORDER BY f.name COLLATE NOCASE ASC`,
     [folderId]
   );
   const files = await sqlite.all(
-    "SELECT id, name, size, mime_type, type, source_type, thumbnail_url, is_starred, share_access, share_token, created_at, updated_at FROM files WHERE folder_id = ? AND is_trash = 0 ORDER BY name ASC",
+    "SELECT id, name, size, mime_type, type, source_type, thumbnail_url, is_starred, share_access, share_token, created_at, updated_at FROM files WHERE folder_id = ? AND is_trash = 0 ORDER BY name COLLATE NOCASE ASC",
     [folderId]
   );
   return { folders, files };
 }
+
+// Checks whether targetFolderId is equal to rootFolderId or is a subfolder inside rootFolderId's hierarchy
+export async function dbIsFolderDescendant(targetFolderId, rootFolderId) {
+  if (!targetFolderId || !rootFolderId) return false;
+  if (targetFolderId === rootFolderId) return true;
+
+  let currentId = targetFolderId;
+  let depth = 0;
+  const maxDepth = 50;
+
+  while (currentId && depth < maxDepth) {
+    const folder = await dbGetFolderById(currentId);
+    if (!folder || folder.is_trash) return false;
+    if (folder.parent_id === rootFolderId || folder.id === rootFolderId) {
+      return true;
+    }
+    if (!folder.parent_id || folder.parent_id === "root") {
+      return false;
+    }
+    currentId = folder.parent_id;
+    depth++;
+  }
+
+  return false;
+}
+
+// Computes the breadcrumb trail from rootFolderId down to targetFolderId
+export async function dbGetFolderBreadcrumbTrail(targetFolderId, rootFolderId) {
+  if (!targetFolderId || !rootFolderId) return [];
+  const root = await dbGetFolderById(rootFolderId);
+  if (!root) return [];
+
+  if (targetFolderId === rootFolderId) {
+    return [{ id: root.id, name: root.name, color: root.color }];
+  }
+
+  const trail = [];
+  let currentId = targetFolderId;
+  let depth = 0;
+  const maxDepth = 50;
+
+  while (currentId && depth < maxDepth) {
+    const folder = await dbGetFolderById(currentId);
+    if (!folder) break;
+    trail.unshift({ id: folder.id, name: folder.name, color: folder.color });
+    if (folder.id === rootFolderId) {
+      return trail;
+    }
+    if (!folder.parent_id || folder.parent_id === "root") {
+      break;
+    }
+    currentId = folder.parent_id;
+    depth++;
+  }
+
+  // If rootFolderId was not found in the upward ancestor chain, prepend root
+  if (trail.length === 0 || trail[0].id !== rootFolderId) {
+    return [{ id: root.id, name: root.name, color: root.color }];
+  }
+
+  return trail;
+}
+
+// Validates whether a file is located in the shared folder or any of its subfolders
+export async function dbIsFileInSharedFolderTree(fileId, rootFolderId) {
+  if (!fileId || !rootFolderId) return false;
+  const file = await dbGetFileById(fileId);
+  if (!file || file.is_trash) return false;
+  if (!file.folder_id) return false;
+  if (file.folder_id === rootFolderId) return true;
+  return dbIsFolderDescendant(file.folder_id, rootFolderId);
+}
+

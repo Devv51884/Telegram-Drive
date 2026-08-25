@@ -7,7 +7,10 @@ import {
   dbUpdateFolder,
   dbGetFileByShareToken,
   dbGetFolderByShareToken,
-  dbGetSharedFolderContents
+  dbGetSharedFolderContents,
+  dbIsFolderDescendant,
+  dbGetFolderBreadcrumbTrail,
+  dbIsFileInSharedFolderTree
 } from "../db.js";
 import {
   streamGramMedia,
@@ -306,18 +309,49 @@ router.get("/public/:token", async (req, res) => {
         });
       }
 
-      const contents = await dbGetSharedFolderContents(folder.id);
+      const { folderId } = req.query;
+      let targetFolder = folder;
+
+      if (folderId && folderId !== folder.id && folderId !== "root") {
+        const isDescendant = await dbIsFolderDescendant(folderId, folder.id);
+        if (!isDescendant) {
+          return res.status(403).json({
+            success: false,
+            error: "Requested folder is not inside the shared directory."
+          });
+        }
+        const subFolder = await dbGetFolderById(folderId);
+        if (!subFolder || subFolder.is_trash) {
+          return res.status(404).json({
+            success: false,
+            error: "Subfolder not found or has been deleted."
+          });
+        }
+        targetFolder = subFolder;
+      }
+
+      const contents = await dbGetSharedFolderContents(targetFolder.id);
+      const breadcrumbs = await dbGetFolderBreadcrumbTrail(targetFolder.id, folder.id);
 
       return res.json({
         success: true,
         type: "folder",
-        item: {
+        rootFolder: {
           id: folder.id,
           name: folder.name,
           color: folder.color,
           share_token: folder.share_token,
           updated_at: folder.updated_at
         },
+        currentFolder: {
+          id: targetFolder.id,
+          name: targetFolder.name,
+          color: targetFolder.color,
+          parent_id: targetFolder.parent_id,
+          share_token: folder.share_token,
+          updated_at: targetFolder.updated_at
+        },
+        breadcrumbs,
         contents: {
           folders: contents.folders,
           files: contents.files
@@ -486,6 +520,11 @@ router.get("/public/:token/file/:fileId/stream", async (req, res) => {
     const file = await dbGetFileById(fileId);
     if (!file) return res.status(404).send("File not found");
 
+    const isAllowed = await dbIsFileInSharedFolderTree(fileId, folder.id);
+    if (!isAllowed) {
+      return res.status(403).send("File is not part of this shared folder");
+    }
+
     const range = req.headers.range;
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const isUploaded = file.source_type === "upload" || !file.source_type;
@@ -495,7 +534,7 @@ router.get("/public/:token/file/:fileId/stream", async (req, res) => {
         await streamTelegramBotFile(file, range, req, res);
         return;
       } catch (botErr) {
-        console.warn("Folder subfile bot stream failed:", botErr.message);
+        console.warn("Folder subfile bot stream failed, trying MTProto:", botErr.message);
       }
     }
 
@@ -509,7 +548,9 @@ router.get("/public/:token/file/:fileId/stream", async (req, res) => {
         file.mime_type,
         file.name,
         false,
-        isUploaded
+        isUploaded,
+        file.telegram_file_reference || null,
+        file.telegram_access_hash || null
       );
       return;
     }
@@ -532,6 +573,11 @@ router.get("/public/:token/file/:fileId/download", async (req, res) => {
 
     const file = await dbGetFileById(fileId);
     if (!file) return res.status(404).send("File not found");
+
+    const isAllowed = await dbIsFileInSharedFolderTree(fileId, folder.id);
+    if (!isAllowed) {
+      return res.status(403).send("File is not part of this shared folder");
+    }
 
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const isUploaded = file.source_type === "upload" || !file.source_type;
@@ -571,7 +617,9 @@ router.get("/public/:token/file/:fileId/download", async (req, res) => {
         file.mime_type,
         file.name,
         true,
-        isUploaded
+        isUploaded,
+        file.telegram_file_reference || null,
+        file.telegram_access_hash || null
       );
       return;
     }

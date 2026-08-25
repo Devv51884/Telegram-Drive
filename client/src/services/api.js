@@ -101,7 +101,12 @@ export const DriveAPI = {
   // Link Sharing APIs
   getShareSettings: (type, id) => api.get(`/share/manage/${type}/${id}`).then((r) => r.data),
   updateShareSettings: (type, id, data) => api.post(`/share/manage/${type}/${id}`, data).then((r) => r.data),
-  getPublicShareInfo: (token) => axios.get(`${API_BASE}/share/public/${token}`).then((r) => r.data),
+  getPublicShareInfo: (token, folderId = null) =>
+    axios
+      .get(`${API_BASE}/share/public/${token}`, {
+        params: folderId && folderId !== "root" ? { folderId } : {}
+      })
+      .then((r) => r.data),
   getPublicShareStreamUrl: (token) => `${API_BASE}/share/public/${token}/stream?_v=3`,
   getPublicShareDownloadUrl: (token) => `${API_BASE}/share/public/${token}/download?_v=3`,
   getPublicFolderFileStreamUrl: (token, fileId) => `${API_BASE}/share/public/${token}/file/${fileId}/stream?_v=3`,
