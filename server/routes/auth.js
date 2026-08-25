@@ -75,8 +75,11 @@ router.post("/signup/send-otp", authLimiter, async (req, res) => {
 
     res.json({
       success: true,
-      message: `A 6-digit verification code has been sent to ${cleanEmail}`,
-      simulated: emailResult.simulated || false
+      message: emailResult.simulated
+        ? `[Demo/Testing Mode] Verification Code: ${otp} (Configure GMAIL_USER & GMAIL_APP_PASSWORD in Render Environment for real emails)`
+        : `A 6-digit verification code has been sent to ${cleanEmail}`,
+      simulated: emailResult.simulated || false,
+      devOtp: emailResult.simulated ? otp : undefined
     });
   } catch (err) {
     console.error("Signup OTP error:", err.message);
@@ -307,8 +310,11 @@ router.post("/forgot-password/send-otp", authLimiter, async (req, res) => {
 
     res.json({
       success: true,
-      message: `A password reset code has been sent to ${cleanEmail}`,
-      simulated: emailResult.simulated || false
+      message: emailResult.simulated
+        ? `[Demo/Testing Mode] Reset Code: ${otp} (Configure GMAIL_USER & GMAIL_APP_PASSWORD in Render Environment for real emails)`
+        : `A password reset code has been sent to ${cleanEmail}`,
+      simulated: emailResult.simulated || false,
+      devOtp: emailResult.simulated ? otp : undefined
     });
   } catch (err) {
     console.error("Forgot password send OTP error:", err.message);
