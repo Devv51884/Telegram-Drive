@@ -167,6 +167,42 @@ export function DriveProvider({ children }) {
     return false;
   };
 
+  const signupSendOtp = async (name, email, password) => {
+    return await DriveAPI.signupSendOtp({ name, email, password });
+  };
+
+  const signupVerifyOtp = async (email, otp) => {
+    const res = await DriveAPI.signupVerifyOtp({ email, otp });
+    if (res.success && res.token) {
+      localStorage.setItem("teledrive_auth_token", res.token);
+      setCurrentUser(res.user);
+      setIsAuthenticated(true);
+      showToast(`Welcome to TeleDrive, ${res.user.name}!`);
+      fetchContents();
+      fetchMetadata();
+      return { success: true, user: res.user };
+    }
+    return { success: false, error: res.error || "Verification failed" };
+  };
+
+  const forgotPasswordSendOtp = async (email) => {
+    return await DriveAPI.forgotPasswordSendOtp(email);
+  };
+
+  const forgotPasswordVerifyOtp = async (email, otp, newPassword) => {
+    const res = await DriveAPI.forgotPasswordVerifyOtp({ email, otp, newPassword });
+    if (res.success && res.token) {
+      localStorage.setItem("teledrive_auth_token", res.token);
+      setCurrentUser(res.user);
+      setIsAuthenticated(true);
+      showToast("Password reset successfully! Welcome back.");
+      fetchContents();
+      fetchMetadata();
+      return { success: true };
+    }
+    return { success: false, error: res.error || "Reset failed" };
+  };
+
   const updateProfile = async (name, email) => {
     try {
       const res = await DriveAPI.updateProfile({ name, email });
@@ -759,6 +795,10 @@ export function DriveProvider({ children }) {
     authChecking,
     loginUser,
     signupUser,
+    signupSendOtp,
+    signupVerifyOtp,
+    forgotPasswordSendOtp,
+    forgotPasswordVerifyOtp,
     updateProfile,
     updatePassword,
     update2FAPin,

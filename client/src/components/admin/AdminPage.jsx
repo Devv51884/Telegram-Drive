@@ -635,7 +635,94 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-[#1e1f20] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+              {/* Mobile Card View (< sm screens) */}
+              <div className="grid grid-cols-1 gap-3 sm:hidden">
+                {filteredUsers.map((u) => (
+                  <div
+                    key={u.id}
+                    className="p-4 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-sm">
+                          {u.name?.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-white text-xs">{u.name}</p>
+                          <p className="text-[11px] text-slate-400">{u.email}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                          u.role === "admin"
+                            ? "bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                        }`}
+                      >
+                        {u.role || "USER"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <span>{u.file_count || 0} files ({formatBytes(u.storage_used)})</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          u.status === "active"
+                            ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                            : "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
+                        }`}
+                      >
+                        {u.status || "active"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      {u.email !== "devv5412@gmail.com" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleRole(u.id, u.role)}
+                            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold"
+                            title="Toggle Admin Role"
+                          >
+                            {u.role === "admin" ? "Demote" : "Make Admin"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(u.id, u.status)}
+                            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold"
+                            title="Toggle Status"
+                          >
+                            {u.status === "active" ? "Suspend" : "Activate"}
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setResettingUser(u)}
+                        className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-xs font-semibold flex items-center gap-1"
+                        title="Reset Password"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Pass</span>
+                      </button>
+                      {u.email !== "devv5412@gmail.com" && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(u.id, u.name)}
+                          className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400"
+                          title="Delete User"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Users Table (hidden on mobile, visible on sm+) */}
+              <div className="hidden sm:block bg-white dark:bg-[#1e1f20] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-x-auto shadow-sm">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-[#282a2c] border-b border-slate-200 dark:border-slate-700 text-slate-400 font-bold uppercase tracking-wider">
                     <tr>
@@ -795,7 +882,60 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-[#1e1f20] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+              {/* Mobile File Cards (< sm screens) */}
+              <div className="grid grid-cols-1 gap-3 sm:hidden">
+                {filesList.map((f) => (
+                  <div
+                    key={f.id}
+                    className="p-4 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-2.5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 flex-shrink-0">
+                        {f.type === "video" ? (
+                          <Film className="w-5 h-5 text-blue-500" />
+                        ) : f.type === "image" ? (
+                          <ImageIcon className="w-5 h-5 text-emerald-500" />
+                        ) : f.type === "audio" ? (
+                          <Music className="w-5 h-5 text-purple-500" />
+                        ) : (
+                          <FileIcon className="w-5 h-5 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-800 dark:text-white text-xs truncate">{f.name}</p>
+                        <p className="text-[10px] text-slate-400 truncate">Owner: {f.user_name || "Owner"}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <span>{formatBytes(f.size)}</span>
+                      <span className="text-[10px] font-mono text-slate-400">Msg #{f.telegram_message_id}</span>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewItem(f)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-xs font-semibold flex items-center gap-1.5"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Preview</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(f.id, f.name)}
+                        className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Files Table (hidden on mobile, visible on sm+) */}
+              <div className="hidden sm:block bg-white dark:bg-[#1e1f20] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-x-auto shadow-sm">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-[#282a2c] border-b border-slate-200 dark:border-slate-700 text-slate-400 font-bold uppercase tracking-wider">
                     <tr>

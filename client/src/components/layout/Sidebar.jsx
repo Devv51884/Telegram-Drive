@@ -6,6 +6,7 @@ import {
   Upload,
   Link2,
   HardDrive,
+  Users,
   Star,
   Trash2,
   Send,
@@ -138,6 +139,19 @@ export default function Sidebar() {
           >
             <HardDrive className="w-4 h-4 text-blue-500" />
             <span>My Drive</span>
+          </div>
+
+          {/* Shared with me */}
+          <div
+            onClick={() => handleNavClick("shared_with_me")}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-colors ${
+              section === "shared_with_me"
+                ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
+                : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+            }`}
+          >
+            <Users className="w-4 h-4 text-indigo-500" />
+            <span>Shared with me</span>
           </div>
 
           {/* Telegram Imports */}

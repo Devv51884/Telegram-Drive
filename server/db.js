@@ -104,6 +104,28 @@ export async function getSqliteDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS email_otps (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      otp TEXT NOT NULL,
+      type TEXT NOT NULL,
+      metadata TEXT,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS item_permissions (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      item_type TEXT NOT NULL,
+      owner_id TEXT,
+      shared_with_email TEXT NOT NULL,
+      permission TEXT DEFAULT 'viewer',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(item_id, item_type, shared_with_email)
+    );
   `);
 
   // Run lightweight migrations
@@ -1250,4 +1272,164 @@ export async function dbIsFileInSharedFolderTree(fileId, rootFolderId) {
   if (file.folder_id === rootFolderId) return true;
   return dbIsFolderDescendant(file.folder_id, rootFolderId);
 }
+
+// ==========================================
+// EMAIL OTP MANAGEMENT (SIGNUP & PASSWORD RESET)
+// ==========================================
+
+export async function dbSaveOtp(email, otp, type = "signup", metadata = null, expiresInMinutes = 10) {
+  const sqlite = await getSqliteDb();
+  const cleanEmail = email.trim().toLowerCase();
+  const id = generateId("otp_");
+  const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000).toISOString();
+  const metaStr = metadata ? (typeof metadata === "string" ? metadata : JSON.stringify(metadata)) : null;
+
+  // Clear previous OTPs for this email and type
+  await sqlite.run("DELETE FROM email_otps WHERE email = ? AND type = ?", [cleanEmail, type]);
+
+  await sqlite.run(
+    "INSERT INTO email_otps (id, email, otp, type, metadata, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    [id, cleanEmail, otp.trim(), type, metaStr, expiresAt]
+  );
+
+  return { id, email: cleanEmail, expiresAt };
+}
+
+export async function dbVerifyOtp(email, otp, type = "signup") {
+  const sqlite = await getSqliteDb();
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanOtp = (otp || "").trim();
+
+  const record = await sqlite.get(
+    `SELECT * FROM email_otps 
+     WHERE email = ? AND otp = ? AND type = ? AND expires_at > CURRENT_TIMESTAMP 
+     ORDER BY created_at DESC LIMIT 1`,
+    [cleanEmail, cleanOtp, type]
+  );
+
+  if (!record) return { valid: false };
+
+  let metadata = null;
+  if (record.metadata) {
+    try {
+      metadata = JSON.parse(record.metadata);
+    } catch {
+      metadata = record.metadata;
+    }
+  }
+
+  // Consume OTP so it cannot be reused
+  await sqlite.run("DELETE FROM email_otps WHERE id = ?", [record.id]);
+
+  return { valid: true, record, metadata };
+}
+
+// ==========================================
+// EMAIL-BASED SHARING & PERMISSIONS
+// ==========================================
+
+export async function dbAddUserPermission({ itemId, itemType, ownerId, sharedEmail, permission = "viewer" }) {
+  const sqlite = await getSqliteDb();
+  const cleanEmail = sharedEmail.trim().toLowerCase();
+  const id = generateId("perm_");
+
+  await sqlite.run(
+    `INSERT INTO item_permissions (id, item_id, item_type, owner_id, shared_with_email, permission)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(item_id, item_type, shared_with_email) DO UPDATE SET
+       permission = excluded.permission,
+       updated_at = CURRENT_TIMESTAMP`,
+    [id, itemId, itemType, ownerId || null, cleanEmail, permission]
+  );
+
+  return sqlite.get("SELECT * FROM item_permissions WHERE item_id = ? AND item_type = ? AND shared_with_email = ?", [
+    itemId,
+    itemType,
+    cleanEmail
+  ]);
+}
+
+export async function dbRemoveUserPermission(itemId, itemType, sharedEmail) {
+  const sqlite = await getSqliteDb();
+  const cleanEmail = sharedEmail.trim().toLowerCase();
+  await sqlite.run(
+    "DELETE FROM item_permissions WHERE item_id = ? AND item_type = ? AND shared_with_email = ?",
+    [itemId, itemType, cleanEmail]
+  );
+  return { success: true };
+}
+
+export async function dbGetItemPermissions(itemId, itemType) {
+  const sqlite = await getSqliteDb();
+  const rows = await sqlite.all(
+    `SELECT p.id, p.item_id, p.item_type, p.shared_with_email, p.permission, p.created_at, u.name as user_name, u.avatar_url
+     FROM item_permissions p
+     LEFT JOIN users u ON LOWER(u.email) = LOWER(p.shared_with_email)
+     WHERE p.item_id = ? AND p.item_type = ?
+     ORDER BY p.created_at ASC`,
+    [itemId, itemType]
+  );
+  return rows;
+}
+
+export async function dbGetSharedWithMe(userEmail) {
+  const sqlite = await getSqliteDb();
+  const cleanEmail = (userEmail || "").trim().toLowerCase();
+  if (!cleanEmail) return { folders: [], files: [] };
+
+  // 1. Get Shared Folders
+  const folders = await sqlite.all(
+    `SELECT f.*, p.permission, u.name as owner_name, u.email as owner_email,
+      (SELECT COUNT(*) FROM files WHERE folder_id = f.id AND is_trash = 0) as file_count,
+      (SELECT COUNT(*) FROM folders WHERE parent_id = f.id AND is_trash = 0) as folder_count
+     FROM folders f
+     INNER JOIN item_permissions p ON p.item_id = f.id AND p.item_type = 'folder'
+     LEFT JOIN users u ON f.user_id = u.id
+     WHERE LOWER(p.shared_with_email) = ? AND f.is_trash = 0
+     ORDER BY f.name COLLATE NOCASE ASC`,
+    [cleanEmail]
+  );
+
+  // 2. Get Shared Files
+  const files = await sqlite.all(
+    `SELECT files.*, p.permission, u.name as owner_name, u.email as owner_email
+     FROM files
+     INNER JOIN item_permissions p ON p.item_id = files.id AND p.item_type = 'file'
+     LEFT JOIN users u ON files.user_id = u.id
+     WHERE LOWER(p.shared_with_email) = ? AND files.is_trash = 0
+     ORDER BY files.name COLLATE NOCASE ASC`,
+    [cleanEmail]
+  );
+
+  return { folders, files };
+}
+
+export async function dbHasUserAccessToItem(itemId, itemType, userEmail, userId = null) {
+  if (!itemId) return false;
+  const sqlite = await getSqliteDb();
+  const cleanEmail = (userEmail || "").trim().toLowerCase();
+
+  // Check if user is the direct owner
+  if (itemType === "folder") {
+    const folder = await sqlite.get("SELECT * FROM folders WHERE id = ?", [itemId]);
+    if (!folder) return false;
+    if (userId && folder.user_id === userId) return true;
+  } else {
+    const file = await sqlite.get("SELECT * FROM files WHERE id = ?", [itemId]);
+    if (!file) return false;
+    if (userId && file.user_id === userId) return true;
+  }
+
+  // Check explicit email permission
+  if (cleanEmail) {
+    const perm = await sqlite.get(
+      "SELECT * FROM item_permissions WHERE item_id = ? AND item_type = ? AND LOWER(shared_with_email) = ?",
+      [itemId, itemType, cleanEmail]
+    );
+    if (perm) return true;
+  }
+
+  return false;
+}
+
 

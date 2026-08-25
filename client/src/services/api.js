@@ -19,6 +19,10 @@ api.interceptors.request.use((config) => {
 export const DriveAPI = {
   // User Authentication & Profile CRUD
   signupUser: (data) => api.post("/auth/signup", data).then((r) => r.data),
+  signupSendOtp: (data) => api.post("/auth/signup/send-otp", data).then((r) => r.data),
+  signupVerifyOtp: (data) => api.post("/auth/signup/verify-otp", data).then((r) => r.data),
+  forgotPasswordSendOtp: (email) => api.post("/auth/forgot-password/send-otp", { email }).then((r) => r.data),
+  forgotPasswordVerifyOtp: (data) => api.post("/auth/forgot-password/verify-otp", data).then((r) => r.data),
   loginUser: (data) => api.post("/auth/login", data).then((r) => r.data),
   getCurrentUser: () => api.get("/auth/me").then((r) => r.data),
   updateProfile: (data) => api.put("/auth/profile", data).then((r) => r.data),
@@ -101,6 +105,10 @@ export const DriveAPI = {
   // Link Sharing APIs
   getShareSettings: (type, id) => api.get(`/share/manage/${type}/${id}`).then((r) => r.data),
   updateShareSettings: (type, id, data) => api.post(`/share/manage/${type}/${id}`, data).then((r) => r.data),
+  getCollaborators: (type, id) => api.get(`/share/collaborators/${type}/${id}`).then((r) => r.data),
+  addCollaborator: (type, id, data) => api.post(`/share/collaborators/${type}/${id}`, data).then((r) => r.data),
+  removeCollaborator: (type, id, email) =>
+    api.delete(`/share/collaborators/${type}/${id}/${encodeURIComponent(email)}`).then((r) => r.data),
   getPublicShareInfo: (token, folderId = null) =>
     axios
       .get(`${API_BASE}/share/public/${token}`, {

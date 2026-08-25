@@ -1,5 +1,11 @@
 import express from "express";
-import { getSqliteDb, dbGetFolderById, getSupabaseClient } from "../db.js";
+import {
+  getSqliteDb,
+  dbGetFolderById,
+  dbGetSharedWithMe,
+  dbGetSharedFolderContents,
+  getSupabaseClient
+} from "../db.js";
 import { deleteTelegramMessage } from "../telegram.js";
 
 const router = express.Router();
@@ -9,6 +15,74 @@ router.get("/contents", async (req, res) => {
   try {
     const { folderId, section, search, type, sort = "name", order = "asc" } = req.query;
     const sqlite = await getSqliteDb();
+
+    // Dedicated Handler for "Shared with me" Section
+    if (section === "shared_with_me") {
+      const userEmail = req.user?.email || "";
+
+      if (folderId && folderId !== "root") {
+        const currentFolder = await dbGetFolderById(folderId);
+        const contents = await dbGetSharedFolderContents(folderId);
+
+        // Build breadcrumbs path
+        let curr = currentFolder;
+        const trail = [];
+        while (curr) {
+          trail.unshift({ id: curr.id, name: curr.name });
+          if (curr.parent_id) {
+            curr = await dbGetFolderById(curr.parent_id);
+          } else {
+            curr = null;
+          }
+        }
+
+        const files = (contents.files || []).map((f) => {
+          const lower = (f.name || "").toLowerCase().trim();
+          let mime = f.mime_type;
+          if (lower.endsWith(".mp4") || lower.endsWith(".m4v") || mime === "video/mp2t" || (!mime && f.type === "video")) {
+            mime = "video/mp4";
+          } else if (lower.endsWith(".pdf") || (!mime && f.type === "pdf")) {
+            mime = "application/pdf";
+          }
+          return { ...f, mime_type: mime };
+        });
+
+        return res.json({
+          success: true,
+          currentFolder,
+          breadcrumbs: [{ id: "root", name: "Shared with me" }, ...trail],
+          folders: contents.folders || [],
+          files
+        });
+      }
+
+      const shared = await dbGetSharedWithMe(userEmail);
+      let sharedFolders = shared.folders || [];
+      let sharedFiles = (shared.files || []).map((f) => {
+        const lower = (f.name || "").toLowerCase().trim();
+        let mime = f.mime_type;
+        if (lower.endsWith(".mp4") || lower.endsWith(".m4v") || mime === "video/mp2t" || (!mime && f.type === "video")) {
+          mime = "video/mp4";
+        } else if (lower.endsWith(".pdf") || (!mime && f.type === "pdf")) {
+          mime = "application/pdf";
+        }
+        return { ...f, mime_type: mime };
+      });
+
+      if (search && search.trim()) {
+        const q = search.toLowerCase().trim();
+        sharedFolders = sharedFolders.filter((f) => f.name.toLowerCase().includes(q));
+        sharedFiles = sharedFiles.filter((f) => f.name.toLowerCase().includes(q));
+      }
+
+      return res.json({
+        success: true,
+        currentFolder: null,
+        breadcrumbs: [{ id: "root", name: "Shared with me" }],
+        folders: sharedFolders,
+        files: sharedFiles
+      });
+    }
 
     let folderQuery = "SELECT * FROM folders WHERE 1=1";
     let fileQuery = "SELECT * FROM files WHERE 1=1";

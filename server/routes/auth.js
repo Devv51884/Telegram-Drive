@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import {
   dbFindUserByEmail,
   dbFindUserById,
@@ -6,6 +7,8 @@ import {
   dbUpdateUser,
   dbDeleteUser,
   dbInsertFolder,
+  dbSaveOtp,
+  dbVerifyOtp,
   generateId
 } from "../db.js";
 import {
@@ -14,10 +17,169 @@ import {
   createSessionToken,
   authLimiter
 } from "../security.js";
+import { sendOtpEmail } from "../email.js";
 
 const router = express.Router();
 
-// POST /api/auth/signup - Register new account
+// ==========================================
+// 1. GMAIL OTP SIGNUP FLOW (REAL-TIME VERIFICATION)
+// ==========================================
+
+// POST /api/auth/signup/send-otp - Step 1: Send real-time OTP to Gmail
+router.post("/signup/send-otp", authLimiter, async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: "Full Name is required" });
+    }
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required" });
+    }
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: "Password must be at least 6 characters long"
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim();
+
+    // Check if user already exists
+    const existing = await dbFindUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: "An account with this email already exists. Please sign in or reset password."
+      });
+    }
+
+    // Generate 6-digit OTP code
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const passwordHash = hashPassword(password);
+
+    // Store OTP in database (10 minute expiry) with pending registration metadata
+    await dbSaveOtp(cleanEmail, otp, "signup", {
+      name: cleanName,
+      password_hash: passwordHash
+    }, 10);
+
+    // Send real-time verification email
+    const emailResult = await sendOtpEmail({
+      to: cleanEmail,
+      name: cleanName,
+      otp,
+      type: "signup"
+    });
+
+    res.json({
+      success: true,
+      message: `A 6-digit verification code has been sent to ${cleanEmail}`,
+      simulated: emailResult.simulated || false
+    });
+  } catch (err) {
+    console.error("Signup OTP error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/signup/verify-otp - Step 2: Verify OTP and activate account
+router.post("/signup/verify-otp", authLimiter, async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: "Email and 6-digit verification code are required"
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = otp.trim();
+
+    const verification = await dbVerifyOtp(cleanEmail, cleanOtp, "signup");
+    if (!verification.valid || !verification.metadata) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or expired verification code. Please request a new one."
+      });
+    }
+
+    const { name, password_hash } = verification.metadata;
+
+    // Double check user doesn't exist
+    const existing = await dbFindUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: "Account is already registered. Please sign in."
+      });
+    }
+
+    // Create user
+    const userId = generateId("u_");
+    const newUser = await dbCreateUser({
+      id: userId,
+      name: name || "TeleDrive User",
+      email: cleanEmail,
+      password_hash: password_hash,
+      is_2fa_enabled: 0
+    });
+
+    // Create starter folders
+    await Promise.all([
+      dbInsertFolder({
+        id: generateId("f_"),
+        name: "Documents",
+        color: "#4285f4",
+        parent_id: null,
+        user_id: userId
+      }),
+      dbInsertFolder({
+        id: generateId("f_"),
+        name: "Media & Photos",
+        color: "#34a853",
+        parent_id: null,
+        user_id: userId
+      }),
+      dbInsertFolder({
+        id: generateId("f_"),
+        name: "Telegram Channel Imports",
+        color: "#0088cc",
+        parent_id: null,
+        user_id: userId
+      })
+    ]);
+
+    // Issue signed session token
+    const token = await createSessionToken({
+      userId: newUser.id,
+      email: newUser.email,
+      name: newUser.name
+    });
+
+    res.json({
+      success: true,
+      message: "Gmail verified and account created successfully!",
+      token,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role || (newUser.email === "devv5412@gmail.com" ? "admin" : "user"),
+        status: newUser.status || "active",
+        is2FAEnabled: false
+      }
+    });
+  } catch (err) {
+    console.error("Signup verify error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Legacy direct signup endpoint (fallback compatibility)
 router.post("/signup", authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -106,6 +268,113 @@ router.post("/signup", authLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error("Signup error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 2. FORGOT PASSWORD FLOW VIA GMAIL OTP
+// ==========================================
+
+// POST /api/auth/forgot-password/send-otp - Step 1: Send reset OTP to Gmail
+router.post("/forgot-password/send-otp", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await dbFindUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "No TeleDrive account found with this email address."
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+    await dbSaveOtp(cleanEmail, otp, "forgot_password", { userId: user.id }, 10);
+
+    const emailResult = await sendOtpEmail({
+      to: cleanEmail,
+      name: user.name,
+      otp,
+      type: "forgot_password"
+    });
+
+    res.json({
+      success: true,
+      message: `A password reset code has been sent to ${cleanEmail}`,
+      simulated: emailResult.simulated || false
+    });
+  } catch (err) {
+    console.error("Forgot password send OTP error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/forgot-password/verify-otp - Step 2: Verify OTP and set new password
+router.post("/forgot-password/verify-otp", authLimiter, async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: "Email, OTP code, and new password are required"
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: "New password must be at least 6 characters long"
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = otp.trim();
+
+    const verification = await dbVerifyOtp(cleanEmail, cleanOtp, "forgot_password");
+    if (!verification.valid) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or expired reset code. Please request a new code."
+      });
+    }
+
+    const user = await dbFindUserByEmail(cleanEmail);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account not found" });
+    }
+
+    const newHash = hashPassword(newPassword);
+    await dbUpdateUser(user.id, { password_hash: newHash });
+
+    // Issue new session token
+    const token = await createSessionToken({
+      userId: user.id,
+      email: user.email,
+      name: user.name
+    });
+
+    res.json({
+      success: true,
+      message: "Password reset successfully! You are now signed in.",
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status
+      }
+    });
+  } catch (err) {
+    console.error("Forgot password verify error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

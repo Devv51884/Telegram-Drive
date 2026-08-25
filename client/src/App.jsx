@@ -20,6 +20,7 @@ import PublicShareView from "./components/share/PublicShareView.jsx";
 import AdminPage from "./components/admin/AdminPage.jsx";
 import DetailsDrawer from "./components/modals/DetailsDrawer.jsx";
 import AuthScreen from "./components/auth/AuthScreen.jsx";
+import BottomNav from "./components/layout/BottomNav.jsx";
 import { Loader2, CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 function DriveMain() {
@@ -104,7 +105,7 @@ function DriveMain() {
         <Sidebar />
 
         {/* Center Main Drive View */}
-        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#191a1b] overflow-hidden">
+        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#191a1b] overflow-hidden pb-14 lg:pb-0">
           <Breadcrumbs />
 
           <DragSelectContainer>
@@ -126,6 +127,9 @@ function DriveMain() {
         {/* Right Info / Details Drawer */}
         <DetailsDrawer />
       </div>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <BottomNav />
 
       {/* Floating Multi-Select Bulk Actions Bar */}
       <BulkActionBar />

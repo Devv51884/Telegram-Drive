@@ -10,12 +10,18 @@ import {
   dbGetSharedFolderContents,
   dbIsFolderDescendant,
   dbGetFolderBreadcrumbTrail,
-  dbIsFileInSharedFolderTree
+  dbIsFileInSharedFolderTree,
+  dbAddUserPermission,
+  dbRemoveUserPermission,
+  dbGetItemPermissions,
+  dbGetSharedWithMe,
+  dbHasUserAccessToItem
 } from "../db.js";
 import {
   streamGramMedia,
   getTelegramFileStreamUrl
 } from "../telegram.js";
+import { sendShareNotificationEmail } from "../email.js";
 import axios from "axios";
 
 const router = express.Router();
@@ -254,6 +260,99 @@ router.post("/manage/:type/:id", async (req, res) => {
       share_access: access,
       share_token: shareToken,
       share_url: shareUrl
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ================================================================
+// EMAIL COLLABORATOR ACCESS ENDPOINTS (Google Drive Style)
+// ================================================================
+
+// GET /api/share/collaborators/:type/:id - List all users shared by email
+router.get("/collaborators/:type/:id", async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const permissions = await dbGetItemPermissions(id, type);
+    res.json({ success: true, collaborators: permissions });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/share/collaborators/:type/:id - Grant access to an email address
+router.post("/collaborators/:type/:id", async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const { email, permission = "viewer", notify = true } = req.body;
+
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid email address is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Verify item exists
+    let item = type === "folder" ? await dbGetFolderById(id) : await dbGetFileById(id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: "Item not found" });
+    }
+
+    // Add or update permission
+    const result = await dbAddUserPermission({
+      itemId: id,
+      itemType: type,
+      ownerId: req.userId || item.user_id,
+      sharedEmail: cleanEmail,
+      permission: permission === "editor" ? "editor" : "viewer"
+    });
+
+    // Optionally send email notification
+    if (notify) {
+      const host = req.get("host") || "localhost:5173";
+      const protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+      const shareUrl = item.share_token
+        ? `${protocol}://${host}/?share=${item.share_token}`
+        : `${protocol}://${host}/?section=shared_with_me`;
+
+      sendShareNotificationEmail({
+        to: cleanEmail,
+        senderName: req.user?.name || "A TeleDrive User",
+        itemName: item.name,
+        itemType: type,
+        permission,
+        shareUrl
+      }).catch(() => {});
+    }
+
+    const updatedPermissions = await dbGetItemPermissions(id, type);
+
+    res.json({
+      success: true,
+      message: `Access granted to ${cleanEmail} as ${permission}`,
+      collaborators: updatedPermissions
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/share/collaborators/:type/:id/:email - Revoke access for an email
+router.delete("/collaborators/:type/:id/:email", async (req, res) => {
+  try {
+    const { type, id, email } = req.params;
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Email is required" });
+    }
+
+    await dbRemoveUserPermission(id, type, decodeURIComponent(email));
+    const updatedPermissions = await dbGetItemPermissions(id, type);
+
+    res.json({
+      success: true,
+      message: `Access revoked for ${email}`,
+      collaborators: updatedPermissions
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
