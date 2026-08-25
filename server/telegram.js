@@ -43,9 +43,9 @@ export async function getTelegramConfig() {
   };
 }
 
-// Global active MTProto TelegramClient instances
-let activeGramClient = null;
-let activeSessionString = null;
+// Multi-user isolated MTProto TelegramClient map: userId -> TelegramClient
+const userGramClients = new Map();
+const userSessionStrings = new Map();
 let activeBotGramClient = null;
 let activeBotToken = null;
 let activeBotSessionString = "";
@@ -106,41 +106,48 @@ export async function getUserGramClient(userId = null) {
   }
 
   const sessionRow = await dbGetActiveTelegramSession(userId);
-  const sessionStr = sessionRow?.session_string || process.env.TELEGRAM_SESSION_STRING || "";
+  const sessionStr = sessionRow?.session_string || "";
 
-  if (sessionStr) {
-    if (activeGramClient && activeSessionString === sessionStr) {
-      if (!activeGramClient.connected) {
-        try {
-          await activeGramClient.connect();
-        } catch {}
-      }
-      return activeGramClient;
-    }
-
-    if (activeGramClient) {
-      try {
-        await activeGramClient.disconnect();
-      } catch {}
-    }
-
-    try {
-      const session = new StringSession(sessionStr);
-      const client = new TelegramClient(session, config.apiId, config.apiHash, {
-        connectionRetries: 5,
-        useWSS: false
-      });
-
-      await client.connect();
-      activeGramClient = client;
-      activeSessionString = sessionStr;
-      return activeGramClient;
-    } catch (userGramErr) {
-      console.warn("User MTProto session connect error:", userGramErr.message);
-    }
+  if (!sessionStr) {
+    return null;
   }
 
-  return null;
+  const key = userId || "global";
+  const existingClient = userGramClients.get(key);
+  const existingSessionStr = userSessionStrings.get(key);
+
+  if (existingClient && existingSessionStr === sessionStr) {
+    if (!existingClient.connected) {
+      try {
+        await existingClient.connect();
+      } catch {}
+    }
+    return existingClient;
+  }
+
+  if (existingClient) {
+    try {
+      await existingClient.disconnect();
+    } catch {}
+    userGramClients.delete(key);
+    userSessionStrings.delete(key);
+  }
+
+  try {
+    const session = new StringSession(sessionStr);
+    const client = new TelegramClient(session, config.apiId, config.apiHash, {
+      connectionRetries: 5,
+      useWSS: false
+    });
+
+    await client.connect();
+    userGramClients.set(key, client);
+    userSessionStrings.set(key, sessionStr);
+    return client;
+  } catch (userGramErr) {
+    console.warn(`User MTProto session connect error (user: ${key}):`, userGramErr.message);
+    return null;
+  }
 }
 
 // General Gram Client resolver (Supports both Storage Bot and User Account)
@@ -589,12 +596,14 @@ export async function getConnectedTelegramUser(userId = null) {
 
 // Logout & Disconnect Telegram User Account
 export async function logoutTelegramUser(userId = null) {
-  if (activeGramClient) {
+  const key = userId || "global";
+  const client = userGramClients.get(key);
+  if (client) {
     try {
-      await activeGramClient.disconnect();
+      await client.disconnect();
     } catch {}
-    activeGramClient = null;
-    activeSessionString = null;
+    userGramClients.delete(key);
+    userSessionStrings.delete(key);
   }
   await dbDeactivateTelegramSessions(userId);
   return { success: true };

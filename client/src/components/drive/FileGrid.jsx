@@ -395,14 +395,20 @@ export default function FileGrid() {
                         </div>
                       </div>
                     ) : file.type === "pdf" ? (
-                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-red-500/10 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">
-                        <div className="absolute w-20 h-20 bg-red-500/10 rounded-full blur-xl pointer-events-none" />
-                        <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-red-500/20 to-orange-500/20 border border-red-500/30 text-red-500 flex items-center justify-center shadow-lg shadow-red-500/10 group-hover:scale-110 transition-transform">
-                          <FileText className="w-6 h-6 text-red-500" />
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-slate-900/90 via-slate-900 to-slate-950 p-3 text-center overflow-hidden">
+                        {/* Document paper mock background */}
+                        <div className="relative w-20 h-24 bg-slate-800/80 border border-slate-700/80 rounded-xl shadow-lg flex flex-col p-2.5 space-y-1.5 transform group-hover:scale-105 transition-transform duration-200">
+                          {/* Top Red PDF Banner */}
+                          <div className="flex items-center justify-between border-b border-slate-700/60 pb-1">
+                            <span className="text-[8px] font-black text-rose-500 tracking-wider">PDF</span>
+                            <FileText className="w-3 h-3 text-rose-500" />
+                          </div>
+                          {/* Skeleton mock text lines */}
+                          <div className="w-full h-1 bg-slate-700/60 rounded-full" />
+                          <div className="w-4/5 h-1 bg-slate-700/60 rounded-full" />
+                          <div className="w-full h-1 bg-slate-700/40 rounded-full" />
+                          <div className="w-3/5 h-1 bg-slate-700/40 rounded-full" />
                         </div>
-                        <span className="mt-2 text-[9px] font-black uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full">
-                          PDF Document
-                        </span>
                       </div>
                     ) : file.type === "audio" ? (
                       <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-500/10 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">

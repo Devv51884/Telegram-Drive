@@ -27,35 +27,27 @@ export async function getEmailConfig() {
   };
 }
 
-// Create Nodemailer Transporter
+// Create Nodemailer Transporter with universal cloud compatibility (Port 587 STARTTLS)
 export async function getTransporter() {
   const config = await getEmailConfig();
   if (!config.isConfigured) return null;
 
-  if (config.host.includes("gmail.com") || config.user.endsWith("@gmail.com")) {
-    return nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: config.user,
-        pass: config.pass
-      },
-      connectionTimeout: 5000,
-      greetingTimeout: 4000,
-      socketTimeout: 6000
-    });
-  }
+  const isGmail = config.host.includes("gmail.com") || config.user.endsWith("@gmail.com");
 
   return nodemailer.createTransport({
-    host: config.host || "smtp.gmail.com",
-    port: config.port,
-    secure: config.secure,
+    host: isGmail ? "smtp.gmail.com" : config.host,
+    port: isGmail ? 587 : config.port,
+    secure: false, // Port 587 uses STARTTLS (universally allowed on Render and cloud hosts)
     auth: {
       user: config.user,
       pass: config.pass
     },
-    connectionTimeout: 5000,
-    greetingTimeout: 4000,
-    socketTimeout: 6000
+    tls: {
+      rejectUnauthorized: false
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 12000,
+    socketTimeout: 20000
   });
 }
 
@@ -129,22 +121,18 @@ export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "s
       return { success: true, simulated: true, otp };
     }
 
-    const sendPromise = transporter.sendMail({
-      from: config.from,
+    const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
+
+    const info = await transporter.sendMail({
+      from: fromAddress,
       to: to.trim().toLowerCase(),
       subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
       text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
       html: htmlContent
     });
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Email dispatch timeout (5s exceeded)")), 5000)
-    );
-
-    const info = await Promise.race([sendPromise, timeoutPromise]);
-
     console.log(`✅ Real-time Gmail OTP sent to ${to} (MessageId: ${info.messageId})`);
-    return { success: true, messageId: info.messageId, otp };
+    return { success: true, messageId: info.messageId, otp, simulated: false };
   } catch (err) {
     console.error("SMTP dispatch warning (falling back to immediate simulation):", err.message);
     console.log(`\n======================================================`);

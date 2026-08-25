@@ -803,88 +803,78 @@ export async function dbGetActiveTelegramSession(userId = null) {
   const sqlite = await getSqliteDb();
   let session = null;
 
-  // 1. Try finding active session for specific user
+  // 1. If userId is provided, strictly lookup only this user's active session
   if (userId) {
     session = await sqlite.get(
       "SELECT * FROM telegram_sessions WHERE user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1",
       [userId]
     );
-  }
 
-  // 2. If not found or userId not provided, fallback to any active system session
-  if (!session) {
-    session = await sqlite.get(
-      "SELECT * FROM telegram_sessions WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1"
-    );
-  }
+    if (session && session.session_string) return session;
 
-  if (session && session.session_string) return session;
-
-  const supabase = await getSupabaseClient();
-  if (supabase) {
-    try {
-      let query = supabase.from("telegram_sessions").select("*").eq("is_active", 1).order("updated_at", { ascending: false });
-      if (userId) {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      try {
         const { data: userSession } = await supabase
           .from("telegram_sessions")
           .select("*")
           .eq("user_id", userId)
           .eq("is_active", 1)
-          .maybeSingle();
-        if (userSession && userSession.session_string) {
-          session = userSession;
-        }
-      }
-
-      if (!session) {
-        const { data: anySession } = await supabase
-          .from("telegram_sessions")
-          .select("*")
-          .eq("is_active", 1)
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (anySession && anySession.session_string) {
-          session = anySession;
+
+        if (userSession && userSession.session_string) {
+          const infoStr = typeof userSession.user_info === "object" ? JSON.stringify(userSession.user_info) : userSession.user_info;
+          await sqlite.run(
+            `INSERT INTO telegram_sessions (id, user_id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+             ON CONFLICT(id) DO UPDATE SET is_active=1, session_string=excluded.session_string, user_id=excluded.user_id`,
+            [
+              userSession.id,
+              userId,
+              userSession.phone_number,
+              userSession.session_string,
+              infoStr || null,
+              userSession.first_name || null,
+              userSession.last_name || null,
+              userSession.username || null
+            ]
+          ).catch(() => {});
+          return userSession;
         }
+      } catch (err) {
+        console.warn("Supabase user session fetch error:", err.message);
       }
-
-      if (session) {
-        const infoStr = typeof session.user_info === "object" ? JSON.stringify(session.user_info) : session.user_info;
-        let parsedInfo = {};
-        try {
-          parsedInfo = JSON.parse(infoStr);
-        } catch {}
-
-        await sqlite.run(
-          `INSERT INTO telegram_sessions (id, user_id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-            user_id = excluded.user_id,
-            session_string = excluded.session_string,
-            user_info = excluded.user_info,
-            first_name = excluded.first_name,
-            last_name = excluded.last_name,
-            username = excluded.username,
-            is_active = excluded.is_active`,
-          [
-            session.id,
-            session.user_id || userId || null,
-            session.phone_number,
-            session.session_string,
-            infoStr,
-            parsedInfo.firstName || session.first_name || null,
-            parsedInfo.lastName || session.last_name || null,
-            parsedInfo.username || session.username || null,
-            session.is_active || 1
-          ]
-        );
-        return session;
-      }
-    } catch (sbErr) {
-      console.warn("Supabase session retrieval warning:", sbErr.message);
     }
+    // Strict isolation: Return null if this user has not connected Telegram yet
+    return null;
   }
+
+  // 2. Only if no userId was provided (system/guest level)
+  session = await sqlite.get(
+    "SELECT * FROM telegram_sessions WHERE (user_id IS NULL OR user_id = '') AND is_active = 1 ORDER BY updated_at DESC LIMIT 1"
+  );
+  if (session && session.session_string) return session;
+
+  const supabase = await getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data: anySession } = await supabase
+        .from("telegram_sessions")
+        .select("*")
+        .is("user_id", null)
+        .eq("is_active", 1)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (anySession && anySession.session_string) {
+        return anySession;
+      }
+    } catch {}
+  }
+
   return null;
 }
 
