@@ -559,11 +559,9 @@ router.get("/:id/stream", async (req, res) => {
       }
     }
 
-    // ============================================================
-    // Strategy 2: GramJS MTProto Multi-DC Stream (for files > 20MB and Channel Imports)
-    // ============================================================
-    const isUploaded = file.source_type === "upload" || !file.source_type;
-    const preferBotFirst = isUploaded;
+    if (targetChannelId && file.telegram_message_id) {
+      const isUploaded = file.source_type === "upload" || !file.source_type;
+      const preferBotFirst = isUploaded;
       try {
         await streamGramMedia(
           targetChannelId,
