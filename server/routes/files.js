@@ -728,15 +728,6 @@ router.get("/:id/download", async (req, res) => {
   }
 });
 
-    res.status(400).send("No valid Telegram reference found for this file");
-  } catch (err) {
-    console.error("Download error:", err.message);
-    if (!res.headersSent) {
-      res.status(500).send(`Download failed: ${err.message}`);
-    }
-  }
-});
-
 // PATCH /api/files/:id - Rename, Move, Star, Trash
 router.patch("/:id", async (req, res) => {
   try {
