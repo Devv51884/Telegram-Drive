@@ -700,11 +700,6 @@ router.get("/public/:token/stream", async (req, res) => {
       }
     }
 
-    const range = req.headers.range;
-    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
-    const fileSize = Number(file.size) || 0;
-    const isUploaded = file.source_type === "upload" || !file.source_type;
-
     if (res && !res.headersSent) {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Headers", "Range, Authorization, X-Access-Token");
