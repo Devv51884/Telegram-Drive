@@ -1,9 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import DriveAPI from "../services/api.js";
 
 const DriveContext = createContext(null);
 
 export function DriveProvider({ children }) {
+  // Cache for instant folder navigation
+  const contentsCacheRef = useRef(new Map());
+
   // Authentication & Security State
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -177,16 +180,16 @@ export function DriveProvider({ children }) {
       localStorage.setItem("teledrive_auth_token", res.token);
       setCurrentUser(res.user);
       setIsAuthenticated(true);
-      showToast(`Welcome to TeleDrive, ${res.user.name}!`);
+      showToast(`Account verified! Welcome to TeleDrive.`);
       fetchContents();
       fetchMetadata();
-      return { success: true, user: res.user };
+      return { success: true };
     }
     return { success: false, error: res.error || "Verification failed" };
   };
 
   const forgotPasswordSendOtp = async (email) => {
-    return await DriveAPI.forgotPasswordSendOtp(email);
+    return await DriveAPI.forgotPasswordSendOtp({ email });
   };
 
   const forgotPasswordVerifyOtp = async (email, otp, newPassword) => {
@@ -195,20 +198,20 @@ export function DriveProvider({ children }) {
       localStorage.setItem("teledrive_auth_token", res.token);
       setCurrentUser(res.user);
       setIsAuthenticated(true);
-      showToast("Password reset successfully! Welcome back.");
+      showToast("Password reset successfully!");
       fetchContents();
       fetchMetadata();
       return { success: true };
     }
-    return { success: false, error: res.error || "Reset failed" };
+    return { success: false, error: res.error || "Password reset failed" };
   };
 
-  const updateProfile = async (name, email) => {
+  const updateUserProfile = async (updates) => {
     try {
-      const res = await DriveAPI.updateProfile({ name, email });
-      if (res.success && res.user) {
+      const res = await DriveAPI.updateProfile(updates);
+      if (res.success) {
         setCurrentUser(res.user);
-        showToast("Profile details updated successfully!");
+        showToast("Profile updated successfully!");
         return true;
       }
     } catch (err) {
@@ -217,15 +220,15 @@ export function DriveProvider({ children }) {
     }
   };
 
-  const updatePassword = async (currentPassword, newPassword) => {
+  const changeUserPassword = async (currentPassword, newPassword) => {
     try {
-      const res = await DriveAPI.updatePassword({ currentPassword, newPassword });
+      const res = await DriveAPI.changePassword({ currentPassword, newPassword });
       if (res.success) {
-        showToast("Account password changed successfully!");
+        showToast("Password updated successfully!");
         return true;
       }
     } catch (err) {
-      showToast(err.response?.data?.error || "Failed to change password", "error");
+      showToast(err.response?.data?.error || "Failed to update password", "error");
       return false;
     }
   };
@@ -235,7 +238,7 @@ export function DriveProvider({ children }) {
       const res = await DriveAPI.update2FAPin({ pin, isEnabled, currentPassword });
       if (res.success) {
         setCurrentUser((prev) => ({ ...prev, is2FAEnabled: res.is2FAEnabled }));
-        showToast(res.message || "2FA PIN updated successfully!");
+        showToast(res.message || "2FA settings updated");
         return true;
       }
     } catch (err) {
@@ -244,7 +247,7 @@ export function DriveProvider({ children }) {
     }
   };
 
-  const deleteAccount = async (password) => {
+  const deleteAccountPermanently = async (password) => {
     try {
       const res = await DriveAPI.deleteAccount(password);
       if (res.success) {
@@ -263,6 +266,7 @@ export function DriveProvider({ children }) {
   const logoutUser = () => {
     DriveAPI.logoutUser().catch(() => {});
     localStorage.removeItem("teledrive_auth_token");
+    contentsCacheRef.current.clear();
     setCurrentUser(null);
     setIsAuthenticated(false);
     setFolders([]);
@@ -272,12 +276,28 @@ export function DriveProvider({ children }) {
     showToast("Logged out successfully");
   };
 
-  // Fetch Drive Contents
+  // Fetch Drive Contents with Instant Cache & Stale-While-Revalidate
   const fetchContents = useCallback(async (silent = false) => {
     if (!localStorage.getItem("teledrive_auth_token")) {
       return;
     }
-    if (!silent) setLoading(true);
+
+    const cacheKey = `${section}_${currentFolderId}_${searchQuery}_${typeFilter}_${sortBy}_${sortOrder}`;
+    const cached = contentsCacheRef.current.get(cacheKey);
+
+    if (cached) {
+      // Instant render from cache
+      setFolders(cached.folders || []);
+      setFiles(cached.files || []);
+      setCurrentFolder(cached.currentFolder || null);
+      if (cached.breadcrumbs && !searchQuery && section === "my_drive") {
+        setBreadcrumbs(cached.breadcrumbs);
+      }
+      silent = true;
+    }
+
+    if (!silent && !cached) setLoading(true);
+
     try {
       const params = {
         folderId: currentFolderId === "root" ? undefined : currentFolderId,
@@ -290,18 +310,32 @@ export function DriveProvider({ children }) {
 
       const data = await DriveAPI.getContents(params);
       if (data.success) {
-        setFolders(data.folders || []);
-        setFiles(data.files || []);
-        setCurrentFolder(data.currentFolder || null);
-        if (data.breadcrumbs && !searchQuery && section === "my_drive") {
-          setBreadcrumbs(data.breadcrumbs);
+        const foldersData = data.folders || [];
+        const filesData = data.files || [];
+        const currentFolderData = data.currentFolder || null;
+        const breadcrumbsData = data.breadcrumbs || [];
+
+        // Save to cache
+        contentsCacheRef.current.set(cacheKey, {
+          folders: foldersData,
+          files: filesData,
+          currentFolder: currentFolderData,
+          breadcrumbs: breadcrumbsData
+        });
+
+        setFolders(foldersData);
+        setFiles(filesData);
+        setCurrentFolder(currentFolderData);
+        if (breadcrumbsData.length > 0 && !searchQuery && section === "my_drive") {
+          setBreadcrumbs(breadcrumbsData);
         }
+
         // Auto-restore preview modal on page refresh if ?file=file_id in URL
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const fileParam = urlParams.get("file");
-          if (fileParam && (data.files || []).length > 0) {
-            const matchedFile = data.files.find((f) => f.id === fileParam);
+          if (fileParam && filesData.length > 0) {
+            const matchedFile = filesData.find((f) => f.id === fileParam);
             if (matchedFile) {
               setPreviewItem(matchedFile);
             }
@@ -315,20 +349,20 @@ export function DriveProvider({ children }) {
         console.error("Failed to load contents:", err);
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && !cached) setLoading(false);
     }
   }, [currentFolderId, section, searchQuery, typeFilter, sortBy, sortOrder]);
 
-  // Fetch Stats & Settings & Folder Tree
+  // Fetch Stats & Settings & Folder Tree (Only on initial load or mutations)
   const fetchMetadata = useCallback(async () => {
     if (!localStorage.getItem("teledrive_auth_token")) {
       return;
     }
     try {
       const [statsRes, treeRes, settingsRes] = await Promise.all([
-        DriveAPI.getStats(),
-        DriveAPI.getFolderTree(),
-        DriveAPI.getSettings()
+        DriveAPI.getStats().catch(() => ({ success: false })),
+        DriveAPI.getFolderTree().catch(() => ({ success: false })),
+        DriveAPI.getSettings().catch(() => ({ success: false }))
       ]);
 
       if (statsRes.success) setStats(statsRes.stats);
@@ -341,12 +375,19 @@ export function DriveProvider({ children }) {
     }
   }, []);
 
+  // Run metadata once on auth
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchMetadata();
+    }
+  }, [isAuthenticated, fetchMetadata]);
+
+  // Run contents when navigation/filter params change
   useEffect(() => {
     if (isAuthenticated) {
       fetchContents();
-      fetchMetadata();
     }
-  }, [fetchContents, fetchMetadata, isAuthenticated]);
+  }, [isAuthenticated, fetchContents]);
 
   // Navigation handlers
   const openFolder = (folderId) => {

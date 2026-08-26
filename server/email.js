@@ -27,17 +27,33 @@ export async function getEmailConfig() {
   };
 }
 
-// Create Nodemailer Transporter with universal cloud compatibility (Port 587 STARTTLS)
+// Create Nodemailer Transporter with universal cloud compatibility (Gmail preset & Port 465 SSL)
 export async function getTransporter() {
   const config = await getEmailConfig();
   if (!config.isConfigured) return null;
 
   const isGmail = config.host.includes("gmail.com") || config.user.endsWith("@gmail.com");
 
+  if (isGmail) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: config.user,
+        pass: config.pass
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 12000,
+      socketTimeout: 20000
+    });
+  }
+
   return nodemailer.createTransport({
-    host: isGmail ? "smtp.gmail.com" : config.host,
-    port: isGmail ? 587 : config.port,
-    secure: false, // Port 587 uses STARTTLS (universally allowed on Render and cloud hosts)
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
     auth: {
       user: config.user,
       pass: config.pass
@@ -54,6 +70,12 @@ export async function getTransporter() {
 // 1. Send 6-Digit Real-Time OTP Email (Signup or Forgot Password)
 export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "signup" }) {
   const config = await getEmailConfig();
+  if (!config.isConfigured) {
+    throw new Error(
+      "Email service is not configured on the server. Please ensure GMAIL_USER and GMAIL_APP_PASSWORD are set."
+    );
+  }
+
   const isSignup = type === "signup";
   const title = isSignup ? "Verify Your Email Address" : "Reset Your TeleDrive Password";
   const actionText = isSignup
@@ -110,36 +132,23 @@ export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "s
   </html>
   `;
 
-  try {
-    const transporter = await getTransporter();
-    if (!transporter) {
-      console.log(`\n======================================================`);
-      console.log(`📧 [EMAIL SIMULATION] To: ${to} | Type: ${type.toUpperCase()}`);
-      console.log(`🔑 Verification Code (OTP): >>> ${otp} <<<`);
-      console.log(`ℹ️ To send real Gmails, configure GMAIL_USER and GMAIL_APP_PASSWORD in .env`);
-      console.log(`======================================================\n`);
-      return { success: true, simulated: true, otp };
-    }
-
-    const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
-
-    const info = await transporter.sendMail({
-      from: fromAddress,
-      to: to.trim().toLowerCase(),
-      subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
-      text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
-      html: htmlContent
-    });
-
-    console.log(`✅ Real-time Gmail OTP sent to ${to} (MessageId: ${info.messageId})`);
-    return { success: true, messageId: info.messageId, otp, simulated: false };
-  } catch (err) {
-    console.error("SMTP dispatch warning (falling back to immediate simulation):", err.message);
-    console.log(`\n======================================================`);
-    console.log(`⚠️ [FALLBACK OTP LOG] To: ${to} | Code: >>> ${otp} <<<`);
-    console.log(`======================================================\n`);
-    return { success: true, simulated: true, otp, warning: err.message };
+  const transporter = await getTransporter();
+  if (!transporter) {
+    throw new Error("Unable to initialize email transporter. Please verify Gmail credentials.");
   }
+
+  const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
+
+  const info = await transporter.sendMail({
+    from: fromAddress,
+    to: to.trim().toLowerCase(),
+    subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
+    text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
+    html: htmlContent
+  });
+
+  console.log(`✅ Real-time Gmail OTP sent to ${to} (MessageId: ${info.messageId})`);
+  return { success: true, messageId: info.messageId };
 }
 
 // 2. Send File / Folder Share Notification Email

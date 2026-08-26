@@ -3,6 +3,7 @@ import { useDrive } from "../../context/DriveContext.jsx";
 import DriveAPI from "../../services/api.js";
 import ContextMenu from "./ContextMenu.jsx";
 import VideoThumbnail from "./VideoThumbnail.jsx";
+import PdfThumbnail from "./PdfThumbnail.jsx";
 import useLongPress from "../../hooks/useLongPress.js";
 import {
   Folder,
@@ -152,7 +153,11 @@ export default function FileGrid() {
                     if (isLongPress()) return;
                     e.stopPropagation();
                     const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectMode;
-                    toggleSelectItem(folderWithFlag, isMulti);
+                    if (isMulti) {
+                      toggleSelectItem(folderWithFlag, true);
+                    } else {
+                      openFolder(folder.id);
+                    }
                   }}
                   onDoubleClick={() => openFolder(folder.id)}
                   onContextMenu={(e) => handleContextMenu(e, folder, true)}
@@ -170,8 +175,10 @@ export default function FileGrid() {
                       className="flex items-center gap-1.5 truncate flex-1 min-w-0"
                       onClick={(e) => {
                         if (isLongPress()) return;
-                        if (isSelected && !isMultiSelectMode) {
-                          e.stopPropagation();
+                        e.stopPropagation();
+                        if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                          toggleSelectItem(folderWithFlag, true);
+                        } else {
                           openFolder(folder.id);
                         }
                       }}
@@ -239,7 +246,11 @@ export default function FileGrid() {
                     onClick={(e) => {
                       if (isLongPress()) return;
                       e.stopPropagation();
-                      openFolder(folder.id);
+                      if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                        toggleSelectItem(folderWithFlag, true);
+                      } else {
+                        openFolder(folder.id);
+                      }
                     }}
                   >
                     <div className="relative flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
@@ -395,21 +406,8 @@ export default function FileGrid() {
                         </div>
                       </div>
                     ) : file.type === "pdf" ? (
-                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-slate-900/90 via-slate-900 to-slate-950 p-3 text-center overflow-hidden">
-                        {/* Document paper mock background */}
-                        <div className="relative w-20 h-24 bg-slate-800/80 border border-slate-700/80 rounded-xl shadow-lg flex flex-col p-2.5 space-y-1.5 transform group-hover:scale-105 transition-transform duration-200">
-                          {/* Top Red PDF Banner */}
-                          <div className="flex items-center justify-between border-b border-slate-700/60 pb-1">
-                            <span className="text-[8px] font-black text-rose-500 tracking-wider">PDF</span>
-                            <FileText className="w-3 h-3 text-rose-500" />
-                          </div>
-                          {/* Skeleton mock text lines */}
-                          <div className="w-full h-1 bg-slate-700/60 rounded-full" />
-                          <div className="w-4/5 h-1 bg-slate-700/60 rounded-full" />
-                          <div className="w-full h-1 bg-slate-700/40 rounded-full" />
-                          <div className="w-3/5 h-1 bg-slate-700/40 rounded-full" />
-                        </div>
-                      </div>
+                      /* Google Drive Style First-Page PDF Visual Thumbnail */
+                      <PdfThumbnail file={file} />
                     ) : file.type === "audio" ? (
                       <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-500/10 via-slate-900/60 to-slate-950 p-3 text-center overflow-hidden">
                         <div className="absolute w-20 h-20 bg-purple-500/10 rounded-full blur-xl pointer-events-none" />

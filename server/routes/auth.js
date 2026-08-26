@@ -66,7 +66,7 @@ router.post("/signup/send-otp", authLimiter, async (req, res) => {
     }, 10);
 
     // Send real-time verification email
-    const emailResult = await sendOtpEmail({
+    await sendOtpEmail({
       to: cleanEmail,
       name: cleanName,
       otp,
@@ -75,15 +75,14 @@ router.post("/signup/send-otp", authLimiter, async (req, res) => {
 
     res.json({
       success: true,
-      message: emailResult.simulated
-        ? `[Demo/Testing Mode] Verification Code: ${otp} (Configure GMAIL_USER & GMAIL_APP_PASSWORD in Render Environment for real emails)`
-        : `A 6-digit verification code has been sent to ${cleanEmail}`,
-      simulated: emailResult.simulated || false,
-      devOtp: emailResult.simulated ? otp : undefined
+      message: `A 6-digit verification code has been sent to ${cleanEmail}`
     });
   } catch (err) {
     console.error("Signup OTP error:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      error: `Failed to send verification email: ${err.message}`
+    });
   }
 });
 
@@ -301,7 +300,7 @@ router.post("/forgot-password/send-otp", authLimiter, async (req, res) => {
     const otp = crypto.randomInt(100000, 999999).toString();
     await dbSaveOtp(cleanEmail, otp, "forgot_password", { userId: user.id }, 10);
 
-    const emailResult = await sendOtpEmail({
+    await sendOtpEmail({
       to: cleanEmail,
       name: user.name,
       otp,
@@ -310,15 +309,14 @@ router.post("/forgot-password/send-otp", authLimiter, async (req, res) => {
 
     res.json({
       success: true,
-      message: emailResult.simulated
-        ? `[Demo/Testing Mode] Reset Code: ${otp} (Configure GMAIL_USER & GMAIL_APP_PASSWORD in Render Environment for real emails)`
-        : `A password reset code has been sent to ${cleanEmail}`,
-      simulated: emailResult.simulated || false,
-      devOtp: emailResult.simulated ? otp : undefined
+      message: `A password reset code has been sent to ${cleanEmail}`
     });
   } catch (err) {
     console.error("Forgot password send OTP error:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      error: `Failed to send reset email: ${err.message}`
+    });
   }
 });
 

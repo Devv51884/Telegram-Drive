@@ -135,7 +135,11 @@ export default function FileList() {
                   if (isLongPress()) return;
                   e.stopPropagation();
                   const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectMode;
-                  toggleSelectItem(folderWithFlag, isMulti);
+                  if (isMulti) {
+                    toggleSelectItem(folderWithFlag, true);
+                  } else {
+                    openFolder(folder.id);
+                  }
                 }}
                 onDoubleClick={() => openFolder(folder.id)}
                 onContextMenu={(e) => handleContextMenu(e, folder, true)}
@@ -149,8 +153,10 @@ export default function FileList() {
                   className="col-span-8 sm:col-span-6 md:col-span-5 flex items-center gap-2 sm:gap-2.5 truncate pr-1"
                   onClick={(e) => {
                     if (isLongPress()) return;
-                    if (isSelected && !isMultiSelectMode) {
-                      e.stopPropagation();
+                    e.stopPropagation();
+                    if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                      toggleSelectItem(folderWithFlag, true);
+                    } else {
                       openFolder(folder.id);
                     }
                   }}

@@ -177,7 +177,7 @@ router.get("/contents", async (req, res) => {
     const breadcrumbs = [{ id: "root", name: "My Drive" }];
 
     if (folderId && folderId !== "root") {
-      currentFolder = await dbGetFolderById(folderId);
+      currentFolder = (await sqlite.get("SELECT * FROM folders WHERE id = ?", [folderId])) || (await dbGetFolderById(folderId));
 
       // Build breadcrumbs path
       let curr = currentFolder;
@@ -185,7 +185,7 @@ router.get("/contents", async (req, res) => {
       while (curr) {
         trail.unshift({ id: curr.id, name: curr.name });
         if (curr.parent_id) {
-          curr = await dbGetFolderById(curr.parent_id);
+          curr = await sqlite.get("SELECT * FROM folders WHERE id = ?", [curr.parent_id]);
         } else {
           curr = null;
         }
