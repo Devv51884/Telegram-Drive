@@ -361,6 +361,8 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
       telegram_message_id: mediaInfo.messageId,
       telegram_channel_id: mediaInfo.channelId,
       telegram_channel_title: mediaInfo.channelTitle,
+      telegram_access_hash: mediaInfo.accessHash || null,
+      telegram_file_reference: mediaInfo.fileReference || null,
       is_starred: 0,
       is_trash: 0
     };
@@ -606,11 +608,31 @@ router.get("/:id/stream", async (req, res) => {
           file.mime_type,
           file.name,
           false,
-          false // useStorageBot = false: use user's own MTProto account
+          false, // useStorageBot = false: try user account first
+          file.telegram_file_reference || null,
+          file.telegram_access_hash || null
         );
         return;
       } catch (mtprotoErr) {
-        console.warn("MTProto streaming failed for imported post:", mtprotoErr.message);
+        console.warn("MTProto streaming with user account failed, trying Storage Bot fallback:", mtprotoErr.message);
+        try {
+          await streamGramMedia(
+            targetChannelId,
+            file.telegram_message_id,
+            range,
+            req,
+            res,
+            file.mime_type,
+            file.name,
+            false,
+            true, // useStorageBot = true: try storage bot
+            file.telegram_file_reference || null,
+            file.telegram_access_hash || null
+          );
+          return;
+        } catch (botErr) {
+          console.warn("Bot fallback streaming also failed:", botErr.message);
+        }
       }
     }
 
@@ -634,16 +656,13 @@ router.get("/:id/download", async (req, res) => {
     }
 
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
-    const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
 
-    // Strategy 1: Telegram Bot API direct download (Only for files <= 20MB where telegram_file_id is valid)
-    if (file.telegram_file_id && fileSize > 0 && fileSize <= 20 * 1024 * 1024) {
+    // Strategy 1: Telegram Bot API Download (Uploaded files)
+    if (isUploaded && file.telegram_file_id) {
       try {
         const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
-        const response = await axios({
-          method: "GET",
-          url: downloadUrl,
+        const response = await axios.get(downloadUrl, {
           responseType: "stream",
           timeout: 0
         });
@@ -665,18 +684,41 @@ router.get("/:id/download", async (req, res) => {
 
     // Strategy 2: High-Speed MTProto Multi-DC Direct Stream (Works for files of any size up to 2GB)
     if (targetChannelId && file.telegram_message_id) {
-      await streamGramMedia(
-        targetChannelId,
-        file.telegram_message_id,
-        null,
-        req,
-        res,
-        file.mime_type,
-        file.name,
-        true, // isDownload = true
-        isUploaded // useStorageBot = true for uploaded files
-      );
-      return;
+      try {
+        await streamGramMedia(
+          targetChannelId,
+          file.telegram_message_id,
+          null,
+          req,
+          res,
+          file.mime_type,
+          file.name,
+          true, // isDownload = true
+          isUploaded, // useStorageBot = true for uploaded files
+          file.telegram_file_reference || null,
+          file.telegram_access_hash || null
+        );
+        return;
+      } catch (dlErr) {
+        if (!isUploaded) {
+          // Try bot fallback for imported files if user client failed
+          await streamGramMedia(
+            targetChannelId,
+            file.telegram_message_id,
+            null,
+            req,
+            res,
+            file.mime_type,
+            file.name,
+            true,
+            true,
+            file.telegram_file_reference || null,
+            file.telegram_access_hash || null
+          );
+          return;
+        }
+        throw dlErr;
+      }
     }
 
     res.status(400).send("No valid Telegram reference found for this file");

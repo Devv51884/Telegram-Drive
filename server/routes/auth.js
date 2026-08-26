@@ -105,9 +105,12 @@ router.post("/signup/send-verification", authLimiter, async (req, res) => {
       emailWarning = mailErr.message;
     }
 
+    const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(token)}`;
+
     res.json({
       success: true,
       email: cleanEmail,
+      verificationUrl,
       message: `A verification link has been sent to ${cleanEmail}. Please check your inbox (and spam/promotions folder) to activate your account.`,
       warning: emailWarning
     });
@@ -249,23 +252,130 @@ router.post("/resend-verification", authLimiter, async (req, res) => {
 
     const newToken = crypto.randomBytes(32).toString("hex");
     const appUrl = getClientAppUrl(req);
+    const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(newToken)}`;
 
     await dbSaveVerificationToken(cleanEmail, newToken, "signup_link", meta, 24);
 
-    await sendVerificationEmail({
-      to: cleanEmail,
-      name: meta?.name || "TeleDrive User",
-      token: newToken,
-      appUrl,
-      validityHours: 24
-    });
+    let emailWarning = null;
+    try {
+      const emailResult = await sendVerificationEmail({
+        to: cleanEmail,
+        name: meta?.name || "TeleDrive User",
+        token: newToken,
+        appUrl,
+        validityHours: 24
+      });
+      if (emailResult?.warning) emailWarning = emailResult.warning;
+    } catch (mailErr) {
+      console.warn("Resend verification mail warning:", mailErr.message);
+      emailWarning = mailErr.message;
+    }
 
     res.json({
       success: true,
-      message: `A fresh verification link has been sent to ${cleanEmail}.`
+      email: cleanEmail,
+      verificationUrl,
+      message: `A fresh verification link has been sent to ${cleanEmail}.`,
+      warning: emailWarning
     });
   } catch (err) {
     console.error("Resend verification error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/forgot-password/send-link - Step 1: Send Password Reset Link to user's Gmail
+router.post("/forgot-password/send-link", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await dbFindUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "No account found with this email address."
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const appUrl = getClientAppUrl(req);
+    const resetUrl = `${appUrl}/?reset_password=${encodeURIComponent(resetToken)}`;
+
+    await dbSaveVerificationToken(cleanEmail, resetToken, "password_reset_link", {
+      userId: user.id,
+      email: cleanEmail
+    }, 1);
+
+    let emailWarning = null;
+    try {
+      const emailResult = await sendPasswordResetEmail({
+        to: cleanEmail,
+        name: user.name || "TeleDrive User",
+        token: resetToken,
+        appUrl,
+        validityHours: 1
+      });
+      if (emailResult?.warning) emailWarning = emailResult.warning;
+    } catch (mailErr) {
+      console.warn("Password reset mail warning:", mailErr.message);
+      emailWarning = mailErr.message;
+    }
+
+    res.json({
+      success: true,
+      email: cleanEmail,
+      resetUrl,
+      message: `A password reset link has been sent to ${cleanEmail}. Valid for 1 hour.`,
+      warning: emailWarning
+    });
+  } catch (err) {
+    console.error("Forgot password send link error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/forgot-password/reset-with-token - Step 2: Set New Password via link token
+router.post("/forgot-password/reset-with-token", authLimiter, async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !token.trim()) {
+      return res.status(400).json({ success: false, error: "Reset token is required." });
+    }
+
+    const passwordValidation = validatePasswordStrength(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ success: false, error: passwordValidation.error });
+    }
+
+    const verification = await dbConsumeVerificationToken(token.trim(), "password_reset_link");
+    if (!verification.valid || !verification.metadata) {
+      return res.status(400).json({
+        success: false,
+        error: "This password reset link is invalid or has expired (valid for 1 hour). Please request a new one."
+      });
+    }
+
+    const cleanEmail = verification.record.email.trim().toLowerCase();
+    const user = await dbFindUserByEmail(cleanEmail);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account not found." });
+    }
+
+    const newHash = hashPassword(newPassword);
+    await dbUpdateUser(user.id, { password_hash: newHash });
+
+    res.json({
+      success: true,
+      message: "Password reset successfully! You can now sign in with your new password."
+    });
+  } catch (err) {
+    console.error("Reset password with token error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

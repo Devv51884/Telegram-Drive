@@ -723,10 +723,17 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
     let caption = msg.message || "";
     let duration = 0;
 
+    let fileReference = null;
+    let accessHash = null;
+    let dcId = null;
+
     if (msg.media.document) {
       const doc = msg.media.document;
       fileSize = Number(doc.size || 0);
       mimeType = doc.mimeType || "application/octet-stream";
+      fileReference = doc.fileReference ? Buffer.from(doc.fileReference).toString("base64") : null;
+      accessHash = doc.accessHash ? doc.accessHash.toString() : null;
+      dcId = doc.dcId;
 
       const fileAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeFilename");
       const videoAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeVideo");
@@ -763,7 +770,11 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
       type = "image";
       mimeType = "image/jpeg";
       fileName = `photo_${messageId}.jpg`;
-      const sizes = msg.media.photo.sizes || [];
+      const photo = msg.media.photo;
+      fileReference = photo.fileReference ? Buffer.from(photo.fileReference).toString("base64") : null;
+      accessHash = photo.accessHash ? photo.accessHash.toString() : null;
+      dcId = photo.dcId;
+      const sizes = photo.sizes || [];
       const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
       fileSize = Number(largest?.size || 1024 * 500);
     }
@@ -784,7 +795,10 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
       fileSize,
       type,
       caption,
-      duration
+      duration,
+      fileReference,
+      accessHash,
+      dcId
     };
   } catch (err) {
     throw new Error(`Failed to fetch Telegram message: ${err.message}`);
@@ -839,12 +853,49 @@ export async function streamGramMedia(
       }
     } catch (e1) {}
 
-    // 2. Try entity resolution
+    // 2. Try entity resolution with dialogs entity cache warmup
     if (!msg || !msg.media) {
       try {
-        const entity = await client.getEntity(channelId);
-        if (entity) {
-          const messages = await client.getMessages(entity, { ids: [msgId] });
+        let targetEntity = null;
+        try {
+          targetEntity = await client.getInputEntity(channelId);
+        } catch {
+          try {
+            await client.getDialogs({ limit: 100 });
+            targetEntity = await client.getInputEntity(channelId);
+          } catch {}
+        }
+
+        if (!targetEntity) {
+          const rawNum = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+          try {
+            targetEntity = await client.getInputEntity(bigInt(rawNum));
+          } catch {
+            try {
+              targetEntity = await client.getInputEntity(bigInt(`-100${rawNum}`));
+            } catch {}
+          }
+        }
+
+        if (!targetEntity) {
+          const dialogs = await client.getDialogs({ limit: 200 });
+          const rawNum = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+          const found = dialogs.find((d) => {
+            const idStr = d.id?.toString() || "";
+            return (
+              idStr === rawNum ||
+              idStr === `-100${rawNum}` ||
+              idStr === `100${rawNum}` ||
+              d.entity?.username === channelId
+            );
+          });
+          if (found) {
+            targetEntity = found.inputEntity || found.entity;
+          }
+        }
+
+        if (targetEntity) {
+          const messages = await client.getMessages(targetEntity, { ids: [msgId] });
           if (messages && messages[0] && messages[0].media) {
             msg = messages[0];
           }
@@ -852,20 +903,7 @@ export async function streamGramMedia(
       } catch (e2) {}
     }
 
-    // 3. Try numeric InputPeer resolution fallback
-    if (!msg || !msg.media) {
-      try {
-        const cleanId = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
-        const numId = bigInt(cleanId);
-        const inputPeer = await client.getInputEntity(numId);
-        const messages = await client.getMessages(inputPeer, { ids: [msgId] });
-        if (messages && messages[0] && messages[0].media) {
-          msg = messages[0];
-        }
-      } catch (e3) {}
-    }
-
-    // 4. Try alternate client fallback (User <-> Storage Bot)
+    // 3. Try alternate client fallback (User <-> Storage Bot)
     if (!msg || !msg.media) {
       try {
         const altClient = await getGramClient(null, !useStorageBot);
@@ -878,6 +916,9 @@ export async function streamGramMedia(
             }
           } catch {}
           if (!msg || !msg.media) {
+            try {
+              await altClient.getDialogs({ limit: 100 });
+            } catch {}
             const entity = await altClient.getEntity(channelId);
             if (entity) {
               const messages = await altClient.getMessages(entity, { ids: [msgId] });
@@ -888,7 +929,7 @@ export async function streamGramMedia(
             }
           }
         }
-      } catch (e4) {}
+      } catch (e3) {}
     }
 
     if (!msg || !msg.media) {
