@@ -208,7 +208,7 @@ export default function Header() {
                 <button
                   onClick={() => {
                     setIsProfileOpen(false);
-                    setActiveModal("settings");
+                    navigateToSection("settings");
                   }}
                   className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"
                 >

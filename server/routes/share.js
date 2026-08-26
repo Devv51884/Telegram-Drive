@@ -16,13 +16,22 @@ import {
   dbGetItemPermissions,
   dbGetSharedWithMe,
   dbHasUserAccessToItem,
-  dbFindUserByEmail
+  dbFindUserByEmail,
+  dbFindUserById,
+  dbCreateShareRequest,
+  dbGetPendingShareRequestsForOwner,
+  dbGetShareRequestById,
+  dbUpdateShareRequestStatus
 } from "../db.js";
 import {
   streamGramMedia,
   getTelegramFileStreamUrl
 } from "../telegram.js";
-import { sendShareNotificationEmail } from "../email.js";
+import {
+  sendShareNotificationEmail,
+  sendAccessRequestEmail,
+  sendAccessGrantedEmail
+} from "../email.js";
 import axios from "axios";
 
 const router = express.Router();
@@ -373,27 +382,51 @@ router.delete("/collaborators/:type/:id/:email", async (req, res) => {
 // PUBLIC SHARING ENDPOINTS (No Login Required)
 // ================================================================
 
-// GET /api/share/public/:token - Get public shared metadata
+// GET /api/share/public/:token - Get public shared metadata (Supports Google Drive-style Restricted sharing)
 router.get("/public/:token", async (req, res) => {
   try {
     const { token } = req.params;
     if (!token) return res.status(400).json({ success: false, error: "Token required" });
 
+    const userEmail = req.user?.email || null;
+    const userId = req.user?.userId || null;
+
     // Check if it's a file
     const file = await dbGetFileByShareToken(token);
     if (file) {
-      if (file.share_access !== "public") {
+      const isPublic = file.share_access === "public";
+      let hasAccess = isPublic;
+
+      if (!hasAccess && (userEmail || userId)) {
+        hasAccess = await dbHasUserAccessToItem(file.id, "file", userEmail, userId);
+      }
+
+      if (!hasAccess) {
+        let owner = null;
+        if (file.user_id) {
+          owner = await dbFindUserById(file.user_id);
+        }
+
         return res.status(403).json({
-          success: false,
+          success: true,
           isRestricted: true,
-          error: "This file is private. Only authorized users can access it.",
-          item: { id: file.id, name: file.name, type: file.type }
+          error: "This file is private. You need access to view or download it.",
+          item: {
+            id: file.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            share_token: file.share_token,
+            owner_name: owner?.name || "TeleDrive User",
+            owner_email: owner?.email || ""
+          }
         });
       }
 
       return res.json({
         success: true,
         type: "file",
+        isAuthorized: true,
         item: {
           id: file.id,
           name: file.name,
@@ -409,12 +442,31 @@ router.get("/public/:token", async (req, res) => {
     // Check if it's a folder
     const folder = await dbGetFolderByShareToken(token);
     if (folder) {
-      if (folder.share_access !== "public") {
+      const isPublic = folder.share_access === "public";
+      let hasAccess = isPublic;
+
+      if (!hasAccess && (userEmail || userId)) {
+        hasAccess = await dbHasUserAccessToItem(folder.id, "folder", userEmail, userId);
+      }
+
+      if (!hasAccess) {
+        let owner = null;
+        if (folder.user_id) {
+          owner = await dbFindUserById(folder.user_id);
+        }
+
         return res.status(403).json({
-          success: false,
+          success: true,
           isRestricted: true,
-          error: "This folder is private. Only authorized users can access it.",
-          item: { id: folder.id, name: folder.name, type: "folder" }
+          error: "This folder is private. You need access to view its contents.",
+          item: {
+            id: folder.id,
+            name: folder.name,
+            type: "folder",
+            share_token: folder.share_token,
+            owner_name: owner?.name || "TeleDrive User",
+            owner_email: owner?.email || ""
+          }
         });
       }
 
@@ -445,6 +497,7 @@ router.get("/public/:token", async (req, res) => {
       return res.json({
         success: true,
         type: "folder",
+        isAuthorized: true,
         rootFolder: {
           id: folder.id,
           name: folder.name,
@@ -474,6 +527,153 @@ router.get("/public/:token", async (req, res) => {
   }
 });
 
+// POST /api/share/request-access/:token - Google Drive Style Request Access
+router.post("/request-access/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { email, name, message } = req.body;
+
+    const requesterEmail = (email || req.user?.email || "").trim().toLowerCase();
+    const requesterName = (name || req.user?.name || "").trim();
+
+    if (!requesterEmail || !requesterEmail.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required to request access" });
+    }
+
+    // Find file or folder
+    const file = await dbGetFileByShareToken(token);
+    const folder = !file ? await dbGetFolderByShareToken(token) : null;
+    const item = file || folder;
+
+    if (!item) {
+      return res.status(404).json({ success: false, error: "Shared item not found" });
+    }
+
+    const itemType = folder ? "folder" : "file";
+    const ownerId = item.user_id;
+    let owner = null;
+    if (ownerId) {
+      owner = await dbFindUserById(ownerId);
+    }
+
+    // Save request in DB
+    const requestRecord = await dbCreateShareRequest({
+      shareToken: token,
+      itemId: item.id,
+      itemType,
+      ownerId: ownerId || null,
+      requesterEmail,
+      requesterName,
+      message: message || ""
+    });
+
+    // Send email notification to the owner
+    if (owner && owner.email) {
+      const host = req.get("x-forwarded-host") || req.get("host") || "localhost:5173";
+      const proto = req.get("x-forwarded-proto") || req.protocol || "http";
+      const shareUrl = `${proto}://${host}/?share=${token}`;
+
+      sendAccessRequestEmail({
+        toOwner: owner.email,
+        ownerName: owner.name,
+        requesterEmail,
+        requesterName: requesterName || requesterEmail,
+        itemName: item.name,
+        itemType,
+        message,
+        shareUrl
+      }).catch((err) => console.warn("Failed to send access request email:", err.message));
+    }
+
+    res.json({
+      success: true,
+      message: "Access request sent successfully! The owner has been notified via email.",
+      request: requestRecord
+    });
+  } catch (err) {
+    console.error("Share request access error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/share/requests - Owner view all pending access requests
+router.get("/requests", async (req, res) => {
+  try {
+    const ownerId = req.userId || req.user?.userId;
+    if (!ownerId) {
+      return res.status(401).json({ success: false, error: "Authentication required" });
+    }
+
+    const requests = await dbGetPendingShareRequestsForOwner(ownerId);
+    res.json({ success: true, requests: requests || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/share/requests/:id/respond - Owner Approve or Reject an access request
+router.post("/requests/:id/respond", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, permission = "viewer" } = req.body; // action: 'approve' | 'reject'
+    const ownerId = req.userId || req.user?.userId;
+
+    if (!ownerId) {
+      return res.status(401).json({ success: false, error: "Authentication required" });
+    }
+
+    const request = await dbGetShareRequestById(id);
+    if (!request) {
+      return res.status(404).json({ success: false, error: "Access request not found" });
+    }
+
+    if (request.owner_id && request.owner_id !== ownerId) {
+      return res.status(403).json({ success: false, error: "You are not authorized to manage this request" });
+    }
+
+    if (action === "approve") {
+      // Add collaborator permission
+      await dbAddUserPermission({
+        itemId: request.item_id,
+        itemType: request.item_type,
+        ownerId,
+        sharedEmail: request.requester_email,
+        permission: permission === "editor" ? "editor" : "viewer"
+      });
+
+      await dbUpdateShareRequestStatus(id, "approved");
+
+      // Notify requester via email
+      const host = req.get("x-forwarded-host") || req.get("host") || "localhost:5173";
+      const proto = req.get("x-forwarded-proto") || req.protocol || "http";
+      const shareUrl = `${proto}://${host}/?share=${request.share_token}`;
+
+      sendAccessGrantedEmail({
+        toRequester: request.requester_email,
+        requesterName: request.requester_name,
+        ownerName: req.user?.name || "TeleDrive Owner",
+        itemName: request.item_name || "Shared Item",
+        itemType: request.item_type,
+        shareUrl,
+        permission
+      }).catch(() => {});
+
+      return res.json({
+        success: true,
+        message: `Access granted to ${request.requester_email} as ${permission}`
+      });
+    } else {
+      await dbUpdateShareRequestStatus(id, "rejected");
+      return res.json({
+        success: true,
+        message: `Access request from ${request.requester_email} rejected`
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/share/public/:token/stream - Public media streaming
 router.get("/public/:token/stream", async (req, res) => {
   try {
@@ -485,7 +685,12 @@ router.get("/public/:token/stream", async (req, res) => {
     }
 
     if (file.share_access !== "public") {
-      return res.status(403).send("This file is restricted to private access");
+      const userEmail = req.user?.email || null;
+      const userId = req.user?.userId || null;
+      const hasAccess = (userEmail || userId) ? await dbHasUserAccessToItem(file.id, "file", userEmail, userId) : false;
+      if (!hasAccess) {
+        return res.status(403).send("This file is restricted to private access");
+      }
     }
 
     const range = req.headers.range;
@@ -564,7 +769,12 @@ router.get("/public/:token/download", async (req, res) => {
     }
 
     if (file.share_access !== "public") {
-      return res.status(403).send("This file is restricted to private access");
+      const userEmail = req.user?.email || null;
+      const userId = req.user?.userId || null;
+      const hasAccess = (userEmail || userId) ? await dbHasUserAccessToItem(file.id, "file", userEmail, userId) : false;
+      if (!hasAccess) {
+        return res.status(403).send("This file is restricted to private access");
+      }
     }
 
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
@@ -622,8 +832,17 @@ router.get("/public/:token/file/:fileId/stream", async (req, res) => {
   try {
     const { token, fileId } = req.params;
     const folder = await dbGetFolderByShareToken(token);
-    if (!folder || folder.share_access !== "public") {
-      return res.status(403).send("Shared folder is private or invalid");
+    if (!folder) {
+      return res.status(404).send("Shared folder not found");
+    }
+
+    if (folder.share_access !== "public") {
+      const userEmail = req.user?.email || null;
+      const userId = req.user?.userId || null;
+      const hasAccess = (userEmail || userId) ? await dbHasUserAccessToItem(folder.id, "folder", userEmail, userId) : false;
+      if (!hasAccess) {
+        return res.status(403).send("Shared folder is private or invalid");
+      }
     }
 
     const file = await dbGetFileById(fileId);
@@ -676,8 +895,17 @@ router.get("/public/:token/file/:fileId/download", async (req, res) => {
   try {
     const { token, fileId } = req.params;
     const folder = await dbGetFolderByShareToken(token);
-    if (!folder || folder.share_access !== "public") {
-      return res.status(403).send("Shared folder is private or invalid");
+    if (!folder) {
+      return res.status(404).send("Shared folder not found");
+    }
+
+    if (folder.share_access !== "public") {
+      const userEmail = req.user?.email || null;
+      const userId = req.user?.userId || null;
+      const hasAccess = (userEmail || userId) ? await dbHasUserAccessToItem(folder.id, "folder", userEmail, userId) : false;
+      if (!hasAccess) {
+        return res.status(403).send("Shared folder is private or invalid");
+      }
     }
 
     const file = await dbGetFileById(fileId);

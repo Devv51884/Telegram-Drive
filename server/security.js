@@ -149,17 +149,23 @@ export async function requireAuth(req, res, next) {
     fullApiPath.startsWith("/api/auth/signup") ||
     fullApiPath.startsWith("/api/auth/login") ||
     fullApiPath.startsWith("/api/auth/forgot-password") ||
+    fullApiPath.startsWith("/api/auth/verify-email") ||
+    fullApiPath.startsWith("/api/auth/resend-verification") ||
     reqPath.startsWith("/signup") ||
     reqPath.startsWith("/login") ||
-    reqPath.startsWith("/forgot-password");
+    reqPath.startsWith("/forgot-password") ||
+    reqPath.startsWith("/verify-email") ||
+    reqPath.startsWith("/resend-verification");
 
   const isPublicStreamOrDownload =
     fullApiPath.includes("/stream") ||
     fullApiPath.includes("/download") ||
     fullApiPath.includes("/api/share/public") ||
+    fullApiPath.includes("/api/share/request-access") ||
     reqPath.includes("/stream") ||
     reqPath.includes("/download") ||
-    reqPath.includes("/share/public");
+    reqPath.includes("/share/public") ||
+    reqPath.includes("/share/request-access");
 
   if (publicPaths.includes(fullApiPath) || isPublicAuthRoute || reqPath === "/health" || isPublicStreamOrDownload) {
     // If token is provided, optionally attach authenticated user context

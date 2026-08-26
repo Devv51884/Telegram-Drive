@@ -9,6 +9,9 @@ import {
   dbInsertFolder,
   dbSaveOtp,
   dbVerifyOtp,
+  dbSaveVerificationToken,
+  dbVerifyToken,
+  dbConsumeVerificationToken,
   generateId
 } from "../db.js";
 import {
@@ -18,9 +21,246 @@ import {
   createSessionToken,
   authLimiter
 } from "../security.js";
-import { sendOtpEmail } from "../email.js";
+import {
+  sendOtpEmail,
+  sendVerificationEmail,
+  sendPasswordResetEmail
+} from "../email.js";
 
 const router = express.Router();
+
+// Helper to determine the client app URL
+function getClientAppUrl(req) {
+  const host = req.get("x-forwarded-host") || req.get("host") || "localhost:5173";
+  const proto = req.get("x-forwarded-proto") || req.protocol || "http";
+  return `${proto}://${host}`;
+}
+
+// ==========================================
+// 1. LINK-BASED EMAIL VERIFICATION (STRICT GMAIL SIGNUP)
+// ==========================================
+
+// POST /api/auth/signup/send-verification - Step 1: Send verification link to user's Gmail
+router.post("/signup/send-verification", authLimiter, async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: "Full Name is required" });
+    }
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim();
+
+    // Basic domain / format check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ success: false, error: "Please provide a valid email address format (e.g. name@gmail.com)" });
+    }
+
+    const passwordValidation = validatePasswordStrength(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: passwordValidation.error
+      });
+    }
+
+    // Check if user already exists
+    const existing = await dbFindUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: "An account with this email already exists. Please sign in or reset your password."
+      });
+    }
+
+    // Generate secure 64-character verification token
+    const token = crypto.randomBytes(32).toString("hex");
+    const passwordHash = hashPassword(password);
+    const appUrl = getClientAppUrl(req);
+
+    // Save pending verification in database (Valid for 24 hours)
+    await dbSaveVerificationToken(cleanEmail, token, "signup_link", {
+      name: cleanName,
+      password_hash: passwordHash
+    }, 24);
+
+    // Send direct verification link email
+    await sendVerificationEmail({
+      to: cleanEmail,
+      name: cleanName,
+      token,
+      appUrl,
+      validityHours: 24
+    });
+
+    res.json({
+      success: true,
+      email: cleanEmail,
+      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox and click the link to activate your account.`
+    });
+  } catch (err) {
+    console.error("Signup verification send error:", err.message);
+    res.status(500).json({
+      success: false,
+      error: `Failed to send verification email: ${err.message}`
+    });
+  }
+});
+
+// GET /api/auth/verify-email - Step 2: User clicks verification link in their email
+router.get("/verify-email", async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token || !token.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Verification token is required. Please check your verification link."
+      });
+    }
+
+    const cleanToken = token.trim();
+    const verification = await dbConsumeVerificationToken(cleanToken, "signup_link");
+
+    if (!verification.valid || !verification.metadata) {
+      return res.status(400).json({
+        success: false,
+        error: "This verification link is invalid or has expired (valid for 24 hours). Please sign up again or request a new link."
+      });
+    }
+
+    const cleanEmail = verification.record.email.trim().toLowerCase();
+    const { name, password_hash } = verification.metadata;
+
+    // Check if user is already registered
+    let user = await dbFindUserByEmail(cleanEmail);
+    if (!user) {
+      const userId = generateId("u_");
+      user = await dbCreateUser({
+        id: userId,
+        name: name || "TeleDrive User",
+        email: cleanEmail,
+        password_hash: password_hash,
+        is_2fa_enabled: 0,
+        status: "active"
+      });
+
+      // Create starter folders
+      await Promise.all([
+        dbInsertFolder({
+          id: generateId("f_"),
+          name: "Documents",
+          color: "#4285f4",
+          parent_id: null,
+          user_id: userId
+        }),
+        dbInsertFolder({
+          id: generateId("f_"),
+          name: "Media & Photos",
+          color: "#34a853",
+          parent_id: null,
+          user_id: userId
+        }),
+        dbInsertFolder({
+          id: generateId("f_"),
+          name: "Telegram Channel Imports",
+          color: "#0088cc",
+          parent_id: null,
+          user_id: userId
+        })
+      ]);
+    }
+
+    // Issue signed session token
+    const sessionToken = await createSessionToken({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role || (user.email === "devv5412@gmail.com" ? "admin" : "user")
+    });
+
+    res.json({
+      success: true,
+      message: "Email successfully verified! Welcome to TeleDrive.",
+      token: sessionToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role || (user.email === "devv5412@gmail.com" ? "admin" : "user"),
+        status: user.status || "active",
+        is2FAEnabled: Boolean(user.is_2fa_enabled)
+      }
+    });
+  } catch (err) {
+    console.error("Verify email error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/resend-verification - Resend verification email
+router.post("/resend-verification", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid email address is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check if user is already verified and active
+    const existing = await dbFindUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: "This account is already registered and verified. Please sign in."
+      });
+    }
+
+    // Check pending token
+    const sqlite = await (await import("../db.js")).getSqliteDb();
+    const pendingRecord = await sqlite.get(
+      "SELECT * FROM email_otps WHERE email = ? AND type = 'signup_link' ORDER BY created_at DESC LIMIT 1",
+      [cleanEmail]
+    );
+
+    if (!pendingRecord) {
+      return res.status(404).json({
+        success: false,
+        error: "No pending signup found for this email. Please sign up to create your account."
+      });
+    }
+
+    let meta = null;
+    try { meta = JSON.parse(pendingRecord.metadata); } catch {}
+
+    const newToken = crypto.randomBytes(32).toString("hex");
+    const appUrl = getClientAppUrl(req);
+
+    await dbSaveVerificationToken(cleanEmail, newToken, "signup_link", meta, 24);
+
+    await sendVerificationEmail({
+      to: cleanEmail,
+      name: meta?.name || "TeleDrive User",
+      token: newToken,
+      appUrl,
+      validityHours: 24
+    });
+
+    res.json({
+      success: true,
+      message: `A fresh verification link has been sent to ${cleanEmail}.`
+    });
+  } catch (err) {
+    console.error("Resend verification error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // ==========================================
 // 1. GMAIL OTP SIGNUP FLOW (REAL-TIME VERIFICATION)
@@ -438,6 +678,112 @@ router.post("/forgot-password/verify-otp", authLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error("Forgot password verify error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/forgot-password/send-link - Send direct reset password link to user's Gmail
+router.post("/forgot-password/send-link", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await dbFindUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "No TeleDrive account found with this email address."
+      });
+    }
+
+    // Generate secure 64-character reset token
+    const token = crypto.randomBytes(32).toString("hex");
+    const appUrl = getClientAppUrl(req);
+
+    // Save token in DB (Valid for 1 hour)
+    await dbSaveVerificationToken(cleanEmail, token, "forgot_password_link", { userId: user.id }, 1);
+
+    // Send email with direct link
+    await sendPasswordResetEmail({
+      to: cleanEmail,
+      name: user.name,
+      token,
+      appUrl,
+      validityHours: 1
+    });
+
+    res.json({
+      success: true,
+      message: `A password reset link has been sent to ${cleanEmail}. Please check your inbox.`
+    });
+  } catch (err) {
+    console.error("Forgot password send link error:", err.message);
+    res.status(500).json({
+      success: false,
+      error: `Failed to send reset email: ${err.message}`
+    });
+  }
+});
+
+// POST /api/auth/forgot-password/reset-with-token - Reset password using link token
+router.post("/forgot-password/reset-with-token", authLimiter, async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !token.trim()) {
+      return res.status(400).json({ success: false, error: "Reset token is required" });
+    }
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: "New password must be at least 8 characters long"
+      });
+    }
+
+    const verification = await dbConsumeVerificationToken(token.trim(), "forgot_password_link");
+    if (!verification.valid) {
+      return res.status(400).json({
+        success: false,
+        error: "This password reset link is invalid or has expired (valid for 1 hour). Please request a new reset link."
+      });
+    }
+
+    const cleanEmail = verification.record.email.trim().toLowerCase();
+    const user = await dbFindUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account not found" });
+    }
+
+    const newHash = hashPassword(newPassword);
+    await dbUpdateUser(user.id, { password_hash: newHash });
+
+    // Issue new session token
+    const sessionToken = await createSessionToken({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role || (user.email === "devv5412@gmail.com" ? "admin" : "user")
+    });
+
+    res.json({
+      success: true,
+      message: "Password reset successfully! You are now signed in.",
+      token: sessionToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status
+      }
+    });
+  } catch (err) {
+    console.error("Reset with token error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

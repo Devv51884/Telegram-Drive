@@ -19,6 +19,11 @@ api.interceptors.request.use((config) => {
 export const DriveAPI = {
   // User Authentication & Profile CRUD
   signupUser: (data) => api.post("/auth/signup", data).then((r) => r.data),
+  sendSignupVerificationLink: (data) => api.post("/auth/signup/send-verification", data).then((r) => r.data),
+  verifyEmailToken: (token) => api.get("/auth/verify-email", { params: { token } }).then((r) => r.data),
+  resendVerificationLink: (email) => api.post("/auth/resend-verification", { email }).then((r) => r.data),
+  sendForgotPasswordLink: (email) => api.post("/auth/forgot-password/send-link", { email }).then((r) => r.data),
+  resetPasswordWithToken: (data) => api.post("/auth/forgot-password/reset-with-token", data).then((r) => r.data),
   signupSendOtp: (data) => api.post("/auth/signup/send-otp", data).then((r) => r.data),
   signupVerifyOtp: (data) => api.post("/auth/signup/verify-otp", data).then((r) => r.data),
   forgotPasswordSendOtp: (email) => api.post("/auth/forgot-password/send-otp", { email }).then((r) => r.data),
@@ -198,6 +203,9 @@ export const DriveAPI = {
   getPublicShareDownloadUrl: (token) => `${API_BASE}/share/public/${token}/download?_v=3`,
   getPublicFolderFileStreamUrl: (token, fileId) => `${API_BASE}/share/public/${token}/file/${fileId}/stream?_v=3`,
   getPublicFolderFileDownloadUrl: (token, fileId) => `${API_BASE}/share/public/${token}/file/${fileId}/download?_v=3`,
+  requestShareAccess: (token, data) => api.post(`/share/request-access/${token}`, data).then((r) => r.data),
+  getShareRequests: () => api.get("/share/requests").then((r) => r.data),
+  respondShareRequest: (id, data) => api.post(`/share/requests/${id}/respond`, data).then((r) => r.data),
 
   // Settings & Telegram Auth
   getSettings: () => api.get("/settings").then((r) => r.data),

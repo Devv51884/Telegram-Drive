@@ -17,42 +17,70 @@ import {
   Key,
   RefreshCw,
   Send,
-  Sparkles
+  Sparkles,
+  Inbox,
+  Check,
+  Clock,
+  ExternalLink
 } from "lucide-react";
 
 export default function AuthScreen() {
   const {
     loginUser,
-    signupSendOtp,
-    signupVerifyOtp,
-    forgotPasswordSendOtp,
-    forgotPasswordVerifyOtp
+    sendSignupVerificationLink,
+    verifyEmailToken,
+    resendVerificationLink,
+    sendForgotPasswordLink,
+    resetPasswordWithToken
   } = useDrive();
 
-  // Active View: 'signin' | 'signup' | 'forgot_password'
+  // Active View: 'signin' | 'signup' | 'verification_sent' | 'verify_landing' | 'forgot_password' | 'forgot_sent' | 'reset_landing'
   const [view, setView] = useState("signin");
-
-  // Step for OTP Verification: 'input' | 'otp'
-  const [otpStep, setOtpStep] = useState(false);
 
   // Form Fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [pin, setPin] = useState("");
-  const [otp, setOtp] = useState("");
   const [requires2FA, setRequires2FA] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Status & Feedback
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Countdown timer for Resend OTP
+  // Verification Landing State
+  const [verifyingToken, setVerifyingToken] = useState(false);
+  const [verifiedSuccess, setVerifiedSuccess] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
+
+  // Countdown timer for Resend Link
   const [countdown, setCountdown] = useState(0);
 
+  // 1. Detect URL Params for email verification or password reset tokens on page mount
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const verifyToken = params.get("verify_email");
+      const resetToken = params.get("reset_password");
+
+      if (verifyToken) {
+        setView("verify_landing");
+        handleProcessVerificationToken(verifyToken);
+      } else if (resetToken) {
+        setView("reset_landing");
+      }
+    } catch (err) {
+      console.warn("URL params check error:", err);
+    }
+  }, []);
+
+  // Timer countdown
   useEffect(() => {
     let timer;
     if (countdown > 0) {
@@ -63,15 +91,34 @@ export default function AuthScreen() {
 
   const switchView = (newView) => {
     setView(newView);
-    setOtpStep(false);
     setError("");
     setSuccessMsg("");
-    setOtp("");
     setRequires2FA(false);
     setPin("");
   };
 
-  // 1. Handle Sign In
+  // 2. Handle Process Verification Token from Email Link
+  const handleProcessVerificationToken = async (token) => {
+    setVerifyingToken(true);
+    setVerifyError("");
+    try {
+      const res = await verifyEmailToken(token);
+      if (res.success) {
+        setVerifiedSuccess(true);
+        // Clean URL parameter without reload
+        const newUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      } else {
+        setVerifyError(res.error || "Invalid or expired verification link.");
+      }
+    } catch (err) {
+      setVerifyError(err.response?.data?.error || err.message || "Failed to verify email link.");
+    } finally {
+      setVerifyingToken(false);
+    }
+  };
+
+  // 3. Handle Sign In
   const handleSignIn = async (e) => {
     e.preventDefault();
     setError("");
@@ -126,109 +173,117 @@ export default function AuthScreen() {
     );
   };
 
-  // 2. Handle Sign Up Step 1: Send OTP to Gmail
-  const handleSignupSendOtp = async (e) => {
+  // 4. Handle Sign Up: Send Verification Link to Gmail
+  const handleSignupSendLink = async (e) => {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
 
     if (!name.trim()) return setError("Full Name is required");
     if (!email || !email.includes("@")) return setError("Please enter a valid Gmail / Email address");
+    if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) return setError("Please enter a valid email address format");
+    
     if (password.length < 8) return setError("Password must be at least 8 characters long");
     if (!/[A-Z]/.test(password)) return setError("Password must contain at least one uppercase letter (A-Z)");
     if (!/[a-z]/.test(password)) return setError("Password must contain at least one lowercase letter (a-z)");
     if (!/[0-9]/.test(password)) return setError("Password must contain at least one number (0-9)");
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)) return setError("Password must contain at least one special character (!@#$)");
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)) return setError("Password must contain at least one special character (!@#$%^&*)");
     if (password !== confirmPassword) return setError("Passwords do not match");
 
     setLoading(true);
     try {
-      const res = await signupSendOtp(name.trim(), email.trim(), password);
+      const res = await sendSignupVerificationLink(name.trim(), email.trim(), password);
       if (res.success) {
-        setOtpStep(true);
+        setView("verification_sent");
         setCountdown(60);
-        setSuccessMsg(res.message || `A 6-digit verification code was sent to ${email}`);
+        setSuccessMsg(res.message || `A verification link has been sent to ${email}`);
       } else {
-        setError(res.error || "Failed to send verification code");
+        setError(res.error || "Failed to send verification link.");
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Failed to send verification code");
+      setError(err.response?.data?.error || err.message || "Signup failed. Please verify your email.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 3. Handle Sign Up Step 2: Verify OTP
-  const handleSignupVerify = async (e) => {
-    e.preventDefault();
+  // 5. Handle Resend Verification Link
+  const handleResendVerification = async () => {
+    if (countdown > 0 || !email) return;
     setError("");
     setSuccessMsg("");
-
-    if (!otp.trim() || otp.trim().length !== 6) {
-      return setError("Please enter the complete 6-digit verification code");
-    }
-
     setLoading(true);
+
     try {
-      const res = await signupVerifyOtp(email.trim(), otp.trim());
-      if (!res.success) {
-        setError(res.error || "Invalid or expired verification code");
+      const res = await resendVerificationLink(email.trim());
+      if (res.success) {
+        setCountdown(60);
+        setSuccessMsg(`A new verification link was sent to ${email}`);
+      } else {
+        setError(res.error || "Failed to resend link");
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Verification failed");
+      setError(err.response?.data?.error || err.message || "Resend failed");
     } finally {
       setLoading(false);
     }
   };
 
-  // 4. Handle Forgot Password Step 1: Send Reset OTP
-  const handleForgotPasswordSendOtp = async (e) => {
+  // 6. Handle Forgot Password Send Link
+  const handleForgotPasswordSend = async (e) => {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
 
     if (!email || !email.includes("@")) {
-      return setError("Please enter your registered Gmail / Email address");
+      return setError("Please enter your registered Gmail address");
     }
 
     setLoading(true);
     try {
-      const res = await forgotPasswordSendOtp(email.trim());
+      const res = await sendForgotPasswordLink(email.trim());
       if (res.success) {
-        setOtpStep(true);
+        setView("forgot_sent");
         setCountdown(60);
-        setSuccessMsg(res.message || `A password reset code was sent to ${email}`);
+        setSuccessMsg(res.message || `Password reset link sent to ${email}`);
       } else {
-        setError(res.error || "No account found with this email");
+        setError(res.error || "Could not send password reset link");
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Failed to send reset code");
+      setError(err.response?.data?.error || err.message || "Failed to send reset link");
     } finally {
       setLoading(false);
     }
   };
 
-  // 5. Handle Forgot Password Step 2: Verify OTP & Reset
-  const handleForgotPasswordVerify = async (e) => {
+  // 7. Handle Reset Password with Link Token
+  const handleResetPasswordWithToken = async (e) => {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
 
-    if (!otp.trim() || otp.trim().length !== 6) {
-      return setError("Please enter the 6-digit reset code sent to your email");
+    if (newPassword.length < 8) {
+      return setError("Password must be at least 8 characters long");
     }
-    if (!password || password.length < 6) {
-      return setError("New password must be at least 6 characters long");
-    }
-    if (password !== confirmPassword) {
+    if (newPassword !== confirmNewPassword) {
       return setError("Passwords do not match");
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset_password");
+    if (!token) {
+      return setError("Missing reset token in link");
     }
 
     setLoading(true);
     try {
-      const res = await forgotPasswordVerifyOtp(email.trim(), otp.trim(), password);
-      if (!res.success) {
-        setError(res.error || "Failed to reset password. Please check your code.");
+      const res = await resetPasswordWithToken(token, newPassword);
+      if (res.success) {
+        // Clean URL parameter
+        const newUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      } else {
+        setError(res.error || "Failed to reset password");
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Password reset failed");
@@ -237,56 +292,36 @@ export default function AuthScreen() {
     }
   };
 
-  // Resend OTP Helper
-  const handleResendOtp = async () => {
-    if (countdown > 0) return;
-    setError("");
-    setLoading(true);
-
-    try {
-      if (view === "signup") {
-        const res = await signupSendOtp(name.trim(), email.trim(), password);
-        if (res.success) {
-          setCountdown(60);
-          setSuccessMsg("A fresh 6-digit code has been sent to your Gmail!");
-        }
-      } else if (view === "forgot_password") {
-        const res = await forgotPasswordSendOtp(email.trim());
-        if (res.success) {
-          setCountdown(60);
-          setSuccessMsg("A fresh password reset code has been sent to your Gmail!");
-        }
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || "Failed to resend code");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const strength = getPasswordStrength(password);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-[#0b1120] to-[#1e1b4b] p-3 sm:p-6 text-slate-100 overflow-y-auto select-none font-sans">
-      {/* Ambient background glow spheres */}
-      <div className="absolute top-1/4 left-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#0a0f1d] to-slate-950 flex items-center justify-center p-3 sm:p-6 text-slate-100 font-sans relative overflow-hidden">
+      {/* Decorative ambient background glows */}
+      <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative w-full max-w-md bg-slate-900/90 backdrop-blur-2xl rounded-3xl border border-slate-700/60 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-200 my-auto">
+      {/* Main Glassmorphic Card */}
+      <div className="w-full max-w-md bg-slate-900/85 backdrop-blur-2xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
+        
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shadow-xl shadow-blue-500/25 mb-3">
-            <Cloud className="w-8 h-8 sm:w-9 sm:h-9 text-white animate-pulse" />
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 mb-3 animate-bounce-subtle">
+            <Send className="w-6 h-6 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
           </div>
-          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-            TeleDrive <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-semibold border border-blue-500/30">CLOUD</span>
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <span>TeleDrive</span>
+            <span className="text-xs uppercase font-bold tracking-wider bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full">
+              Cloud
+            </span>
           </h1>
-          <p className="text-[11px] sm:text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
-            Unlimited Telegram Cloud Storage with Fast 4K Streaming & Real-time Gmail Security
+          <p className="text-xs text-slate-400 mt-1 max-w-xs">
+            Unlimited Telegram Cloud Storage & Streaming
           </p>
         </div>
 
-        {/* Tab Switcher (Only in standard Signin / Signup mode) */}
-        {view !== "forgot_password" && (
-          <div className="flex bg-slate-800/80 p-1 rounded-2xl mb-5 border border-slate-700/50">
+        {/* Tab Switcher (Only on main Sign In / Sign Up views) */}
+        {(view === "signin" || view === "signup") && (
+          <div className="flex bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 mb-6">
             <button
               type="button"
               onClick={() => switchView("signin")}
@@ -422,10 +457,10 @@ export default function AuthScreen() {
         )}
 
         {/* ============================================================ */}
-        {/* 2. SIGN UP VIEW (WITH REAL-TIME GMAIL OTP)                   */}
+        {/* 2. SIGN UP VIEW (WITH DIRECT GMAIL VERIFICATION LINK)        */}
         {/* ============================================================ */}
-        {view === "signup" && !otpStep && (
-          <form onSubmit={handleSignupSendOtp} className="space-y-4">
+        {view === "signup" && (
+          <form onSubmit={handleSignupSendLink} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
                 Full Name
@@ -437,7 +472,7 @@ export default function AuthScreen() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Dev Sharma"
+                  placeholder="Your Full Name"
                   className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
                 />
               </div>
@@ -458,6 +493,9 @@ export default function AuthScreen() {
                   className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
                 />
               </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                A verification link will be sent to this email address to activate your account.
+              </p>
             </div>
 
             <div>
@@ -471,7 +509,7 @@ export default function AuthScreen() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Min. 8 characters (A-Z, a-z, 0-9, !@#)"
                   className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
                 />
                 <button
@@ -485,37 +523,15 @@ export default function AuthScreen() {
 
               {/* Password Strength Indicator */}
               {password && (
-                <div className="mt-2 space-y-1.5 animate-in fade-in duration-150">
+                <div className="mt-2 space-y-1.5">
                   <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-slate-400">Password Strength:</span>
-                    <span className={`font-bold ${getPasswordStrength(password).text}`}>
-                      {getPasswordStrength(password).label}
-                    </span>
+                    <span className="text-slate-400">Strength:</span>
+                    <span className={`font-bold ${strength.text}`}>{strength.label}</span>
                   </div>
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex gap-1">
-                    <div className={`h-full rounded-full transition-all duration-300 flex-1 ${getPasswordStrength(password).score >= 1 ? getPasswordStrength(password).color : "bg-slate-700"}`} />
-                    <div className={`h-full rounded-full transition-all duration-300 flex-1 ${getPasswordStrength(password).score >= 2 ? getPasswordStrength(password).color : "bg-slate-700"}`} />
-                    <div className={`h-full rounded-full transition-all duration-300 flex-1 ${getPasswordStrength(password).score >= 3 ? getPasswordStrength(password).color : "bg-slate-700"}`} />
-                  </div>
-
-                  {/* Requirements Checklist */}
-                  <div className="grid grid-cols-2 gap-1 pt-1 text-[10px]">
-                    <div className={`flex items-center gap-1 ${password.length >= 8 ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
-                      <span>{password.length >= 8 ? "✓" : "○"}</span>
-                      <span>8+ Characters</span>
-                    </div>
-                    <div className={`flex items-center gap-1 ${/[A-Z]/.test(password) ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
-                      <span>{/[A-Z]/.test(password) ? "✓" : "○"}</span>
-                      <span>Uppercase (A-Z)</span>
-                    </div>
-                    <div className={`flex items-center gap-1 ${/[0-9]/.test(password) ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
-                      <span>{/[0-9]/.test(password) ? "✓" : "○"}</span>
-                      <span>Number (0-9)</span>
-                    </div>
-                    <div className={`flex items-center gap-1 ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password) ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
-                      <span>{/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password) ? "✓" : "○"}</span>
-                      <span>Special Symbol (!@#)</span>
-                    </div>
+                  <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex gap-1">
+                    <div className={`h-full rounded-full transition-all duration-300 ${strength.score >= 1 ? strength.color : "bg-slate-700"} flex-1`} />
+                    <div className={`h-full rounded-full transition-all duration-300 ${strength.score >= 2 ? strength.color : "bg-slate-700"} flex-1`} />
+                    <div className={`h-full rounded-full transition-all duration-300 ${strength.score >= 3 ? strength.color : "bg-slate-700"} flex-1`} />
                   </div>
                 </div>
               )}
@@ -528,13 +544,20 @@ export default function AuthScreen() {
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type={showConfirmPassword ? "text" : "password"}
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                  placeholder="Repeat your password"
+                  className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -546,12 +569,12 @@ export default function AuthScreen() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Sending Gmail OTP...</span>
+                  <span>Sending Verification Link...</span>
                 </>
               ) : (
                 <>
-                  <span>Send Gmail Verification Code</span>
-                  <Send className="w-3.5 h-3.5" />
+                  <span>Create Account & Send Verification Link</span>
+                  <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
@@ -559,254 +582,298 @@ export default function AuthScreen() {
         )}
 
         {/* ============================================================ */}
-        {/* 2B. SIGN UP OTP VERIFICATION STEP                            */}
+        {/* 3. VERIFICATION EMAIL SENT CONFIRMATION SCREEN               */}
         {/* ============================================================ */}
-        {view === "signup" && otpStep && (
-          <form onSubmit={handleSignupVerify} className="space-y-4 animate-in fade-in duration-150">
-            <div className="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-xs text-slate-300 text-center">
-              <p className="font-semibold text-white mb-1">Verify Your Gmail</p>
-              <p className="text-slate-400 text-[11px]">
-                Enter the 6-digit verification code sent to <strong className="text-blue-400">{email}</strong>
-              </p>
+        {view === "verification_sent" && (
+          <div className="text-center py-4 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 rounded-3xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
+              <Inbox className="w-8 h-8 animate-pulse" />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5 text-center">
-                6-Digit Verification Code
-              </label>
-              <input
-                type="text"
-                maxLength={6}
-                required
-                autoFocus
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                placeholder="123456"
-                className="w-full bg-slate-800/90 border border-blue-500/60 focus:border-blue-400 rounded-2xl py-3 text-lg tracking-[0.4em] text-center font-mono font-bold text-white placeholder-slate-600 outline-none transition-all shadow-inner"
-              />
+              <h3 className="text-lg font-bold text-white mb-1.5">Check Your Email</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                We've sent an account verification link to:
+              </p>
+              <div className="inline-block mt-2 px-3 py-1 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono text-blue-400 font-bold">
+                {email}
+              </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || otp.length !== 6}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-2xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50"
-            >
-              {loading ? (
-                <>
+            <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 text-left text-xs text-slate-300 space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-white">
+                <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                <span>Link valid for 24 hours</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Click the verification button in your email to instantly activate your unlimited cloud storage. If you don't see it, please check your spam or promotions folder.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={loading || countdown > 0}
+                className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-xl text-xs font-semibold border border-slate-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying Code...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Verify & Create Account</span>
-                </>
-              )}
-            </button>
-
-            <div className="flex items-center justify-between text-xs pt-1">
-              <button
-                type="button"
-                onClick={() => setOtpStep(false)}
-                className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Change Details</span>
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span>
+                  {countdown > 0 ? `Resend link in ${countdown}s` : "Resend Verification Email"}
+                </span>
               </button>
 
               <button
                 type="button"
-                onClick={handleResendOtp}
-                disabled={countdown > 0 || loading}
-                className="text-blue-400 hover:text-blue-300 disabled:opacity-40 transition-colors font-medium"
+                onClick={() => switchView("signup")}
+                className="w-full py-2 text-xs text-slate-400 hover:text-slate-200 transition-colors"
               >
-                {countdown > 0 ? `Resend code in ${countdown}s` : "Resend Code"}
+                Change email address
               </button>
             </div>
-          </form>
+          </div>
         )}
 
         {/* ============================================================ */}
-        {/* 3. FORGOT PASSWORD VIEW (VIA GMAIL OTP)                      */}
+        {/* 4. VERIFY EMAIL LANDING VIEW (User clicked link in email)    */}
         {/* ============================================================ */}
-        {view === "forgot_password" && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-bold text-white">Reset Account Password</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => switchView("signin")}
-                className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back to Sign In</span>
-              </button>
-            </div>
-
-            {!otpStep ? (
-              <form onSubmit={handleForgotPasswordSendOtp} className="space-y-4">
-                <p className="text-xs text-slate-400">
-                  Enter your registered Gmail address. We will send a 6-digit OTP code to securely reset your password.
-                </p>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Registered Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@gmail.com"
-                      className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
-                    />
-                  </div>
+        {view === "verify_landing" && (
+          <div className="text-center py-6 space-y-5 animate-in zoom-in-95 duration-200">
+            {verifyingToken ? (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-blue-600/20 text-blue-400 flex items-center justify-center mx-auto">
+                  <Loader2 className="w-8 h-8 animate-spin" />
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold rounded-2xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Sending OTP...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Send Password Reset Code</span>
-                      <Send className="w-3.5 h-3.5" />
-                    </>
-                  )}
-                </button>
-              </form>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-1">Verifying Email...</h3>
+                  <p className="text-xs text-slate-400">
+                    Activating your TeleDrive account and allocating cloud storage...
+                  </p>
+                </div>
+              </>
+            ) : verifiedSuccess ? (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                  <Check className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-1">Email Verified Successfully! 🎉</h3>
+                  <p className="text-xs text-emerald-300 font-medium">
+                    Welcome to TeleDrive! Your account is active. Loading your drive...
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <Loader2 className="w-5 h-5 text-blue-500 animate-spin mx-auto" />
+                </div>
+              </>
             ) : (
-              <form onSubmit={handleForgotPasswordVerify} className="space-y-4">
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-slate-300 text-center">
-                  Enter the 6-digit code sent to <strong className="text-amber-400">{email}</strong> and enter your new password.
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-rose-600/20 border border-rose-500/40 text-rose-400 flex items-center justify-center mx-auto">
+                  <AlertCircle className="w-8 h-8" />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1 text-center">
-                    6-Digit Reset Code
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    required
-                    autoFocus
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                    placeholder="123456"
-                    className="w-full bg-slate-800/90 border border-amber-500/60 focus:border-amber-400 rounded-2xl py-2.5 text-base tracking-[0.4em] text-center font-mono font-bold text-white placeholder-slate-600 outline-none transition-all"
-                  />
+                  <h3 className="text-lg font-bold text-white mb-1">Verification Failed</h3>
+                  <p className="text-xs text-rose-300">
+                    {verifyError || "This verification link is invalid or has expired."}
+                  </p>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    New Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Confirm New Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading || otp.length !== 6}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Resetting Password...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Reset Password & Sign In</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="flex items-center justify-between text-xs pt-1">
+                <div className="space-y-2 pt-3">
                   <button
-                    type="button"
-                    onClick={() => setOtpStep(false)}
-                    className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
+                    onClick={() => switchView("signup")}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all"
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Change Email</span>
+                    Sign Up Again
                   </button>
-
                   <button
-                    type="button"
-                    onClick={handleResendOtp}
-                    disabled={countdown > 0 || loading}
-                    className="text-amber-400 hover:text-amber-300 disabled:opacity-40 transition-colors font-medium"
+                    onClick={() => switchView("signin")}
+                    className="w-full py-2 text-xs text-slate-400 hover:text-white transition-colors"
                   >
-                    {countdown > 0 ? `Resend code in ${countdown}s` : "Resend Code"}
+                    Back to Sign In
                   </button>
                 </div>
-              </form>
+              </>
             )}
           </div>
         )}
 
-        {/* Feature Badges */}
-        <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-3 gap-2 text-center text-[10px] text-slate-400">
-          <div className="flex flex-col items-center gap-1">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>Fast Stream</span>
+        {/* ============================================================ */}
+        {/* 5. FORGOT PASSWORD (REQUEST RESET LINK)                      */}
+        {/* ============================================================ */}
+        {view === "forgot_password" && (
+          <form onSubmit={handleForgotPasswordSend} className="space-y-4">
+            <div className="text-center mb-2">
+              <h3 className="text-base font-bold text-white">Reset Your Password</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Enter your Gmail address to receive a secure password reset link.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Registered Gmail / Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@gmail.com"
+                  className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-2xl shadow-lg shadow-rose-600/25 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Sending Reset Link...</span>
+                </>
+              ) : (
+                <>
+                  <span>Send Password Reset Link</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => switchView("signin")}
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-white pt-2 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Sign In</span>
+            </button>
+          </form>
+        )}
+
+        {/* ============================================================ */}
+        {/* 6. FORGOT PASSWORD LINK SENT                                 */}
+        {/* ============================================================ */}
+        {view === "forgot_sent" && (
+          <div className="text-center py-4 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 rounded-3xl bg-rose-600/20 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto shadow-inner">
+              <Mail className="w-8 h-8 animate-pulse" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-white mb-1.5">Reset Link Sent</h3>
+              <p className="text-xs text-slate-300">
+                We've sent a password reset link to:
+              </p>
+              <div className="inline-block mt-2 px-3 py-1 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono text-rose-400 font-bold">
+                {email}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Open the link in your email to set a new password. The link is valid for 1 hour.
+            </p>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={handleForgotPasswordSend}
+                disabled={loading || countdown > 0}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-xl text-xs font-semibold border border-slate-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                <span>
+                  {countdown > 0 ? `Resend in ${countdown}s` : "Resend Reset Link"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchView("signin")}
+                className="w-full py-2 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                Back to Sign In
+              </button>
+            </div>
           </div>
-          <div className="flex flex-col items-center gap-1">
-            <Cloud className="w-3.5 h-3.5 text-sky-400" />
-            <span>Unlimited TBs</span>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Gmail Verified</span>
-          </div>
-        </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* 7. RESET PASSWORD LANDING (User opened link in email)        */}
+        {/* ============================================================ */}
+        {view === "reset_landing" && (
+          <form onSubmit={handleResetPasswordWithToken} className="space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="text-center mb-2">
+              <div className="w-12 h-12 rounded-2xl bg-rose-600/20 text-rose-400 flex items-center justify-center mx-auto mb-2">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-white">Choose a New Password</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Enter and confirm your new TeleDrive password below.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                New Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  className="w-full bg-slate-800/90 border border-slate-700 focus:border-rose-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Confirm New Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  className="w-full bg-slate-800/90 border border-slate-700 focus:border-rose-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-2xl shadow-lg shadow-rose-600/25 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Updating Password...</span>
+                </>
+              ) : (
+                <>
+                  <span>Save New Password & Sign In</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
       </div>
     </div>
   );

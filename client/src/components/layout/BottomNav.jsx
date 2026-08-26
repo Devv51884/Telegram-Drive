@@ -73,8 +73,12 @@ export default function BottomNav() {
 
       {/* 5. Settings */}
       <button
-        onClick={() => setActiveModal("settings")}
-        className="flex flex-col items-center gap-1 p-1 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all"
+        onClick={() => navigateToSection("settings")}
+        className={`flex flex-col items-center gap-1 p-1 rounded-xl transition-all ${
+          section === "settings"
+            ? "text-blue-600 dark:text-blue-400 font-bold scale-105"
+            : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+        }`}
       >
         <Settings className="w-5 h-5" />
         <span className="text-[10px]">Settings</span>

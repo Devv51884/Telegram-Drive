@@ -126,6 +126,20 @@ export async function getSqliteDb() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(item_id, item_type, shared_with_email)
     );
+
+    CREATE TABLE IF NOT EXISTS share_requests (
+      id TEXT PRIMARY KEY,
+      share_token TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      item_type TEXT NOT NULL,
+      owner_id TEXT,
+      requester_email TEXT NOT NULL,
+      requester_name TEXT,
+      message TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Run lightweight migrations
@@ -1421,5 +1435,135 @@ export async function dbHasUserAccessToItem(itemId, itemType, userEmail, userId 
 
   return false;
 }
+
+// ==========================================
+// EMAIL VERIFICATION & RESET TOKEN HELPERS
+// ==========================================
+
+export async function dbSaveVerificationToken(email, token, type = "signup_link", metadata = null, expiryHours = 24) {
+  const sqlite = await getSqliteDb();
+  const cleanEmail = email.trim().toLowerCase();
+  const id = generateId("tok_");
+  const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+  const metaStr = metadata ? JSON.stringify(metadata) : null;
+
+  // Clean previous tokens of this type for the email
+  await sqlite.run("DELETE FROM email_otps WHERE email = ? AND type = ?", [cleanEmail, type]);
+
+  await sqlite.run(
+    "INSERT INTO email_otps (id, email, otp, type, metadata, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    [id, cleanEmail, token.trim(), type, metaStr, expiresAt]
+  );
+
+  return { id, email: cleanEmail, expiresAt, token: token.trim() };
+}
+
+export async function dbVerifyToken(token, type = "signup_link") {
+  const sqlite = await getSqliteDb();
+  const cleanToken = (token || "").trim();
+  if (!cleanToken) return { valid: false };
+
+  const record = await sqlite.get(
+    `SELECT * FROM email_otps 
+     WHERE otp = ? AND type = ? AND expires_at > CURRENT_TIMESTAMP 
+     ORDER BY created_at DESC LIMIT 1`,
+    [cleanToken, type]
+  );
+
+  if (!record) return { valid: false };
+
+  let metadata = null;
+  if (record.metadata) {
+    try {
+      metadata = JSON.parse(record.metadata);
+    } catch {
+      metadata = record.metadata;
+    }
+  }
+
+  return { valid: true, record, metadata };
+}
+
+export async function dbConsumeVerificationToken(token, type = "signup_link") {
+  const sqlite = await getSqliteDb();
+  const cleanToken = (token || "").trim();
+  const verification = await dbVerifyToken(cleanToken, type);
+  if (!verification.valid) return verification;
+
+  // Delete consumed token
+  await sqlite.run("DELETE FROM email_otps WHERE id = ?", [verification.record.id]);
+  return verification;
+}
+
+// ==========================================
+// GOOGLE DRIVE STYLE SHARE ACCESS REQUESTS
+// ==========================================
+
+export async function dbCreateShareRequest({ shareToken, itemId, itemType, ownerId, requesterEmail, requesterName, message }) {
+  const sqlite = await getSqliteDb();
+  const id = generateId("req_");
+  const cleanEmail = requesterEmail.trim().toLowerCase();
+
+  // Check if there is already a pending request from this email
+  const existing = await sqlite.get(
+    "SELECT * FROM share_requests WHERE item_id = ? AND LOWER(requester_email) = ? AND status = 'pending'",
+    [itemId, cleanEmail]
+  );
+
+  if (existing) {
+    await sqlite.run(
+      "UPDATE share_requests SET message = ?, requester_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [message || "", requesterName || "", existing.id]
+    );
+    return { ...existing, message, requester_name: requesterName };
+  }
+
+  await sqlite.run(
+    `INSERT INTO share_requests (id, share_token, item_id, item_type, owner_id, requester_email, requester_name, message, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+    [id, shareToken, itemId, itemType, ownerId || null, cleanEmail, requesterName || "", message || ""]
+  );
+
+  return sqlite.get("SELECT * FROM share_requests WHERE id = ?", [id]);
+}
+
+export async function dbGetPendingShareRequestsForOwner(ownerId) {
+  const sqlite = await getSqliteDb();
+  return sqlite.all(
+    `SELECT r.*, 
+       CASE WHEN r.item_type = 'folder' THEN f.name ELSE fi.name END as item_name,
+       CASE WHEN r.item_type = 'folder' THEN 'folder' ELSE fi.type END as media_type
+     FROM share_requests r
+     LEFT JOIN folders f ON r.item_id = f.id AND r.item_type = 'folder'
+     LEFT JOIN files fi ON r.item_id = fi.id AND r.item_type = 'file'
+     WHERE r.owner_id = ? AND r.status = 'pending'
+     ORDER BY r.created_at DESC`,
+    [ownerId]
+  );
+}
+
+export async function dbGetShareRequestById(id) {
+  const sqlite = await getSqliteDb();
+  return sqlite.get(
+    `SELECT r.*, 
+       CASE WHEN r.item_type = 'folder' THEN f.name ELSE fi.name END as item_name,
+       CASE WHEN r.item_type = 'folder' THEN 'folder' ELSE fi.type END as media_type
+     FROM share_requests r
+     LEFT JOIN folders f ON r.item_id = f.id AND r.item_type = 'folder'
+     LEFT JOIN files fi ON r.item_id = fi.id AND r.item_type = 'file'
+     WHERE r.id = ?`,
+    [id]
+  );
+}
+
+export async function dbUpdateShareRequestStatus(id, status) {
+  const sqlite = await getSqliteDb();
+  await sqlite.run(
+    "UPDATE share_requests SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [status, id]
+  );
+  return dbGetShareRequestById(id);
+}
+
 
 

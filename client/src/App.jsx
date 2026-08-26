@@ -18,6 +18,7 @@ import SettingsModal from "./components/modals/SettingsModal.jsx";
 import ShareModal from "./components/modals/ShareModal.jsx";
 import PublicShareView from "./components/share/PublicShareView.jsx";
 import AdminPage from "./components/admin/AdminPage.jsx";
+import SettingsPage from "./components/settings/SettingsPage.jsx";
 import DetailsDrawer from "./components/modals/DetailsDrawer.jsx";
 import AuthScreen from "./components/auth/AuthScreen.jsx";
 import BottomNav from "./components/layout/BottomNav.jsx";
@@ -55,6 +56,37 @@ function DriveMain() {
   // Display Login / Sign Up screen if not authenticated
   if (!isAuthenticated) {
     return <AuthScreen />;
+  }
+
+  // Dedicated Full-Page View for Account Settings
+  if (section === "settings") {
+    return (
+      <div className="min-h-screen overflow-x-hidden font-sans">
+        <SettingsPage />
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5 duration-200">
+            <div
+              className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold backdrop-blur-md ${
+                toast.type === "error"
+                  ? "bg-rose-50/95 dark:bg-rose-950/90 text-rose-700 dark:text-rose-200 border-rose-200 dark:border-rose-800"
+                  : toast.type === "info"
+                  ? "bg-blue-50/95 dark:bg-blue-950/90 text-blue-700 dark:text-blue-200 border-blue-200 dark:border-blue-800"
+                  : "bg-emerald-50/95 dark:bg-emerald-950/90 text-emerald-700 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800"
+              }`}
+            >
+              {toast.type === "error" ? (
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0" />
+              ) : toast.type === "info" ? (
+                <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              )}
+              <span className="truncate max-w-sm">{toast.message}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   // Dedicated Full-Page View for Admin Portal

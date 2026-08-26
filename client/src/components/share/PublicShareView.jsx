@@ -34,7 +34,13 @@ import {
   HardDrive,
   Clock,
   Eye,
-  FolderOpen
+  FolderOpen,
+  Send,
+  User,
+  Mail,
+  Shield,
+  Sparkles,
+  ArrowDown
 } from "lucide-react";
 
 export default function PublicShareView({ shareToken, onBackToApp }) {
@@ -74,6 +80,14 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
   const [docLoading, setDocLoading] = useState(false);
   const [docError, setDocError] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // Google Drive Style "Request Access" State
+  const [requestEmail, setRequestEmail] = useState("");
+  const [requestName, setRequestName] = useState("");
+  const [requestMessage, setRequestMessage] = useState("");
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [requestSubmitted, setRequestSubmitted] = useState(false);
+  const [requestError, setRequestError] = useState("");
 
   const videoRef = useRef(null);
 
@@ -118,34 +132,34 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
   // Navigate into subfolder
   const handleOpenFolder = (folderId) => {
     setCurrentFolderId(folderId);
-    setSearchQuery("");
-    try {
-      const url = new URL(window.location);
-      if (folderId && data?.rootFolder?.id && folderId !== data.rootFolder.id) {
-        url.searchParams.set("folder", folderId);
-      } else {
-        url.searchParams.delete("folder");
-      }
-      window.history.pushState({}, "", url);
-    } catch {}
     loadShareData(folderId, false);
+
+    // Update folder query param in browser history smoothly
+    const url = new URL(window.location);
+    if (folderId && folderId !== data?.rootFolder?.id) {
+      url.searchParams.set("folder", folderId);
+    } else {
+      url.searchParams.delete("folder");
+    }
+    window.history.pushState({}, "", url);
   };
 
   // Format File Size
-  const formatBytes = (bytes) => {
-    if (!bytes || bytes === 0) return "0 B";
+  const formatBytes = (bytes, decimals = 1) => {
+    const num = Number(bytes) || 0;
+    if (num === 0) return "0 B";
     const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
     const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    const i = Math.floor(Math.log(num) / Math.log(k));
+    return parseFloat((num / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   };
 
   // Format Date
   const formatDate = (dateStr) => {
-    if (!dateStr) return "";
+    if (!dateStr) return "Unknown";
     try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString(undefined, {
+      return new Date(dateStr).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric"
@@ -158,7 +172,7 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
   // Get file icon helper
   const getFileIcon = (type, name = "") => {
     const ext = name.split(".").pop()?.toLowerCase() || "";
-    if (type === "video" || ["mp4", "mkv", "avi", "mov", "webm"].includes(ext)) {
+    if (type === "video" || ["mp4", "mkv", "avi", "mov", "webm", "m4v"].includes(ext)) {
       return <Film className="w-5 h-5 text-rose-500 flex-shrink-0" />;
     }
     if (type === "image" || ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext)) {
@@ -202,7 +216,7 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
     if (typeFilter !== "all") {
       list = list.filter((f) => {
         const ext = f.name.split(".").pop()?.toLowerCase() || "";
-        if (typeFilter === "video") return f.type === "video" || ["mp4", "mkv", "avi", "mov", "webm"].includes(ext);
+        if (typeFilter === "video") return f.type === "video" || ["mp4", "mkv", "avi", "mov", "webm", "m4v"].includes(ext);
         if (typeFilter === "image") return f.type === "image" || ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
         if (typeFilter === "pdf") return f.type === "pdf" || ext === "pdf";
         if (typeFilter === "audio") return f.type === "audio" || ["mp3", "wav", "ogg", "m4a", "flac"].includes(ext);
@@ -297,56 +311,33 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
     const ext = previewFile.name.split(".").pop()?.toLowerCase() || "";
     const isDocx = ext === "docx" || ext === "doc";
     const isText = [
-      "txt",
-      "md",
-      "json",
-      "csv",
-      "js",
-      "jsx",
-      "ts",
-      "tsx",
-      "html",
-      "css",
-      "py",
-      "java",
-      "c",
-      "cpp",
-      "sql",
-      "xml",
-      "yaml",
-      "yml",
-      "log",
-      "env",
-      "sh",
-      "bat"
+      "txt", "json", "js", "jsx", "ts", "tsx", "html", "css", "md", "csv", "xml", "py", "sql", "sh", "yaml", "yml"
     ].includes(ext);
 
     if (isDocx) {
       setDocLoading(true);
-      setDocError("");
-      const docStreamUrl = getStreamUrlForFile(previewFile);
-      fetch(docStreamUrl)
+      const downloadUrl = getDownloadUrlForFile(previewFile);
+      fetch(downloadUrl)
         .then((res) => {
-          if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+          if (!res.ok) throw new Error(`HTTP error ${res.status}`);
           return res.arrayBuffer();
         })
-        .then((arrayBuffer) => mammoth.convertToHtml({ arrayBuffer }))
+        .then((buffer) => mammoth.convertToHtml({ arrayBuffer: buffer }))
         .then((result) => {
           setDocHtml(result.value);
           setDocLoading(false);
         })
         .catch((err) => {
-          console.error("Docx parse error:", err);
-          setDocError("Could not render document preview. You can download the file to view.");
+          console.error("Docx load error:", err);
+          setDocError("Could not render document. Please download the file to view.");
           setDocLoading(false);
         });
     } else if (isText) {
       setDocLoading(true);
-      setDocError("");
-      const textStreamUrl = getStreamUrlForFile(previewFile);
-      fetch(textStreamUrl)
+      const downloadUrl = getDownloadUrlForFile(previewFile);
+      fetch(downloadUrl)
         .then((res) => {
-          if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+          if (!res.ok) throw new Error(`HTTP error ${res.status}`);
           return res.text();
         })
         .then((text) => {
@@ -361,50 +352,189 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
     }
   }, [previewFile]);
 
-  // Video retry handler
-  const handleRetryVideo = () => {
-    setVideoError(false);
-    setVideoLoading(true);
-    if (videoRef.current) {
-      const currentSrc = videoRef.current.src;
-      videoRef.current.src = `${currentSrc.split("&_t=")[0]}&_t=${Date.now()}`;
-      videoRef.current.load();
-      videoRef.current.play().catch(() => {});
+  // Handle Submit Google Drive Style Access Request
+  const handleSubmitAccessRequest = async (e) => {
+    e.preventDefault();
+    if (!requestEmail || !requestEmail.includes("@")) {
+      return setRequestError("Please provide a valid Gmail / Email address");
+    }
+
+    setIsSubmittingRequest(true);
+    setRequestError("");
+
+    try {
+      const res = await DriveAPI.requestShareAccess(shareToken, {
+        email: requestEmail.trim(),
+        name: requestName.trim(),
+        message: requestMessage.trim()
+      });
+
+      if (res.success) {
+        setRequestSubmitted(true);
+      } else {
+        setRequestError(res.error || "Failed to submit access request");
+      }
+    } catch (err) {
+      setRequestError(err.response?.data?.error || err.message || "Failed to submit request");
+    } finally {
+      setIsSubmittingRequest(false);
     }
   };
 
   // 1. Initial Loading State
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white gap-4 p-4 font-sans">
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-        <p className="text-sm font-medium text-slate-300">Connecting to Telegram Cloud...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white gap-4 p-4 font-sans selection:bg-blue-600 selection:text-white">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-3xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center animate-pulse">
+            <Send className="w-7 h-7 text-blue-400 -rotate-12" />
+          </div>
+          <Loader2 className="w-6 h-6 text-blue-400 animate-spin absolute -bottom-1 -right-1" />
+        </div>
+        <p className="text-sm font-semibold text-slate-300 tracking-tight">Connecting to TeleDrive Cloud...</p>
       </div>
     );
   }
 
-  // 2. Restricted / Private State
+  // 2. Google Drive Style Restricted "You Need Access" View
   if (isRestricted) {
+    const itemData = data?.item || {};
+    const ownerName = itemData.owner_name || "The owner";
+    const ownerEmail = itemData.owner_email || "";
+
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-4 font-sans">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
-          <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto shadow-inner">
-            <Lock className="w-8 h-8" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#0a0f1d] to-slate-950 flex flex-col items-center justify-center p-3 sm:p-6 text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative">
+        {/* Decorative background glows */}
+        <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Access Request Card */}
+        <div className="w-full max-w-lg bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative z-10 animate-in zoom-in-95 duration-200">
+          
+          {/* Lock Badge & Title */}
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-3xl bg-rose-500/10 border border-rose-500/30 text-rose-500 flex items-center justify-center mx-auto shadow-inner">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">You need access</h2>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
+                This {itemData.type === "folder" ? "folder" : "file"} is private. Ask {ownerName} for access, or switch to an authorized account.
+              </p>
+            </div>
+
+            {itemData.name && (
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs font-semibold text-slate-200 truncate max-w-full">
+                {itemData.type === "folder" ? <Folder className="w-3.5 h-3.5 text-blue-400" /> : <File className="w-3.5 h-3.5 text-blue-400" />}
+                <span className="truncate">{itemData.name}</span>
+              </div>
+            )}
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-white mb-1.5">You need access</h2>
-            <p className="text-xs text-slate-400">
-              This item is private. Ask the owner for access, or sign in with an authorized account.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              window.location.href = window.location.origin;
-            }}
-            className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white transition-all shadow-lg shadow-blue-600/20"
-          >
-            Sign in to TeleDrive
-          </button>
+
+          {/* Form / Submitted States */}
+          {requestSubmitted ? (
+            <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-3 animate-in fade-in duration-200">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                <Check className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-bold text-emerald-300">Access request sent!</h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                We sent an email to <strong>{ownerName}</strong> ({ownerEmail || "the owner"}). You'll receive a confirmation email when access is granted.
+              </p>
+              <div className="pt-2">
+                <a
+                  href={window.location.origin}
+                  className="inline-block px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors"
+                >
+                  Go to TeleDrive
+                </a>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmitAccessRequest} className="space-y-4">
+              {requestError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{requestError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Your Gmail / Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    value={requestEmail}
+                    onChange={(e) => setRequestEmail(e.target.value)}
+                    placeholder="you@gmail.com"
+                    className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Your Name <span className="text-slate-500 text-[10px]">(optional)</span>
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={requestName}
+                    onChange={(e) => setRequestName(e.target.value)}
+                    placeholder="Dev Sharma"
+                    className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Message <span className="text-slate-500 text-[10px]">(optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={requestMessage}
+                  onChange={(e) => setRequestMessage(e.target.value)}
+                  placeholder="Hey, please grant me access to this file..."
+                  className="w-full bg-slate-800/90 border border-slate-700 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingRequest || !requestEmail.trim()}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50"
+              >
+                {isSubmittingRequest ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Sending Request...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Request Access</span>
+                    <Send className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+
+              <div className="pt-2 text-center">
+                <a
+                  href={window.location.origin}
+                  className="text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+                >
+                  Already have access? Sign in with another account →
+                </a>
+              </div>
+            </form>
+          )}
+
         </div>
       </div>
     );
@@ -414,18 +544,16 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
   if (error || !data) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-4 font-sans">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl space-y-4">
+        <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl space-y-4">
           <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
           <h2 className="text-lg font-bold text-white">Item not available</h2>
           <p className="text-xs text-slate-400">{error || "The link you followed may be expired or broken."}</p>
-          <button
-            onClick={() => {
-              window.location.href = window.location.origin;
-            }}
-            className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors"
+          <a
+            href={window.location.origin}
+            className="inline-block px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors"
           >
             Go to TeleDrive
-          </button>
+          </a>
         </div>
       </div>
     );
@@ -443,12 +571,12 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
       {/* ============================================================ */}
       <header className="h-16 px-4 sm:px-8 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between flex-shrink-0 z-20 sticky top-0">
         <div className="flex items-center gap-3 truncate max-w-[65vw]">
-          <div className="flex items-center gap-2 font-bold text-sm tracking-tight text-white flex-shrink-0">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-600/30">
-              <Globe className="w-4 h-4 text-white" />
+          <a href={window.location.origin} className="flex items-center gap-2 font-bold text-sm tracking-tight text-white flex-shrink-0 hover:opacity-90 transition-opacity">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-600/30">
+              <Send className="w-4 h-4 text-white -rotate-12 translate-x-[-1px]" />
             </div>
-            <span className="hidden sm:inline">TeleDrive Cloud</span>
-          </div>
+            <span className="hidden sm:inline font-black tracking-tight">TeleDrive Cloud</span>
+          </a>
 
           <div className="h-4 w-px bg-slate-700 hidden sm:block" />
 
@@ -470,15 +598,16 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white transition-all shadow-md shadow-blue-600/20"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Download</span>
+              <span className="hidden xs:inline">Download</span>
             </a>
           )}
 
           <a
             href={window.location.origin}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors hidden sm:block"
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition-colors flex items-center gap-1.5"
           >
-            Open TeleDrive
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden sm:inline">Open TeleDrive</span>
           </a>
         </div>
       </header>
