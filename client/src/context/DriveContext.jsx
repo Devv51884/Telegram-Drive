@@ -206,11 +206,12 @@ export function DriveProvider({ children }) {
     return { success: false, error: res.error || "Password reset failed" };
   };
 
-  const updateUserProfile = async (updates) => {
+  const updateProfile = async (name, email) => {
     try {
-      const res = await DriveAPI.updateProfile(updates);
+      const payload = typeof name === "object" ? name : { name, email };
+      const res = await DriveAPI.updateProfile(payload);
       if (res.success) {
-        setCurrentUser(res.user);
+        if (res.user) setCurrentUser(res.user);
         showToast("Profile updated successfully!");
         return true;
       }
@@ -220,9 +221,10 @@ export function DriveProvider({ children }) {
     }
   };
 
-  const changeUserPassword = async (currentPassword, newPassword) => {
+  const updatePassword = async (currentPassword, newPassword) => {
     try {
-      const res = await DriveAPI.changePassword({ currentPassword, newPassword });
+      const payload = typeof currentPassword === "object" ? currentPassword : { currentPassword, newPassword };
+      const res = await DriveAPI.updatePassword(payload);
       if (res.success) {
         showToast("Password updated successfully!");
         return true;
@@ -247,11 +249,12 @@ export function DriveProvider({ children }) {
     }
   };
 
-  const deleteAccountPermanently = async (password) => {
+  const deleteAccount = async (password) => {
     try {
       const res = await DriveAPI.deleteAccount(password);
       if (res.success) {
         localStorage.removeItem("teledrive_auth_token");
+        contentsCacheRef.current.clear();
         setCurrentUser(null);
         setIsAuthenticated(false);
         showToast("Account and files permanently deleted");

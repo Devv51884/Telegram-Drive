@@ -16,17 +16,30 @@ if (typeof window !== "undefined") {
 // In-memory session cache for rendered PDF thumbnails
 const pdfThumbCache = new Map();
 
+function getCachedThumb(id) {
+  if (pdfThumbCache.has(id)) return pdfThumbCache.get(id);
+  try {
+    const stored = localStorage.getItem(`teledrive_pdf_thumb_${id}`);
+    if (stored) {
+      pdfThumbCache.set(id, stored);
+      return stored;
+    }
+  } catch {}
+  return null;
+}
+
 export default function PdfThumbnail({ file, className = "" }) {
-  const [thumbSrc, setThumbSrc] = useState(() => pdfThumbCache.get(file.id) || null);
-  const [loading, setLoading] = useState(!pdfThumbCache.has(file.id));
+  const [thumbSrc, setThumbSrc] = useState(() => getCachedThumb(file.id));
+  const [loading, setLoading] = useState(!getCachedThumb(file.id));
   const [hasError, setHasError] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const containerRef = useRef(null);
 
   // Lazy load thumbnail only when in viewport
   useEffect(() => {
-    if (pdfThumbCache.has(file.id)) {
-      setThumbSrc(pdfThumbCache.get(file.id));
+    const cached = getCachedThumb(file.id);
+    if (cached) {
+      setThumbSrc(cached);
       setLoading(false);
       return;
     }
@@ -88,6 +101,9 @@ export default function PdfThumbnail({ file, className = "" }) {
 
         const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
         pdfThumbCache.set(file.id, dataUrl);
+        try {
+          localStorage.setItem(`teledrive_pdf_thumb_${file.id}`, dataUrl);
+        } catch {}
         setThumbSrc(dataUrl);
         setLoading(false);
       } catch (err) {
