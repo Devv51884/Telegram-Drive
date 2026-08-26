@@ -116,6 +116,13 @@ getDb()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`🛡️ TeleDrive Secure Backend listening on http://localhost:${PORT}`);
+      // Background auto-heal unhashed Telegram imported media references
+      setTimeout(async () => {
+        try {
+          const { autoHealTelegramImportReferences } = await import("./telegram.js");
+          await autoHealTelegramImportReferences();
+        } catch {}
+      }, 6000);
     });
   })
   .catch((err) => {

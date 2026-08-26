@@ -941,6 +941,9 @@ export async function streamGramMedia(
     let location = null;
     let dcId = undefined;
 
+    let foundHash = null;
+    let foundRef = null;
+
     if (media.document) {
       const doc = media.document;
       totalSize = Number(doc.size || 0);
@@ -951,6 +954,8 @@ export async function streamGramMedia(
         thumbSize: ""
       });
       dcId = doc.dcId;
+      foundHash = doc.accessHash ? doc.accessHash.toString() : null;
+      foundRef = doc.fileReference ? Buffer.from(doc.fileReference).toString("base64") : null;
     } else if (media.photo) {
       const photo = media.photo;
       const sizes = photo.sizes || [];
@@ -963,8 +968,31 @@ export async function streamGramMedia(
         thumbSize: largest?.type || "y"
       });
       dcId = photo.dcId;
+      foundHash = photo.accessHash ? photo.accessHash.toString() : null;
+      foundRef = photo.fileReference ? Buffer.from(photo.fileReference).toString("base64") : null;
     } else {
       throw new Error("Unsupported media type for MTProto streaming");
+    }
+
+    // Auto-backfill to SQLite and Supabase if file was previously unhashed
+    if (foundHash) {
+      (async () => {
+        try {
+          const { getSqliteDb, getSupabaseClient } = await import("./db.js");
+          const sqlite = await getSqliteDb();
+          await sqlite.run(
+            "UPDATE files SET telegram_access_hash = ?, telegram_file_reference = ?, size = CASE WHEN size = 0 THEN ? ELSE size END WHERE telegram_message_id = ? AND (telegram_channel_id = ? OR telegram_channel_id LIKE ?)",
+            [foundHash, foundRef, totalSize, messageId.toString(), channelId.toString(), `%${channelId.toString().replace(/^-100/, "").replace(/^-/, "")}%`]
+          );
+          const supabase = await getSupabaseClient();
+          if (supabase) {
+            await supabase
+              .from("files")
+              .update({ telegram_access_hash: foundHash, telegram_file_reference: foundRef })
+              .eq("telegram_message_id", messageId.toString());
+          }
+        } catch {}
+      })();
     }
 
     mediaCache = { totalSize, location, dcId };
@@ -1184,5 +1212,83 @@ export async function streamGramMedia(
       if (!res.headersSent) res.status(500).send("Error downloading file");
       else if (!res.writableEnded && !res.destroyed) res.end();
     }
+  }
+}
+
+// Automatic background repair to populate missing Telegram access hashes in SQLite & Supabase
+export async function autoHealTelegramImportReferences() {
+  try {
+    const { getSqliteDb, getSupabaseClient } = await import("./db.js");
+    const sqlite = await getSqliteDb();
+    let client = (await getUserGramClient()) || (await getStorageGramClient());
+    if (!client) client = await getGramClient();
+    if (!client) return;
+
+    const unlinkedFiles = await sqlite.all(
+      "SELECT id, telegram_channel_id, telegram_message_id, telegram_post_url FROM files WHERE source_type = 'telegram_post' AND (telegram_access_hash IS NULL OR telegram_file_reference IS NULL) LIMIT 50"
+    );
+
+    if (!unlinkedFiles || unlinkedFiles.length === 0) return;
+    console.log(`🔧 Auto-healing ${unlinkedFiles.length} unhashed Telegram import reference(s)...`);
+
+    try {
+      await client.getDialogs({ limit: 100 });
+    } catch {}
+
+    for (const f of unlinkedFiles) {
+      try {
+        if (!f.telegram_channel_id || !f.telegram_message_id) continue;
+        const msgId = parseInt(f.telegram_message_id, 10);
+        let msg = null;
+
+        try {
+          const messages = await client.getMessages(f.telegram_channel_id, { ids: [msgId] });
+          if (messages && messages[0] && messages[0].media) msg = messages[0];
+        } catch {}
+
+        if (!msg) {
+          try {
+            const rawNum = f.telegram_channel_id.replace(/^-100/, "").replace(/^-/, "");
+            const targetPeer = await client.getInputEntity(bigInt(rawNum));
+            const messages = await client.getMessages(targetPeer, { ids: [msgId] });
+            if (messages && messages[0] && messages[0].media) msg = messages[0];
+          } catch {}
+        }
+
+        if (msg && msg.media) {
+          let foundHash = null;
+          let foundRef = null;
+          let fileSize = 0;
+
+          if (msg.media.document) {
+            foundHash = msg.media.document.accessHash ? msg.media.document.accessHash.toString() : null;
+            foundRef = msg.media.document.fileReference ? Buffer.from(msg.media.document.fileReference).toString("base64") : null;
+            fileSize = Number(msg.media.document.size || 0);
+          } else if (msg.media.photo) {
+            foundHash = msg.media.photo.accessHash ? msg.media.photo.accessHash.toString() : null;
+            foundRef = msg.media.photo.fileReference ? Buffer.from(msg.media.photo.fileReference).toString("base64") : null;
+          }
+
+          if (foundHash) {
+            await sqlite.run(
+              "UPDATE files SET telegram_access_hash = ?, telegram_file_reference = ?, size = CASE WHEN size = 0 THEN ? ELSE size END WHERE id = ?",
+              [foundHash, foundRef, fileSize, f.id]
+            );
+            const supabase = await getSupabaseClient();
+            if (supabase) {
+              await supabase
+                .from("files")
+                .update({ telegram_access_hash: foundHash, telegram_file_reference: foundRef })
+                .eq("id", f.id);
+            }
+          }
+        }
+      } catch (itemErr) {
+        console.warn(`Could not auto-heal file ${f.id}:`, itemErr.message);
+      }
+    }
+    console.log("✅ Auto-healing Telegram import references complete.");
+  } catch (err) {
+    console.warn("Auto-heal process notice:", err.message);
   }
 }
