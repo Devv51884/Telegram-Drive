@@ -664,8 +664,45 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
   let peer = parsed.channelId;
   const messageId = parsed.messageId;
 
+  // Resolve target peer entity with automatic cache warmup for private channels/groups
+  let targetPeer = peer;
   try {
-    const messages = await client.getMessages(peer, { ids: [messageId] });
+    targetPeer = await client.getInputEntity(peer);
+  } catch (err1) {
+    // If not found in cache, fetch recent dialogs to populate GramJS entity cache
+    try {
+      await client.getDialogs({ limit: 100 });
+      targetPeer = await client.getInputEntity(peer);
+    } catch (err2) {
+      const rawNum = parsed.rawChannelId || parsed.channelId.replace("-100", "");
+      try {
+        targetPeer = await client.getInputEntity(bigInt(rawNum));
+      } catch (err3) {
+        try {
+          targetPeer = await client.getInputEntity(bigInt(`-100${rawNum}`));
+        } catch (err4) {
+          try {
+            const dialogs = await client.getDialogs({ limit: 200 });
+            const found = dialogs.find((d) => {
+              const idStr = d.id?.toString() || "";
+              return (
+                idStr === rawNum ||
+                idStr === `-100${rawNum}` ||
+                idStr === `100${rawNum}` ||
+                d.entity?.username === parsed.channelUsername
+              );
+            });
+            if (found && found.inputEntity) {
+              targetPeer = found.inputEntity;
+            }
+          } catch {}
+        }
+      }
+    }
+  }
+
+  try {
+    const messages = await client.getMessages(targetPeer, { ids: [messageId] });
     if (!messages || messages.length === 0 || !messages[0]) {
       throw new Error(`Message #${messageId} not found in this channel.`);
     }

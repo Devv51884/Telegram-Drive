@@ -343,7 +343,7 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
       });
     }
 
-    const mediaInfo = await parseAndFetchTelegramPost(postUrl);
+    const mediaInfo = await parseAndFetchTelegramPost(postUrl, req.userId || null);
     const fileName = customName ? sanitizeFileName(customName) : sanitizeFileName(mediaInfo.fileName);
     const targetFolder = folderId === "root" || !folderId ? null : folderId;
 
