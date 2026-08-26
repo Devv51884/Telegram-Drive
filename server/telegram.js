@@ -264,10 +264,10 @@ export async function uploadFileToTelegram(
   }
 
   // ==========================================
-  // Strategy 1: High-Speed Telegram Bot API Direct Upload (Files <= 50MB)
-  // Lightning fast (2-5s), 100% reliable, zero socket delays, direct to storage channel
+  // Strategy 1: High-Speed Telegram Bot API Direct Upload (Files <= 20MB)
+  // 100% reliable Bot CDN streaming limit is 20MB
   // ==========================================
-  if (config.botToken && config.chatId && fileSize <= 50 * 1024 * 1024) {
+  if (config.botToken && config.chatId && fileSize <= 20 * 1024 * 1024) {
     try {
       const formData = new FormData();
       formData.append("chat_id", config.chatId);
@@ -1480,27 +1480,30 @@ export async function autoHealTelegramImportReferences() {
         if (msg && msg.media) {
           let foundHash = null;
           let foundRef = null;
+          let foundDocId = null;
           let fileSize = 0;
 
           if (msg.media.document) {
             foundHash = msg.media.document.accessHash ? msg.media.document.accessHash.toString() : null;
             foundRef = msg.media.document.fileReference ? Buffer.from(msg.media.document.fileReference).toString("base64") : null;
+            foundDocId = msg.media.document.id ? msg.media.document.id.toString() : null;
             fileSize = Number(msg.media.document.size || 0);
           } else if (msg.media.photo) {
             foundHash = msg.media.photo.accessHash ? msg.media.photo.accessHash.toString() : null;
             foundRef = msg.media.photo.fileReference ? Buffer.from(msg.media.photo.fileReference).toString("base64") : null;
+            foundDocId = msg.media.photo.id ? msg.media.photo.id.toString() : null;
           }
 
           if (foundHash) {
             await sqlite.run(
-              "UPDATE files SET telegram_access_hash = ?, telegram_file_reference = ?, size = CASE WHEN size = 0 THEN ? ELSE size END WHERE id = ?",
-              [foundHash, foundRef, fileSize, f.id]
+              "UPDATE files SET telegram_file_id = CASE WHEN telegram_file_id IS NULL THEN ? ELSE telegram_file_id END, telegram_access_hash = ?, telegram_file_reference = ?, size = CASE WHEN size = 0 THEN ? ELSE size END WHERE id = ?",
+              [foundDocId, foundHash, foundRef, fileSize, f.id]
             );
             const supabase = await getSupabaseClient();
             if (supabase) {
               await supabase
                 .from("files")
-                .update({ telegram_access_hash: foundHash, telegram_file_reference: foundRef })
+                .update({ telegram_file_id: foundDocId, telegram_access_hash: foundHash, telegram_file_reference: foundRef })
                 .eq("id", f.id);
             }
           }
