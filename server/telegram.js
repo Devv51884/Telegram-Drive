@@ -76,7 +76,7 @@ export async function getStorageGramClient() {
     try {
       const botSession = new StringSession(activeBotSessionString || "");
       const botClient = new TelegramClient(botSession, config.apiId, config.apiHash, {
-        connectionRetries: 5,
+        connectionRetries: 3,
         useWSS: false
       });
 
@@ -90,6 +90,25 @@ export async function getStorageGramClient() {
       console.log("🤖 MTProto Storage Bot Client active for high-speed channel streaming/downloads.");
       return activeBotGramClient;
     } catch (botGramErr) {
+      if (
+        botGramErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+        botGramErr.code === 401 ||
+        botGramErr.message?.includes("AUTH_KEY_UNREGISTERED")
+      ) {
+        activeBotSessionString = "";
+        try {
+          const freshSession = new StringSession("");
+          const freshClient = new TelegramClient(freshSession, config.apiId, config.apiHash, {
+            connectionRetries: 3,
+            useWSS: false
+          });
+          await freshClient.start({ botAuthToken: config.botToken });
+          activeBotSessionString = freshClient.session.save();
+          activeBotGramClient = freshClient;
+          activeBotToken = config.botToken;
+          return activeBotGramClient;
+        } catch {}
+      }
       console.error("Failed to initialize MTProto Storage Bot Client:", botGramErr.message);
     }
   }
@@ -136,16 +155,45 @@ export async function getUserGramClient(userId = null) {
   try {
     const session = new StringSession(sessionStr);
     const client = new TelegramClient(session, config.apiId, config.apiHash, {
-      connectionRetries: 5,
+      connectionRetries: 3,
       useWSS: false
     });
 
     await client.connect();
+
+    // Verify session authorization
+    try {
+      const isAuth = await client.checkAuthorization();
+      if (!isAuth) {
+        await dbDeactivateTelegramSessions(userId);
+        return null;
+      }
+    } catch (authCheckErr) {
+      if (
+        authCheckErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+        authCheckErr.code === 401 ||
+        authCheckErr.message?.includes("AUTH_KEY_UNREGISTERED")
+      ) {
+        console.warn(`Telegram session expired for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
+        await dbDeactivateTelegramSessions(userId);
+        return null;
+      }
+    }
+
     userGramClients.set(key, client);
     userSessionStrings.set(key, sessionStr);
     return client;
   } catch (userGramErr) {
-    console.warn(`User MTProto session connect error (user: ${key}):`, userGramErr.message);
+    if (
+      userGramErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+      userGramErr.code === 401 ||
+      userGramErr.message?.includes("AUTH_KEY_UNREGISTERED")
+    ) {
+      console.warn(`Telegram session expired for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
+      await dbDeactivateTelegramSessions(userId);
+    } else {
+      console.warn(`User MTProto session connect error (user: ${key}):`, userGramErr.message);
+    }
     return null;
   }
 }
@@ -1279,6 +1327,22 @@ export async function autoHealTelegramImportReferences() {
     if (!client) client = await getGramClient();
     if (!client) return;
 
+    try {
+      const isAuth = await client.checkAuthorization();
+      if (!isAuth) {
+        return;
+      }
+    } catch (authErr) {
+      if (
+        authErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+        authErr.code === 401 ||
+        authErr.message?.includes("AUTH_KEY_UNREGISTERED")
+      ) {
+        await dbDeactivateTelegramSessions(null);
+      }
+      return;
+    }
+
     const unlinkedFiles = await sqlite.all(
       "SELECT id, telegram_channel_id, telegram_message_id, telegram_post_url FROM files WHERE source_type = 'telegram_post' AND (telegram_access_hash IS NULL OR telegram_file_reference IS NULL) LIMIT 50"
     );
@@ -1288,7 +1352,16 @@ export async function autoHealTelegramImportReferences() {
 
     try {
       await client.getDialogs({ limit: 100 });
-    } catch {}
+    } catch (dlgErr) {
+      if (
+        dlgErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+        dlgErr.code === 401 ||
+        dlgErr.message?.includes("AUTH_KEY_UNREGISTERED")
+      ) {
+        await dbDeactivateTelegramSessions(null);
+        return;
+      }
+    }
 
     for (const f of unlinkedFiles) {
       try {
@@ -1299,7 +1372,16 @@ export async function autoHealTelegramImportReferences() {
         try {
           const messages = await client.getMessages(f.telegram_channel_id, { ids: [msgId] });
           if (messages && messages[0] && messages[0].media) msg = messages[0];
-        } catch {}
+        } catch (mErr1) {
+          if (
+            mErr1.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+            mErr1.code === 401 ||
+            mErr1.message?.includes("AUTH_KEY_UNREGISTERED")
+          ) {
+            await dbDeactivateTelegramSessions(null);
+            return;
+          }
+        }
 
         if (!msg) {
           try {
@@ -1307,7 +1389,16 @@ export async function autoHealTelegramImportReferences() {
             const targetPeer = await client.getInputEntity(bigInt(rawNum));
             const messages = await client.getMessages(targetPeer, { ids: [msgId] });
             if (messages && messages[0] && messages[0].media) msg = messages[0];
-          } catch {}
+          } catch (mErr2) {
+            if (
+              mErr2.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+              mErr2.code === 401 ||
+              mErr2.message?.includes("AUTH_KEY_UNREGISTERED")
+            ) {
+              await dbDeactivateTelegramSessions(null);
+              return;
+            }
+          }
         }
 
         if (msg && msg.media) {
@@ -1339,11 +1430,27 @@ export async function autoHealTelegramImportReferences() {
           }
         }
       } catch (itemErr) {
+        if (
+          itemErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+          itemErr.code === 401 ||
+          itemErr.message?.includes("AUTH_KEY_UNREGISTERED")
+        ) {
+          await dbDeactivateTelegramSessions(null);
+          return;
+        }
         console.warn(`Could not auto-heal file ${f.id}:`, itemErr.message);
       }
     }
     console.log("✅ Auto-healing Telegram import references complete.");
   } catch (err) {
-    console.warn("Auto-heal process notice:", err.message);
+    if (
+      err.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+      err.code === 401 ||
+      err.message?.includes("AUTH_KEY_UNREGISTERED")
+    ) {
+      await dbDeactivateTelegramSessions(null);
+    } else {
+      console.warn("Auto-heal process notice:", err.message);
+    }
   }
 }
