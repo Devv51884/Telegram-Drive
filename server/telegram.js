@@ -1037,44 +1037,8 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const TG_CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk size)
-  const ALIGNMENT = 4096; // 4KB alignment for MTProto upload.GetFile
-
-  let sender = null;
-  try {
-    sender = await client.getSender(dcId || client.session.dcId);
-  } catch {
-    try {
-      sender = await client.getSender(client.session.dcId);
-    } catch {}
-  }
-
-  async function fetchFileChunk(currOffset, currLimit) {
-    const reqObj = new Api.upload.GetFile({
-      location,
-      offset: bigInt(currOffset),
-      limit: Math.max(ALIGNMENT, Math.min(currLimit, TG_CHUNK_SIZE)),
-      precise: true
-    });
-
-    try {
-      if (sender) {
-        return await client.invokeWithSender(reqObj, sender);
-      }
-      return await client.invoke(reqObj);
-    } catch (err) {
-      if (err.newDc) {
-        sender = await client.getSender(err.newDc);
-        return await client.invokeWithSender(reqObj, sender);
-      }
-      if (err.errorMessage === "TIMEOUT") {
-        await new Promise((r) => setTimeout(r, 400));
-        if (sender) return await client.invokeWithSender(reqObj, sender);
-        return await client.invoke(reqObj);
-      }
-      throw err;
-    }
-  }
+  const CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk size)
+  const ALIGNMENT = 4096; // 4KB alignment for MTProto
 
   if (rangeHeader && totalSize > 0) {
     // Parse Range: bytes=start-end
@@ -1088,8 +1052,8 @@ export async function streamGramMedia(
       return res.end();
     }
 
-    // For open-ended range requests (e.g. bytes=0-), cap at 2MB per burst for fast playback start & seeking
-    const STREAM_BURST = isDownload ? totalSize : 2 * 1024 * 1024;
+    // For open-ended range requests (e.g. bytes=0-), cap at 4MB per burst for fast playback start & seeking
+    const STREAM_BURST = isDownload ? totalSize : 4 * 1024 * 1024;
     const rawEnd = parts[1] && parts[1].trim() !== "" ? parseInt(parts[1], 10) : start + STREAM_BURST - 1;
     const end = Math.min(rawEnd, totalSize - 1);
     const requestedLength = Math.max(0, end - start + 1);
@@ -1113,38 +1077,42 @@ export async function streamGramMedia(
     try {
       const alignedStart = Math.floor(start / ALIGNMENT) * ALIGNMENT;
       const skipBytes = start - alignedStart;
-      let currentOffset = alignedStart;
+      const totalFetchLength = requestedLength + skipBytes;
+      const chunkCountLimit = Math.ceil(totalFetchLength / CHUNK_SIZE) + 4;
+
+      const iter = client.iterDownload({
+        file: location,
+        offset: bigInt(alignedStart),
+        limit: chunkCountLimit,
+        requestSize: CHUNK_SIZE,
+        chunkSize: CHUNK_SIZE,
+        dcId: dcId
+      });
+
       let bytesSent = 0;
+      let bufferOffset = 0;
 
-      while (bytesSent < requestedLength) {
+      for await (const chunk of iter) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
+        if (!chunk || chunk.length === 0) continue;
 
-        const remainingRequested = requestedLength - bytesSent;
-        const remainingAligned = remainingRequested + (bytesSent === 0 ? skipBytes : 0);
-        const fetchSize = Math.min(TG_CHUNK_SIZE, Math.ceil(remainingAligned / ALIGNMENT) * ALIGNMENT);
+        const chunkStart = bufferOffset;
+        const chunkEnd = bufferOffset + chunk.length - 1;
+        bufferOffset += chunk.length;
 
-        const result = await fetchFileChunk(currentOffset, fetchSize);
-        if (!result || !result.bytes || result.bytes.length === 0) {
-          break;
-        }
+        if (chunkEnd < skipBytes) continue;
 
-        const chunk = result.bytes;
-        currentOffset += chunk.length;
+        const sliceStart = Math.max(0, skipBytes - chunkStart);
+        const remainingNeeded = requestedLength - bytesSent;
+        if (remainingNeeded <= 0) break;
 
-        const isFirstChunk = (currentOffset - chunk.length) === alignedStart;
-        const chunkSkip = isFirstChunk ? skipBytes : 0;
-        const chunkAvailable = chunk.length - chunkSkip;
-        const toSend = Math.min(chunkAvailable, requestedLength - bytesSent);
+        const sliceEnd = Math.min(chunk.length, sliceStart + remainingNeeded);
+        const slice = chunk.subarray(sliceStart, sliceEnd);
 
-        if (toSend > 0) {
-          const slice = chunk.subarray(chunkSkip, chunkSkip + toSend);
-          res.write(slice);
-          bytesSent += slice.length;
-        }
+        res.write(slice);
+        bytesSent += slice.length;
 
-        if (chunk.length < Math.max(ALIGNMENT, Math.min(fetchSize, TG_CHUNK_SIZE))) {
-          break; // Reached end of file
-        }
+        if (bytesSent >= requestedLength) break;
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1181,22 +1149,18 @@ export async function streamGramMedia(
     }
 
     try {
-      let currentOffset = 0;
-      let totalSent = 0;
+      const iter = client.iterDownload({
+        file: location,
+        requestSize: CHUNK_SIZE,
+        chunkSize: CHUNK_SIZE,
+        dcId: dcId
+      });
 
-      while (totalSize === 0 || totalSent < totalSize) {
+      for await (const chunk of iter) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
-
-        const result = await fetchFileChunk(currentOffset, TG_CHUNK_SIZE);
-        if (!result || !result.bytes || result.bytes.length === 0) break;
-
-        const chunk = result.bytes;
-        currentOffset += chunk.length;
-        totalSent += chunk.length;
-
-        res.write(chunk);
-
-        if (chunk.length < TG_CHUNK_SIZE) break;
+        if (chunk && chunk.length > 0) {
+          res.write(chunk);
+        }
       }
 
       if (!res.writableEnded && !res.destroyed) {

@@ -547,57 +547,23 @@ router.get("/:id/stream", async (req, res) => {
     const range = req.headers.range;
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const fileSize = Number(file.size) || 0;
-    const isUploaded = file.source_type === "upload" || !file.source_type;
-
     // ============================================================
-    // UPLOADED FILES: Use Bot API CDN streaming (Bot uploaded it,
-    // so Bot has access. User account does NOT have access to the
-    // private storage channel.)
+    // Strategy 1: Bot API CDN Stream (Fastest for files under 20MB / Bot uploads)
     // ============================================================
-    if (isUploaded) {
-      // Strategy A: Fresh Bot CDN URL stream (works for any size bot-uploaded file)
-      // We always call getTelegramFileStreamUrl fresh to avoid stale/expired file_id URLs.
-      if (file.telegram_file_id) {
-        try {
-          await streamTelegramBotFile(file, range, req, res);
-          return;
-        } catch (botErr) {
-          console.warn("Bot CDN stream failed for uploaded file, trying MTProto:", botErr.message);
-        }
+    if (file.telegram_file_id) {
+      try {
+        await streamTelegramBotFile(file, range, req, res);
+        return;
+      } catch (botErr) {
+        console.warn("Bot CDN stream attempt failed, trying MTProto:", botErr.message);
       }
-
-      // Strategy B: MTProto stream for large files > 50MB uploaded via GramJS
-      // Pass stored fileReference + accessHash from DB so we can bypass getMessages when cache is cold.
-      // Tries Bot MTProto first, then falls back to user account inside streamGramMedia.
-      if (targetChannelId && file.telegram_message_id) {
-        try {
-          await streamGramMedia(
-            targetChannelId,
-            file.telegram_message_id,
-            range,
-            req,
-            res,
-            file.mime_type,
-            file.name,
-            false,  // isDownload
-            true,   // useStorageBot = true: try Bot MTProto first
-            file.telegram_file_reference || null,  // stored base64 fileReference from DB
-            file.telegram_access_hash || null       // stored accessHash from DB
-          );
-          return;
-        } catch (mtprotoErr) {
-          console.warn("MTProto stream failed for uploaded file:", mtprotoErr.message);
-        }
-      }
-
-      return res.status(500).send("Could not stream uploaded file. Please try downloading instead.");
     }
 
     // ============================================================
-    // IMPORTED TELEGRAM POSTS: Use MTProto (user account has access
-    // since they subscribed to that channel when importing)
+    // Strategy 2: GramJS MTProto Multi-DC Stream (for files > 20MB and Channel Imports)
     // ============================================================
-    if (targetChannelId && file.telegram_message_id) {
+    const isUploaded = file.source_type === "upload" || !file.source_type;
+    const preferBotFirst = isUploaded;
       try {
         await streamGramMedia(
           targetChannelId,
@@ -608,13 +574,13 @@ router.get("/:id/stream", async (req, res) => {
           file.mime_type,
           file.name,
           false,
-          false, // useStorageBot = false: try user account first
+          preferBotFirst,
           file.telegram_file_reference || null,
           file.telegram_access_hash || null
         );
         return;
-      } catch (mtprotoErr) {
-        console.warn("MTProto streaming with user account failed, trying Storage Bot fallback:", mtprotoErr.message);
+      } catch (primaryErr) {
+        console.warn(`Primary MTProto streaming failed (preferBot=${preferBotFirst}), trying alternative client:`, primaryErr.message);
         try {
           await streamGramMedia(
             targetChannelId,
@@ -625,18 +591,20 @@ router.get("/:id/stream", async (req, res) => {
             file.mime_type,
             file.name,
             false,
-            true, // useStorageBot = true: try storage bot
+            !preferBotFirst,
             file.telegram_file_reference || null,
             file.telegram_access_hash || null
           );
           return;
-        } catch (botErr) {
-          console.warn("Bot fallback streaming also failed:", botErr.message);
+        } catch (secondaryErr) {
+          console.warn("Secondary MTProto fallback also failed:", secondaryErr.message);
         }
       }
     }
 
-    res.status(400).send("No valid Telegram streaming reference found for this file");
+    if (!res.headersSent) {
+      res.status(500).send("No valid Telegram stream source could be loaded for this file");
+    }
   } catch (err) {
     console.error("Stream error:", err.message);
     if (!res.headersSent) {
