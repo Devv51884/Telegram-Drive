@@ -12,7 +12,6 @@ export default function VideoThumbnail({ file, className = "" }) {
       onMouseEnter={() => setIsHovered(true)}
       className={`relative w-full h-full flex items-center justify-center overflow-hidden bg-slate-950 select-none group ${className}`}
     >
-      {/* 1. Static thumbnail if available from Telegram Bot / DB */}
       {file.thumbnail_url && !hasError ? (
         <img
           src={file.thumbnail_url}
@@ -21,18 +20,8 @@ export default function VideoThumbnail({ file, className = "" }) {
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           onError={() => setHasError(true)}
         />
-      ) : isHovered && !hasError ? (
-        /* 2. On-Demand Video Frame (#t=0.5) to avoid crashing server with 30 simultaneous stream requests */
-        <video
-          src={`${streamUrl}#t=0.5`}
-          preload="metadata"
-          muted
-          playsInline
-          className="w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover:scale-105"
-          onError={() => setHasError(true)}
-        />
       ) : (
-        /* 3. High-Performance Instant Video Card */
+        /* High-Performance Instant Video Card */
         <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-[#131b2e] to-[#0f172a] p-3 text-center overflow-hidden">
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-500/20 to-indigo-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shadow-lg shadow-rose-500/10 group-hover:scale-110 transition-transform">
             <Film className="w-5 h-5 text-rose-400" />
