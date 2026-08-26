@@ -258,7 +258,10 @@ export default function CustomVideoPlayer({
         onCanPlay={() => setIsLoading(false)}
         onError={() => {
           setIsLoading(false);
-          setHasError(true);
+          const errCode = videoRef.current?.error?.code;
+          if (errCode === 3 || errCode === 4) {
+            setHasError(true);
+          }
         }}
         className="w-full h-full max-h-[80vh] object-contain cursor-pointer"
       />

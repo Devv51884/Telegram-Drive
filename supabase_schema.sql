@@ -100,7 +100,14 @@ CREATE TABLE IF NOT EXISTS public.files (
 
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'upload';
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_file_id TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_message_id TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_channel_id TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_post_url TEXT;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_channel_title TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_access_hash TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_file_reference TEXT;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS is_trash INTEGER DEFAULT 0;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS share_access TEXT DEFAULT 'private';
