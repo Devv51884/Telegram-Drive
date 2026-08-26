@@ -639,7 +639,7 @@ export default function SettingsPage() {
                       </h4>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {settings?.telegramUser?.connected
-                          ? `Logged in as ${settings.telegramUser.phone || settings.telegramUser.username || "Telegram User"}`
+                          ? `Logged in as ${settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.phoneNumber || settings.telegramUser.phone || "Telegram User"}`
                           : "Connect your Telegram account to enable direct cloud uploads."}
                       </p>
                     </div>

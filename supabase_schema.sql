@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS public.folders (
     color TEXT DEFAULT '#4285f4',
     is_starred INTEGER DEFAULT 0,
     is_trash INTEGER DEFAULT 0,
+    share_access TEXT DEFAULT 'private',
+    share_token TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -67,6 +69,8 @@ CREATE TABLE IF NOT EXISTS public.folders (
 ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;
 ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS is_trash INTEGER DEFAULT 0;
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS share_access TEXT DEFAULT 'private';
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS share_token TEXT;
 
 -- 5. Create / Update Files Table
 CREATE TABLE IF NOT EXISTS public.files (
@@ -88,6 +92,8 @@ CREATE TABLE IF NOT EXISTS public.files (
     thumbnail_url TEXT,
     is_starred INTEGER DEFAULT 0,
     is_trash INTEGER DEFAULT 0,
+    share_access TEXT DEFAULT 'private',
+    share_token TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -97,15 +103,59 @@ ALTER TABLE public.files ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'uplo
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS telegram_channel_title TEXT;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS is_starred INTEGER DEFAULT 0;
 ALTER TABLE public.files ADD COLUMN IF NOT EXISTS is_trash INTEGER DEFAULT 0;
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS share_access TEXT DEFAULT 'private';
+ALTER TABLE public.files ADD COLUMN IF NOT EXISTS share_token TEXT;
 
--- 6. Enable Row Level Security (RLS)
+-- 6. Create / Update Item Permissions Table
+CREATE TABLE IF NOT EXISTS public.item_permissions (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    owner_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
+    shared_with_email TEXT NOT NULL,
+    permission TEXT DEFAULT 'viewer',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT unique_item_shared_user UNIQUE (item_id, item_type, shared_with_email)
+);
+
+-- 7. Create / Update Share Requests Table
+CREATE TABLE IF NOT EXISTS public.share_requests (
+    id TEXT PRIMARY KEY,
+    share_token TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    owner_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
+    requester_email TEXT NOT NULL,
+    requester_name TEXT,
+    message TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 8. Create / Update Email OTPs / Verification Tokens Table
+CREATE TABLE IF NOT EXISTS public.email_otps (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    otp TEXT NOT NULL,
+    type TEXT DEFAULT 'signup_link',
+    metadata TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 9. Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.folders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.item_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.share_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.email_otps ENABLE ROW LEVEL SECURITY;
 
--- 7. Drop and Recreate Open Access Policies for Backend Service/Anon Key
+-- 10. Drop and Recreate Open Access Policies for Backend Service/Anon Key
 DO $$
 BEGIN
     DROP POLICY IF EXISTS "Allow all operations on users" ON public.users;
@@ -113,6 +163,9 @@ BEGIN
     DROP POLICY IF EXISTS "Allow all operations on telegram_sessions" ON public.telegram_sessions;
     DROP POLICY IF EXISTS "Allow all operations on folders" ON public.folders;
     DROP POLICY IF EXISTS "Allow all operations on files" ON public.files;
+    DROP POLICY IF EXISTS "Allow all operations on item_permissions" ON public.item_permissions;
+    DROP POLICY IF EXISTS "Allow all operations on share_requests" ON public.share_requests;
+    DROP POLICY IF EXISTS "Allow all operations on email_otps" ON public.email_otps;
 END
 $$;
 
@@ -121,3 +174,6 @@ CREATE POLICY "Allow all operations on settings" ON public.settings FOR ALL USIN
 CREATE POLICY "Allow all operations on telegram_sessions" ON public.telegram_sessions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on folders" ON public.folders FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on files" ON public.files FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on item_permissions" ON public.item_permissions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on share_requests" ON public.share_requests FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on email_otps" ON public.email_otps FOR ALL USING (true) WITH CHECK (true);

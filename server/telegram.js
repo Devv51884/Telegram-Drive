@@ -577,20 +577,24 @@ export async function getConnectedTelegramUser(userId = null) {
     } catch {}
   }
 
-  const firstName = parsedInfo.firstName || sessionRow.first_name || "Telegram User";
-  const lastName = parsedInfo.lastName || sessionRow.last_name || "";
-  const username = parsedInfo.username || sessionRow.username || "";
-  const phone = sessionRow.phone_number || parsedInfo.phoneNumber || "";
+  const firstName = parsedInfo.firstName || parsedInfo.first_name || sessionRow.first_name || "Telegram User";
+  const lastName = parsedInfo.lastName || parsedInfo.last_name || sessionRow.last_name || "";
+  const rawUsername = parsedInfo.username || sessionRow.username || "";
+  const username = rawUsername ? (rawUsername.startsWith("@") ? rawUsername : `@${rawUsername}`) : "";
+  const phone = sessionRow.phone_number || parsedInfo.phoneNumber || parsedInfo.phone || "";
   const telegramId = parsedInfo.id || sessionRow.id || "";
 
   return {
     connected: true,
     phoneNumber: phone,
+    username: username || (phone ? `+${phone.replace(/\D/g, "")}` : firstName),
+    firstName,
+    lastName,
     info: {
       id: telegramId,
       firstName,
       lastName,
-      username
+      username: username || rawUsername || firstName
     }
   };
 }
@@ -804,10 +808,14 @@ export async function streamGramMedia(
   storedFileRef = null,    // base64 fileReference from DB (for uploaded files)
   storedAccessHash = null  // accessHash string from DB (for uploaded files)
 ) {
-  // Use Storage Bot client for platform uploaded files; fall back to User account if needed
+  // Use User account client for imported posts; Use Storage Bot for platform uploads; fallback seamlessly
   let client = null;
-  if (useStorageBot) {
+  if (!useStorageBot) {
+    client = await getUserGramClient();
+    if (!client) client = await getStorageGramClient();
+  } else {
     client = await getStorageGramClient();
+    if (!client) client = await getUserGramClient();
   }
   if (!client) {
     client = await getGramClient();
@@ -823,20 +831,6 @@ export async function streamGramMedia(
     const msgId = parseInt(messageId, 10);
     let msg = null;
 
-    // 0. FAST PATH: If we have stored fileReference + accessHash + fileUniqueId from DB,
-    //    build the document location directly without any getMessages network call.
-    //    This is critical for large uploaded files after server restarts (cache expired).
-    if (storedFileRef && storedAccessHash) {
-      try {
-        const fileRefBuffer = Buffer.from(storedFileRef, "base64");
-        const accessHashBig = bigInt(storedAccessHash);
-        // We need document id — use fileUniqueId or fall through to getMessages
-        // fileUniqueId is stored separately; if it exists as a numeric string use it
-        // Otherwise we still fall through to getMessages below
-        console.log("[Stream] Using stored fileReference for direct location build");
-      } catch {}
-    }
-
     // 1. Try direct getMessages
     try {
       const messages = await client.getMessages(channelId, { ids: [msgId] });
@@ -850,18 +844,9 @@ export async function streamGramMedia(
       try {
         const entity = await client.getEntity(channelId);
         if (entity) {
-          const inputChannel = new Api.InputChannel({
-            channelId: entity.id,
-            accessHash: entity.accessHash
-          });
-          const res = await client.invoke(
-            new Api.channels.GetMessages({
-              channel: inputChannel,
-              id: [new Api.InputMessageID({ id: msgId })]
-            })
-          );
-          if (res && res.messages?.length > 0 && res.messages[0]?.media) {
-            msg = res.messages[0];
+          const messages = await client.getMessages(entity, { ids: [msgId] });
+          if (messages && messages[0] && messages[0].media) {
+            msg = messages[0];
           }
         }
       } catch (e2) {}
@@ -880,15 +865,27 @@ export async function streamGramMedia(
       } catch (e3) {}
     }
 
-    // 4. If useStorageBot failed, retry with user account as final fallback
+    // 4. Try alternate client fallback (User <-> Storage Bot)
     if (!msg || !msg.media) {
       try {
-        const userClient = await getGramClient();
-        if (userClient && userClient !== client) {
-          const messages = await userClient.getMessages(channelId, { ids: [msgId] });
-          if (messages && messages[0] && messages[0].media) {
-            msg = messages[0];
-            client = userClient; // switch to user client for streaming too
+        const altClient = await getGramClient(null, !useStorageBot);
+        if (altClient && altClient !== client) {
+          try {
+            const messages = await altClient.getMessages(channelId, { ids: [msgId] });
+            if (messages && messages[0] && messages[0].media) {
+              msg = messages[0];
+              client = altClient;
+            }
+          } catch {}
+          if (!msg || !msg.media) {
+            const entity = await altClient.getEntity(channelId);
+            if (entity) {
+              const messages = await altClient.getMessages(entity, { ids: [msgId] });
+              if (messages && messages[0] && messages[0].media) {
+                msg = messages[0];
+                client = altClient;
+              }
+            }
           }
         }
       } catch (e4) {}
@@ -971,7 +968,7 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const CHUNK_SIZE = 1024 * 1024; // 1MB per request chunk for ultra-fast 4K video buffering
+  const CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk size)
   const ALIGNMENT = 4096; // 4KB
 
   if (rangeHeader && totalSize > 0) {
@@ -1011,13 +1008,14 @@ export async function streamGramMedia(
       const skipBytes = start - alignedStart;
       const totalFetchLength = requestedLength + skipBytes;
       // In GramJS iterDownload, limit is the number of chunk request iterations!
-      const chunkCountLimit = Math.ceil(totalFetchLength / CHUNK_SIZE) + 1;
+      const chunkCountLimit = Math.ceil(totalFetchLength / CHUNK_SIZE) + 4;
 
       const iter = client.iterDownload({
         file: location,
         offset: bigInt(alignedStart),
         limit: chunkCountLimit,
         requestSize: CHUNK_SIZE,
+        chunkSize: CHUNK_SIZE,
         dcId: dcId
       });
 

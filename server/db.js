@@ -296,14 +296,16 @@ export async function syncFromSupabase() {
     if (!folderErr && folders && folders.length > 0) {
       for (const f of folders) {
         await sqlite.run(
-          `INSERT INTO folders (id, user_id, name, color, parent_id, is_starred, is_trash, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO folders (id, user_id, name, color, parent_id, is_starred, is_trash, share_access, share_token, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             color = excluded.color,
             parent_id = excluded.parent_id,
             is_starred = excluded.is_starred,
-            is_trash = excluded.is_trash`,
+            is_trash = excluded.is_trash,
+            share_access = excluded.share_access,
+            share_token = excluded.share_token`,
           [
             f.id,
             f.user_id || null,
@@ -312,6 +314,8 @@ export async function syncFromSupabase() {
             f.parent_id,
             f.is_starred || 0,
             f.is_trash || 0,
+            f.share_access || "private",
+            f.share_token || null,
             f.created_at || new Date().toISOString(),
             f.updated_at || new Date().toISOString()
           ]
@@ -328,8 +332,8 @@ export async function syncFromSupabase() {
             id, user_id, name, folder_id, size, mime_type, type, source_type,
             telegram_file_id, telegram_message_id, telegram_channel_id,
             telegram_post_url, telegram_channel_title, telegram_access_hash,
-            telegram_file_reference, thumbnail_url, is_starred, is_trash, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            telegram_file_reference, thumbnail_url, is_starred, is_trash, share_access, share_token, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             folder_id = excluded.folder_id,
@@ -343,7 +347,9 @@ export async function syncFromSupabase() {
             telegram_post_url = excluded.telegram_post_url,
             telegram_channel_title = excluded.telegram_channel_title,
             is_starred = excluded.is_starred,
-            is_trash = excluded.is_trash`,
+            is_trash = excluded.is_trash,
+            share_access = excluded.share_access,
+            share_token = excluded.share_token`,
           [
             file.id,
             file.user_id || null,
@@ -363,6 +369,8 @@ export async function syncFromSupabase() {
             file.thumbnail_url || null,
             file.is_starred || 0,
             file.is_trash || 0,
+            file.share_access || "private",
+            file.share_token || null,
             file.created_at || new Date().toISOString(),
             file.updated_at || new Date().toISOString()
           ]
@@ -406,6 +414,51 @@ export async function syncFromSupabase() {
         ]
       );
     }
+
+    // 6. Sync Item Permissions
+    try {
+      const { data: perms } = await supabase.from("item_permissions").select("*");
+      if (perms && perms.length > 0) {
+        for (const p of perms) {
+          await sqlite.run(
+            `INSERT INTO item_permissions (id, item_id, item_type, owner_id, shared_with_email, permission, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(item_id, item_type, shared_with_email) DO UPDATE SET permission = excluded.permission`,
+            [p.id, p.item_id, p.item_type, p.owner_id, p.shared_with_email?.toLowerCase(), p.permission, p.created_at || new Date().toISOString()]
+          );
+        }
+      }
+    } catch {}
+
+    // 7. Sync Share Requests
+    try {
+      const { data: shareReqs } = await supabase.from("share_requests").select("*");
+      if (shareReqs && shareReqs.length > 0) {
+        for (const r of shareReqs) {
+          await sqlite.run(
+            `INSERT INTO share_requests (id, share_token, item_id, item_type, owner_id, requester_email, requester_name, message, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET status = excluded.status, message = excluded.message, updated_at = excluded.updated_at`,
+            [r.id, r.share_token, r.item_id, r.item_type, r.owner_id, r.requester_email?.toLowerCase(), r.requester_name, r.message, r.status, r.created_at || new Date().toISOString(), r.updated_at || new Date().toISOString()]
+          );
+        }
+      }
+    } catch {}
+
+    // 8. Sync Email OTPs / Verification Tokens
+    try {
+      const { data: otps } = await supabase.from("email_otps").select("*");
+      if (otps && otps.length > 0) {
+        for (const o of otps) {
+          await sqlite.run(
+            `INSERT INTO email_otps (id, email, otp, type, metadata, expires_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET expires_at = excluded.expires_at`,
+            [o.id, o.email?.toLowerCase(), o.otp, o.type, typeof o.metadata === "object" ? JSON.stringify(o.metadata) : o.metadata, o.expires_at, o.created_at || new Date().toISOString()]
+          );
+        }
+      }
+    } catch {}
   } catch (err) {
     console.error("❌ Supabase bootstrap sync error:", err.message);
   }
@@ -1346,6 +1399,24 @@ export async function dbAddUserPermission({ itemId, itemType, ownerId, sharedEma
     [id, itemId, itemType, ownerId || null, cleanEmail, permission]
   );
 
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("item_permissions").upsert({
+          id,
+          item_id: itemId,
+          item_type: itemType,
+          owner_id: ownerId || null,
+          shared_with_email: cleanEmail,
+          permission
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase permission upsert:", err.message);
+    }
+  })();
+
   return sqlite.get("SELECT * FROM item_permissions WHERE item_id = ? AND item_type = ? AND shared_with_email = ?", [
     itemId,
     itemType,
@@ -1360,6 +1431,23 @@ export async function dbRemoveUserPermission(itemId, itemType, sharedEmail) {
     "DELETE FROM item_permissions WHERE item_id = ? AND item_type = ? AND shared_with_email = ?",
     [itemId, itemType, cleanEmail]
   );
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase
+          .from("item_permissions")
+          .delete()
+          .eq("item_id", itemId)
+          .eq("item_type", itemType)
+          .eq("shared_with_email", cleanEmail);
+      }
+    } catch (err) {
+      console.warn("Supabase permission delete:", err.message);
+    }
+  })();
+
   return { success: true };
 }
 
@@ -1455,6 +1543,25 @@ export async function dbSaveVerificationToken(email, token, type = "signup_link"
     [id, cleanEmail, token.trim(), type, metaStr, expiresAt]
   );
 
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("email_otps").delete().eq("email", cleanEmail).eq("type", type);
+        await supabase.from("email_otps").insert({
+          id,
+          email: cleanEmail,
+          otp: token.trim(),
+          type,
+          metadata: metaStr,
+          expires_at: expiresAt
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase save verification token sync:", err.message);
+    }
+  })();
+
   return { id, email: cleanEmail, expiresAt, token: token.trim() };
 }
 
@@ -1463,19 +1570,44 @@ export async function dbVerifyToken(token, type = "signup_link") {
   const cleanToken = (token || "").trim();
   if (!cleanToken) return { valid: false };
 
-  const record = await sqlite.get(
+  let record = await sqlite.get(
     `SELECT * FROM email_otps 
      WHERE otp = ? AND type = ? AND expires_at > CURRENT_TIMESTAMP 
      ORDER BY created_at DESC LIMIT 1`,
     [cleanToken, type]
   );
 
+  if (!record) {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        const { data } = await supabase
+          .from("email_otps")
+          .select("*")
+          .eq("otp", cleanToken)
+          .eq("type", type)
+          .gt("expires_at", new Date().toISOString())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (data) {
+          record = data;
+          await sqlite.run(
+            "INSERT INTO email_otps (id, email, otp, type, metadata, expires_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
+            [data.id, data.email, data.otp, data.type, typeof data.metadata === "object" ? JSON.stringify(data.metadata) : data.metadata, data.expires_at]
+          );
+        }
+      }
+    } catch {}
+  }
+
   if (!record) return { valid: false };
 
   let metadata = null;
   if (record.metadata) {
     try {
-      metadata = JSON.parse(record.metadata);
+      metadata = typeof record.metadata === "object" ? record.metadata : JSON.parse(record.metadata);
     } catch {
       metadata = record.metadata;
     }
@@ -1492,6 +1624,16 @@ export async function dbConsumeVerificationToken(token, type = "signup_link") {
 
   // Delete consumed token
   await sqlite.run("DELETE FROM email_otps WHERE id = ?", [verification.record.id]);
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("email_otps").delete().eq("id", verification.record.id);
+      }
+    } catch {}
+  })();
+
   return verification;
 }
 
@@ -1515,6 +1657,19 @@ export async function dbCreateShareRequest({ shareToken, itemId, itemType, owner
       "UPDATE share_requests SET message = ?, requester_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [message || "", requesterName || "", existing.id]
     );
+
+    (async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          await supabase.from("share_requests").update({
+            message: message || "",
+            requester_name: requesterName || ""
+          }).eq("id", existing.id);
+        }
+      } catch {}
+    })();
+
     return { ...existing, message, requester_name: requesterName };
   }
 
@@ -1523,6 +1678,27 @@ export async function dbCreateShareRequest({ shareToken, itemId, itemType, owner
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
     [id, shareToken, itemId, itemType, ownerId || null, cleanEmail, requesterName || "", message || ""]
   );
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("share_requests").upsert({
+          id,
+          share_token: shareToken,
+          item_id: itemId,
+          item_type: itemType,
+          owner_id: ownerId || null,
+          requester_email: cleanEmail,
+          requester_name: requesterName || "",
+          message: message || "",
+          status: "pending"
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase share request insert:", err.message);
+    }
+  })();
 
   return sqlite.get("SELECT * FROM share_requests WHERE id = ?", [id]);
 }
@@ -1562,6 +1738,16 @@ export async function dbUpdateShareRequestStatus(id, status) {
     "UPDATE share_requests SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     [status, id]
   );
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("share_requests").update({ status }).eq("id", id);
+      }
+    } catch {}
+  })();
+
   return dbGetShareRequestById(id);
 }
 

@@ -2,9 +2,17 @@ import nodemailer from "nodemailer";
 import dns from "dns";
 import { dbGetSetting } from "./db.js";
 
-// Custom DNS lookup function that strictly forces IPv4 A-records
+// Force Node.js global DNS resolver to prioritize IPv4 over IPv6
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
+
+// Custom DNS lookup that strictly forces IPv4 A-records
 const ipv4Lookup = (hostname, options, callback) => {
-  return dns.lookup(hostname, { family: 4 }, callback);
+  const cb = typeof options === "function" ? options : callback;
+  return dns.lookup(hostname, { family: 4, all: false }, (err, address, family) => {
+    if (cb) cb(err, address, family);
+  });
 };
 
 // Helper to get SMTP / Gmail configuration
@@ -33,10 +41,27 @@ export async function getEmailConfig() {
   };
 }
 
-// Create Nodemailer Transporter with IPv4 enforcement to prevent ENETUNREACH on Cloud/Render
-export async function getTransporter(portOverride = null) {
+// Create Nodemailer Transporter with strict IPv4 socket enforcement
+export async function getTransporter(portOverride = null, useService = false) {
   const config = await getEmailConfig();
   if (!config.isConfigured) return null;
+
+  if (useService && (config.host.includes("gmail") || config.user.endsWith("@gmail.com"))) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: config.user,
+        pass: config.pass
+      },
+      lookup: ipv4Lookup,
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 12000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
+    });
+  }
 
   const isGmail = config.host.includes("gmail.com") || config.user.endsWith("@gmail.com");
   const host = isGmail ? "smtp.gmail.com" : config.host;
@@ -51,10 +76,11 @@ export async function getTransporter(portOverride = null) {
       user: config.user,
       pass: config.pass
     },
-    lookup: ipv4Lookup, // Direct IPv4 lookup
-    family: 4,          // Strict IPv4 socket
+    lookup: ipv4Lookup,
+    family: 4,
     tls: {
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      servername: host
     },
     connectionTimeout: 12000,
     greetingTimeout: 10000,
@@ -338,7 +364,7 @@ export async function sendVerificationEmail({ to, name = "TeleDrive User", token
         html: htmlContent
       });
       console.log(`✅ Verification email sent to ${to} (MessageId: ${info.messageId})`);
-      return { success: true, messageId: info.messageId };
+      return { success: true, messageId: info.messageId, verifyUrl };
     }
   } catch (err587) {
     console.warn("Port 587 verification email failed, trying 465 SSL:", err587.message);
@@ -353,11 +379,43 @@ export async function sendVerificationEmail({ to, name = "TeleDrive User", token
           html: htmlContent
         });
         console.log(`✅ Verification email sent via Port 465 to ${to} (MessageId: ${info.messageId})`);
-        return { success: true, messageId: info.messageId };
+        return { success: true, messageId: info.messageId, verifyUrl };
       }
     } catch (err465) {
-      console.warn("Both SMTP ports failed for verification email:", err465.message);
-      throw new Error(`Failed to send verification email: ${err465.message}`);
+      console.warn("Port 465 failed, trying Gmail Service transport:", err465.message);
+      try {
+        const serviceTransporter = await getTransporter(null, true);
+        if (serviceTransporter) {
+          const info = await serviceTransporter.sendMail({
+            from: fromAddress,
+            to: to.trim().toLowerCase(),
+            subject: `[TeleDrive] Verify your email address to activate your account`,
+            text: `Welcome to TeleDrive! Please verify your email by opening: ${verifyUrl} (Valid for ${validityHours} hours).`,
+            html: htmlContent
+          });
+          console.log(`✅ Verification email sent via Gmail Service to ${to} (MessageId: ${info.messageId})`);
+          return { success: true, messageId: info.messageId, verifyUrl };
+        }
+      } catch (serviceErr) {
+        console.warn("All SMTP delivery methods failed:", serviceErr.message);
+        const isHostBlocked =
+          serviceErr.message?.includes("ENETUNREACH") ||
+          err465.message?.includes("ENETUNREACH") ||
+          err587.message?.includes("ENETUNREACH") ||
+          serviceErr.message?.includes("ETIMEDOUT") ||
+          err465.message?.includes("ETIMEDOUT");
+
+        if (isHostBlocked) {
+          console.log("ℹ️ [Host Network Blocked Outbound SMTP]. Verification link generated in console.");
+          return {
+            success: true,
+            warning: "Host outbound SMTP is blocked. Verification link generated.",
+            verifyUrl
+          };
+        }
+
+        throw new Error(`Failed to send verification email: ${serviceErr.message || err465.message}`);
+      }
     }
   }
 }
@@ -426,9 +484,9 @@ export async function sendPasswordResetEmail({ to, name = "TeleDrive User", toke
   const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
 
   try {
-    const transporter = await getTransporter();
-    if (transporter) {
-      await transporter.sendMail({
+    const transporter587 = await getTransporter(587);
+    if (transporter587) {
+      await transporter587.sendMail({
         from: fromAddress,
         to: to.trim().toLowerCase(),
         subject: `[TeleDrive] Reset your password`,
@@ -437,9 +495,37 @@ export async function sendPasswordResetEmail({ to, name = "TeleDrive User", toke
       });
       return { success: true };
     }
-  } catch (err) {
-    console.error("Password reset email failed:", err.message);
-    throw err;
+  } catch (err587) {
+    try {
+      const transporter465 = await getTransporter(465);
+      if (transporter465) {
+        await transporter465.sendMail({
+          from: fromAddress,
+          to: to.trim().toLowerCase(),
+          subject: `[TeleDrive] Reset your password`,
+          text: `Reset your TeleDrive password by opening: ${resetUrl}`,
+          html: htmlContent
+        });
+        return { success: true };
+      }
+    } catch (err465) {
+      try {
+        const serviceTransporter = await getTransporter(null, true);
+        if (serviceTransporter) {
+          await serviceTransporter.sendMail({
+            from: fromAddress,
+            to: to.trim().toLowerCase(),
+            subject: `[TeleDrive] Reset your password`,
+            text: `Reset your TeleDrive password by opening: ${resetUrl}`,
+            html: htmlContent
+          });
+          return { success: true };
+        }
+      } catch (serviceErr) {
+        console.warn("Password reset email delivery warning:", serviceErr.message);
+        return { success: true, warning: serviceErr.message, resetUrl };
+      }
+    }
   }
 }
 

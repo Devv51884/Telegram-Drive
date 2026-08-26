@@ -110,7 +110,7 @@ export default function Header() {
       <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
         {/* Telegram Account Status Indicator */}
         <button
-          onClick={() => setActiveModal("settings")}
+          onClick={() => navigateToSection("settings")}
           className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] transition-colors border border-slate-200/60 dark:border-slate-700"
           title="Telegram Account"
         >
@@ -121,9 +121,9 @@ export default function Header() {
                 : "bg-blue-500"
             }`}
           />
-          <span className="text-slate-700 dark:text-slate-300 truncate max-w-[120px]">
+          <span className="text-slate-700 dark:text-slate-300 truncate max-w-[140px] font-semibold">
             {settings?.telegramUser?.connected
-              ? `@${settings.telegramUser.info?.username || settings.telegramUser.info?.firstName || "Connected"}`
+              ? (settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.info?.firstName || settings.telegramUser.phoneNumber || "Telegram User")
               : "Connect"}
           </span>
         </button>

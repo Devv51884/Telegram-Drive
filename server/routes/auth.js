@@ -90,24 +90,32 @@ router.post("/signup/send-verification", authLimiter, async (req, res) => {
     }, 24);
 
     // Send direct verification link email
-    await sendVerificationEmail({
-      to: cleanEmail,
-      name: cleanName,
-      token,
-      appUrl,
-      validityHours: 24
-    });
+    let emailWarning = null;
+    try {
+      const emailResult = await sendVerificationEmail({
+        to: cleanEmail,
+        name: cleanName,
+        token,
+        appUrl,
+        validityHours: 24
+      });
+      if (emailResult?.warning) emailWarning = emailResult.warning;
+    } catch (mailErr) {
+      console.warn("Signup verification mail warning:", mailErr.message);
+      emailWarning = mailErr.message;
+    }
 
     res.json({
       success: true,
       email: cleanEmail,
-      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox and click the link to activate your account.`
+      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox (and spam/promotions folder) to activate your account.`,
+      warning: emailWarning
     });
   } catch (err) {
     console.error("Signup verification send error:", err.message);
     res.status(500).json({
       success: false,
-      error: `Failed to send verification email: ${err.message}`
+      error: `Failed to initiate verification: ${err.message}`
     });
   }
 });

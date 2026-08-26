@@ -266,12 +266,12 @@ export default function Sidebar() {
               <div className="truncate">
                 <p className="font-semibold text-slate-700 dark:text-slate-300 truncate">
                   {settings?.telegramUser?.connected
-                    ? `${settings.telegramUser.info?.firstName || "Telegram User"}`
+                    ? (settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.info?.firstName || "Telegram User")
                     : "Connect Telegram"}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
                   {settings?.telegramUser?.connected
-                    ? `Phone: ${settings.telegramUser.phoneNumber}`
+                    ? (settings.telegramUser.phoneNumber ? `Phone: ${settings.telegramUser.phoneNumber}` : "Connected")
                     : "Click to connect account"}
                 </p>
               </div>
