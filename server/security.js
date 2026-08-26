@@ -231,9 +231,10 @@ export const authLimiter = rateLimit({
 
 export const uploadLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 50,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => (req.originalUrl || req.url || "").includes("/upload-chunk"),
   message: {
     success: false,
     error: "Upload rate limit exceeded. Please wait a few moments before uploading more files."
@@ -242,10 +243,13 @@ export const uploadLimiter = rateLimit({
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 2000,
+  max: 10000,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => (req.originalUrl || req.url || "").includes("/stream")
+  skip: (req) => {
+    const url = req.originalUrl || req.url || "";
+    return url.includes("/stream") || url.includes("/upload-chunk");
+  }
 });
 
 // 5. Input Sanitization & Security Helpers

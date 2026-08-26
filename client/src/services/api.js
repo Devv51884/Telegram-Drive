@@ -56,9 +56,9 @@ export const DriveAPI = {
   updateFolder: (id, data) => api.patch(`/folders/${id}`, data).then((r) => r.data),
   deleteFolder: (id) => api.delete(`/folders/${id}`).then((r) => r.data),
 
-  // Files (Direct + 5MB Chunked Engine for Large Files up to 2GB)
+  // Files (Direct + 8MB Chunked Engine for Large Files up to 2GB)
   uploadFile: async (file, folderId, onProgress, signal, uploadId = `up_${Date.now()}`) => {
-    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks (guarantees fast <2s requests that never timeout on Render)
+    const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks (optimal balance: fast, low overhead, never timeouts)
     const fileSize = file.size;
 
     // 1. Direct Upload for Small Files <= 15MB
@@ -88,13 +88,12 @@ export const DriveAPI = {
         .then((r) => r.data);
     }
 
-    // 2. Resilient 5MB Chunked Upload Engine for Large Files > 15MB (up to 2GB)
+    // 2. Resilient 8MB Chunked Upload Engine for Large Files > 15MB (up to 2GB)
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     let uploadedBytes = 0;
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (signal?.aborted) {
-        // Clean up server chunks on user abort
         api.post("/files/upload-chunk/cancel", { uploadId, totalChunks }).catch(() => {});
         throw new Error("canceled");
       }
@@ -114,13 +113,13 @@ export const DriveAPI = {
       let chunkSuccess = false;
       let lastErr = null;
 
-      while (attempts < 3 && !chunkSuccess) {
+      while (attempts < 5 && !chunkSuccess) {
         if (signal?.aborted) throw new Error("canceled");
         attempts++;
         try {
           await api.post("/files/upload-chunk", chunkForm, {
             headers: { "Content-Type": "multipart/form-data" },
-            timeout: 60000, // 60s per 5MB chunk is plenty
+            timeout: 120000, // 2 minutes per 8MB chunk is very safe
             signal,
             onUploadProgress: (e) => {
               if (onProgress && e.total) {
@@ -140,8 +139,9 @@ export const DriveAPI = {
         } catch (err) {
           lastErr = err;
           if (signal?.aborted || err.message === "canceled") throw err;
-          // Wait 1s before retrying
-          await new Promise((res) => setTimeout(res, 1000));
+          console.warn(`Chunk ${chunkIndex + 1}/${totalChunks} attempt ${attempts} failed:`, err.message);
+          // Exponential backoff
+          await new Promise((res) => setTimeout(res, attempts * 1000));
         }
       }
 

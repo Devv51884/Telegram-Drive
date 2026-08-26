@@ -82,7 +82,7 @@ router.get("/upload-progress/:uploadId", (req, res) => {
 });
 
 // POST /api/files/upload-chunk - Upload a single 5MB chunk (finishes in 1-2 seconds, zero timeouts)
-router.post("/upload-chunk", uploadLimiter, uploadChunkMulter.single("chunk"), (req, res) => {
+router.post("/upload-chunk", uploadChunkMulter.single("chunk"), (req, res) => {
   const { uploadId, chunkIndex, totalChunks } = req.body;
   if (!req.file) {
     return res.status(400).json({ success: false, error: "No chunk received" });
