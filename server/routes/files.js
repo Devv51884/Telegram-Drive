@@ -358,6 +358,7 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
       type: mediaInfo.type,
       source_type: "telegram_post",
       telegram_post_url: postUrl.trim(),
+      telegram_file_id: mediaInfo.docId || null,
       telegram_message_id: mediaInfo.messageId,
       telegram_channel_id: mediaInfo.channelId,
       telegram_channel_title: mediaInfo.channelTitle,
@@ -419,6 +420,13 @@ async function streamTelegramBotFile(file, range, req, res) {
     contentType = file.mime_type;
   } else {
     contentType = "video/mp4";
+  }
+
+  if (res && !res.headersSent) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Range, Authorization, X-Access-Token");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+    res.setHeader("Accept-Ranges", "bytes");
   }
 
   // Forward incoming Range header directly to Telegram Bot API CDN for native HTTP 206 slicing
@@ -544,13 +552,21 @@ router.get("/:id/stream", async (req, res) => {
       return res.status(404).send("File not found");
     }
 
+    if (res && !res.headersSent) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Headers", "Range, Authorization, X-Access-Token");
+      res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+      res.setHeader("Accept-Ranges", "bytes");
+    }
+
     const range = req.headers.range;
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const fileSize = Number(file.size) || 0;
-    // ============================================================
-    // Strategy 1: Bot API CDN Stream (Fastest for files under 20MB / Bot uploads)
-    // ============================================================
-    if (file.telegram_file_id) {
+    const isUploaded = file.source_type === "upload" || !file.source_type;
+
+    // Strategy 1: Bot API CDN Stream (Fastest for files under 20MB with Bot API file_id)
+    const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
+    if (isBotApiFileId) {
       try {
         await streamTelegramBotFile(file, range, req, res);
         return;
@@ -560,7 +576,6 @@ router.get("/:id/stream", async (req, res) => {
     }
 
     if (targetChannelId && file.telegram_message_id) {
-      const isUploaded = file.source_type === "upload" || !file.source_type;
       const preferBotFirst = isUploaded;
       try {
         await streamGramMedia(
@@ -574,7 +589,9 @@ router.get("/:id/stream", async (req, res) => {
           false,
           preferBotFirst,
           file.telegram_file_reference || null,
-          file.telegram_access_hash || null
+          file.telegram_access_hash || null,
+          file.telegram_file_id || null,
+          fileSize
         );
         return;
       } catch (primaryErr) {
@@ -591,7 +608,9 @@ router.get("/:id/stream", async (req, res) => {
             false,
             !preferBotFirst,
             file.telegram_file_reference || null,
-            file.telegram_access_hash || null
+            file.telegram_access_hash || null,
+            file.telegram_file_id || null,
+            fileSize
           );
           return;
         } catch (secondaryErr) {
@@ -621,11 +640,20 @@ router.get("/:id/download", async (req, res) => {
       return res.status(404).send("File not found");
     }
 
+    if (res && !res.headersSent) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Headers", "Range, Authorization, X-Access-Token");
+      res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+      res.setHeader("Accept-Ranges", "bytes");
+    }
+
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
+    const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
 
     // Strategy 1: Telegram Bot API Download (Uploaded files)
-    if (isUploaded && file.telegram_file_id) {
+    if (isUploaded && isBotApiFileId) {
       try {
         const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
         const response = await axios.get(downloadUrl, {
@@ -662,7 +690,9 @@ router.get("/:id/download", async (req, res) => {
           true, // isDownload = true
           isUploaded, // useStorageBot = true for uploaded files
           file.telegram_file_reference || null,
-          file.telegram_access_hash || null
+          file.telegram_access_hash || null,
+          file.telegram_file_id || null,
+          fileSize
         );
         return;
       } catch (dlErr) {
@@ -679,13 +709,24 @@ router.get("/:id/download", async (req, res) => {
             true,
             true,
             file.telegram_file_reference || null,
-            file.telegram_access_hash || null
+            file.telegram_access_hash || null,
+            file.telegram_file_id || null,
+            fileSize
           );
           return;
         }
         throw dlErr;
       }
     }
+
+    res.status(400).send("No valid Telegram reference found for this file");
+  } catch (err) {
+    console.error("Download error:", err.message);
+    if (!res.headersSent) {
+      res.status(500).send(`Download failed: ${err.message}`);
+    }
+  }
+});
 
     res.status(400).send("No valid Telegram reference found for this file");
   } catch (err) {

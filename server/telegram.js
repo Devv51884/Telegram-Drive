@@ -866,6 +866,8 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
       }
     }
 
+    const docId = msg.media.document?.id?.toString() || msg.media.photo?.id?.toString() || null;
+
     return {
       messageId: messageId.toString(),
       channelId: peer.toString(),
@@ -877,6 +879,7 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
       type,
       caption,
       duration,
+      docId,
       fileReference,
       accessHash,
       dcId
@@ -900,9 +903,19 @@ export async function streamGramMedia(
   fileName = "",
   isDownload = false,
   useStorageBot = true,
-  storedFileRef = null,    // base64 fileReference from DB (for uploaded files)
-  storedAccessHash = null  // accessHash string from DB (for uploaded files)
+  storedFileRef = null,    // base64 fileReference from DB
+  storedAccessHash = null, // accessHash string from DB
+  storedDocId = null,      // docId string from DB
+  fileSize = 0             // totalSize from DB
 ) {
+  // Set explicit CORS and media headers on stream response
+  if (res && !res.headersSent) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Range, Authorization, X-Access-Token");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+    res.setHeader("Accept-Ranges", "bytes");
+  }
+
   // Use User account client for imported posts; Use Storage Bot for platform uploads; fallback seamlessly
   let client = null;
   if (!useStorageBot) {
@@ -922,6 +935,37 @@ export async function streamGramMedia(
   const cacheKey = `${channelId}_${messageId}`;
   let mediaCache = mediaLocationCache.get(cacheKey);
 
+  // Fast path: If docId, accessHash and fileRef are in DB, build location directly with 0ms delay
+  if (!mediaCache && storedDocId && storedAccessHash && storedFileRef) {
+    try {
+      const isPhoto = mimeType?.startsWith("image/") || (fileName && fileName.match(/\.(png|jpg|jpeg|webp)$/i));
+      let location = null;
+      if (!isPhoto) {
+        location = new Api.InputDocumentFileLocation({
+          id: bigInt(storedDocId),
+          accessHash: bigInt(storedAccessHash),
+          fileReference: Buffer.from(storedFileRef, "base64"),
+          thumbSize: ""
+        });
+      } else {
+        location = new Api.InputPhotoFileLocation({
+          id: bigInt(storedDocId),
+          accessHash: bigInt(storedAccessHash),
+          fileReference: Buffer.from(storedFileRef, "base64"),
+          thumbSize: "y"
+        });
+      }
+      mediaCache = {
+        totalSize: Number(fileSize) || 0,
+        location,
+        dcId: client.session.dcId
+      };
+      mediaLocationCache.set(cacheKey, mediaCache);
+    } catch (directLocErr) {
+      console.warn("Direct location build notice:", directLocErr.message);
+    }
+  }
+
   async function resolveAndCacheMedia() {
     const msgId = parseInt(messageId, 10);
     let msg = null;
@@ -934,17 +978,20 @@ export async function streamGramMedia(
       }
     } catch (e1) {}
 
-    // 2. Try entity resolution with dialogs entity cache warmup
+    // 2. Try entity resolution (only fetch dialogs on user client, bots cannot call getDialogs)
     if (!msg || !msg.media) {
       try {
         let targetEntity = null;
         try {
           targetEntity = await client.getInputEntity(channelId);
         } catch {
-          try {
-            await client.getDialogs({ limit: 100 });
-            targetEntity = await client.getInputEntity(channelId);
-          } catch {}
+          // If not bot, try dialogs cache
+          if (!activeBotToken || client !== activeBotGramClient) {
+            try {
+              await client.getDialogs({ limit: 100 });
+              targetEntity = await client.getInputEntity(channelId);
+            } catch {}
+          }
         }
 
         if (!targetEntity) {
@@ -958,7 +1005,7 @@ export async function streamGramMedia(
           }
         }
 
-        if (!targetEntity) {
+        if (!targetEntity && (!activeBotToken || client !== activeBotGramClient)) {
           const dialogs = await client.getDialogs({ limit: 200 });
           const rawNum = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
           const found = dialogs.find((d) => {
@@ -997,23 +1044,49 @@ export async function streamGramMedia(
             }
           } catch {}
           if (!msg || !msg.media) {
-            try {
-              await altClient.getDialogs({ limit: 100 });
-            } catch {}
-            const entity = await altClient.getEntity(channelId);
-            if (entity) {
-              const messages = await altClient.getMessages(entity, { ids: [msgId] });
-              if (messages && messages[0] && messages[0].media) {
-                msg = messages[0];
-                client = altClient;
-              }
+            if (!activeBotToken || altClient !== activeBotGramClient) {
+              try {
+                await altClient.getDialogs({ limit: 100 });
+              } catch {}
             }
+            try {
+              const entity = await altClient.getEntity(channelId);
+              if (entity) {
+                const messages = await altClient.getMessages(entity, { ids: [msgId] });
+                if (messages && messages[0] && messages[0].media) {
+                  msg = messages[0];
+                  client = altClient;
+                }
+              }
+            } catch {}
           }
         }
       } catch (e3) {}
     }
 
     if (!msg || !msg.media) {
+      // If message is not resolvable but we have storedAccessHash & storedDocId, construct location
+      if (storedDocId && storedAccessHash && storedFileRef) {
+        const isPhoto = mimeType?.startsWith("image/") || (fileName && fileName.match(/\.(png|jpg|jpeg|webp)$/i));
+        const location = !isPhoto
+          ? new Api.InputDocumentFileLocation({
+              id: bigInt(storedDocId),
+              accessHash: bigInt(storedAccessHash),
+              fileReference: Buffer.from(storedFileRef, "base64"),
+              thumbSize: ""
+            })
+          : new Api.InputPhotoFileLocation({
+              id: bigInt(storedDocId),
+              accessHash: bigInt(storedAccessHash),
+              fileReference: Buffer.from(storedFileRef, "base64"),
+              thumbSize: "y"
+            });
+        return {
+          totalSize: Number(fileSize) || 0,
+          location,
+          dcId: client.session.dcId
+        };
+      }
       throw new Error(`Telegram media post #${msgId} not found in channel ${channelId}`);
     }
 
@@ -1023,6 +1096,7 @@ export async function streamGramMedia(
     let dcId = undefined;
     let foundHash = null;
     let foundRef = null;
+    let foundDocId = null;
 
     if (media.document) {
       const doc = media.document;
@@ -1036,6 +1110,7 @@ export async function streamGramMedia(
       dcId = doc.dcId;
       foundHash = doc.accessHash ? doc.accessHash.toString() : null;
       foundRef = doc.fileReference ? Buffer.from(doc.fileReference).toString("base64") : null;
+      foundDocId = doc.id ? doc.id.toString() : null;
     } else if (media.photo) {
       const photo = media.photo;
       const sizes = photo.sizes || [];
@@ -1050,6 +1125,7 @@ export async function streamGramMedia(
       dcId = photo.dcId;
       foundHash = photo.accessHash ? photo.accessHash.toString() : null;
       foundRef = photo.fileReference ? Buffer.from(photo.fileReference).toString("base64") : null;
+      foundDocId = photo.id ? photo.id.toString() : null;
     } else {
       throw new Error("Unsupported media type for MTProto streaming");
     }
@@ -1061,14 +1137,14 @@ export async function streamGramMedia(
           const { getSqliteDb, getSupabaseClient } = await import("./db.js");
           const sqlite = await getSqliteDb();
           await sqlite.run(
-            "UPDATE files SET telegram_access_hash = ?, telegram_file_reference = ?, size = CASE WHEN size = 0 THEN ? ELSE size END WHERE telegram_message_id = ? AND (telegram_channel_id = ? OR telegram_channel_id LIKE ?)",
-            [foundHash, foundRef, totalSize, messageId.toString(), channelId.toString(), `%${channelId.toString().replace(/^-100/, "").replace(/^-/, "")}%`]
+            "UPDATE files SET telegram_file_id = CASE WHEN telegram_file_id IS NULL THEN ? ELSE telegram_file_id END, telegram_access_hash = ?, telegram_file_reference = ?, size = CASE WHEN size = 0 THEN ? ELSE size END WHERE telegram_message_id = ? AND (telegram_channel_id = ? OR telegram_channel_id LIKE ?)",
+            [foundDocId, foundHash, foundRef, totalSize, messageId.toString(), channelId.toString(), `%${channelId.toString().replace(/^-100/, "").replace(/^-/, "")}%`]
           );
           const supabase = await getSupabaseClient();
           if (supabase) {
             await supabase
               .from("files")
-              .update({ telegram_access_hash: foundHash, telegram_file_reference: foundRef })
+              .update({ telegram_file_id: foundDocId, telegram_access_hash: foundHash, telegram_file_reference: foundRef })
               .eq("telegram_message_id", messageId.toString());
           }
         } catch {}

@@ -301,7 +301,6 @@ export default function CustomVideoPlayer({
         autoPlay={autoPlay}
         preload="metadata"
         playsInline
-        crossOrigin="anonymous"
         onPlay={() => {
           setIsPlaying(true);
           setIsLoading(false);
