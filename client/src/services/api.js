@@ -117,7 +117,7 @@ export const DriveAPI = {
         if (signal?.aborted) throw new Error("canceled");
         attempts++;
         try {
-          await api.post("/files/upload-chunk", chunkForm, {
+          await api.post(`/files/upload-chunk?uploadId=${encodeURIComponent(uploadId)}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}`, chunkForm, {
             headers: { "Content-Type": "multipart/form-data" },
             timeout: 120000, // 2 minutes per 8MB chunk is very safe
             signal,

@@ -77,6 +77,12 @@ export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "s
     ? "Thank you for creating an account with TeleDrive. Use the 6-digit verification code below to verify your Gmail address and activate unlimited cloud storage."
     : "We received a request to reset the password for your TeleDrive account. Use the 6-digit code below to set a new password.";
 
+  // Log OTP to server console (Accessible in Render Dashboard Logs)
+  console.log(`\n==================================================`);
+  console.log(`🔑 [TELEDRIVE REAL-TIME OTP] For: ${to}`);
+  console.log(`👉 VERIFICATION CODE: >>> ${otp} <<< (Valid for 10 min)`);
+  console.log(`==================================================\n`);
+
   const htmlContent = `
   <!DOCTYPE html>
   <html>

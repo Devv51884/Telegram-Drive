@@ -100,6 +100,32 @@ export default function AuthScreen() {
     }
   };
 
+  // Password Strength Evaluator
+  const getPasswordStrength = (pass) => {
+    let score = 0;
+    if (!pass) return { score: 0, label: "", color: "" };
+    if (pass.length >= 8) score += 1;
+    if (pass.length >= 12) score += 1;
+    if (/[A-Z]/.test(pass)) score += 1;
+    if (/[a-z]/.test(pass)) score += 1;
+    if (/[0-9]/.test(pass)) score += 1;
+    if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pass)) score += 1;
+
+    if (score <= 2) return { score: 1, label: "Weak", color: "bg-rose-500", text: "text-rose-400" };
+    if (score <= 4) return { score: 2, label: "Medium", color: "bg-amber-500", text: "text-amber-400" };
+    return { score: 3, label: "Strong", color: "bg-emerald-500", text: "text-emerald-400" };
+  };
+
+  const isPasswordValid = (pass) => {
+    return (
+      pass.length >= 8 &&
+      /[A-Z]/.test(pass) &&
+      /[a-z]/.test(pass) &&
+      /[0-9]/.test(pass) &&
+      /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pass)
+    );
+  };
+
   // 2. Handle Sign Up Step 1: Send OTP to Gmail
   const handleSignupSendOtp = async (e) => {
     e.preventDefault();
@@ -108,7 +134,11 @@ export default function AuthScreen() {
 
     if (!name.trim()) return setError("Full Name is required");
     if (!email || !email.includes("@")) return setError("Please enter a valid Gmail / Email address");
-    if (!password || password.length < 6) return setError("Password must be at least 6 characters long");
+    if (password.length < 8) return setError("Password must be at least 8 characters long");
+    if (!/[A-Z]/.test(password)) return setError("Password must contain at least one uppercase letter (A-Z)");
+    if (!/[a-z]/.test(password)) return setError("Password must contain at least one lowercase letter (a-z)");
+    if (!/[0-9]/.test(password)) return setError("Password must contain at least one number (0-9)");
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)) return setError("Password must contain at least one special character (!@#$)");
     if (password !== confirmPassword) return setError("Passwords do not match");
 
     setLoading(true);
@@ -452,6 +482,43 @@ export default function AuthScreen() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+
+              {/* Password Strength Indicator */}
+              {password && (
+                <div className="mt-2 space-y-1.5 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-400">Password Strength:</span>
+                    <span className={`font-bold ${getPasswordStrength(password).text}`}>
+                      {getPasswordStrength(password).label}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex gap-1">
+                    <div className={`h-full rounded-full transition-all duration-300 flex-1 ${getPasswordStrength(password).score >= 1 ? getPasswordStrength(password).color : "bg-slate-700"}`} />
+                    <div className={`h-full rounded-full transition-all duration-300 flex-1 ${getPasswordStrength(password).score >= 2 ? getPasswordStrength(password).color : "bg-slate-700"}`} />
+                    <div className={`h-full rounded-full transition-all duration-300 flex-1 ${getPasswordStrength(password).score >= 3 ? getPasswordStrength(password).color : "bg-slate-700"}`} />
+                  </div>
+
+                  {/* Requirements Checklist */}
+                  <div className="grid grid-cols-2 gap-1 pt-1 text-[10px]">
+                    <div className={`flex items-center gap-1 ${password.length >= 8 ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
+                      <span>{password.length >= 8 ? "✓" : "○"}</span>
+                      <span>8+ Characters</span>
+                    </div>
+                    <div className={`flex items-center gap-1 ${/[A-Z]/.test(password) ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
+                      <span>{/[A-Z]/.test(password) ? "✓" : "○"}</span>
+                      <span>Uppercase (A-Z)</span>
+                    </div>
+                    <div className={`flex items-center gap-1 ${/[0-9]/.test(password) ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
+                      <span>{/[0-9]/.test(password) ? "✓" : "○"}</span>
+                      <span>Number (0-9)</span>
+                    </div>
+                    <div className={`flex items-center gap-1 ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password) ? "text-emerald-400 font-medium" : "text-slate-500"}`}>
+                      <span>{/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password) ? "✓" : "○"}</span>
+                      <span>Special Symbol (!@#)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

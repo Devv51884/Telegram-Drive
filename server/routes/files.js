@@ -49,14 +49,14 @@ const storage = multer.diskStorage({
   }
 });
 
-// Multer storage for 5MB chunks
+// Multer storage for chunk uploads
 const chunkStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, chunksDir);
   },
   filename: (req, file, cb) => {
-    const uploadId = req.body.uploadId || `chunk_${Date.now()}`;
-    const chunkIndex = req.body.chunkIndex !== undefined ? req.body.chunkIndex : "0";
+    const uploadId = req.query.uploadId || req.body.uploadId || `chunk_${Date.now()}`;
+    const chunkIndex = req.query.chunkIndex !== undefined ? req.query.chunkIndex : (req.body.chunkIndex !== undefined ? req.body.chunkIndex : "0");
     cb(null, `${uploadId}_chunk_${chunkIndex}`);
   }
 });
@@ -81,9 +81,12 @@ router.get("/upload-progress/:uploadId", (req, res) => {
   res.json({ success: true, progress });
 });
 
-// POST /api/files/upload-chunk - Upload a single 5MB chunk (finishes in 1-2 seconds, zero timeouts)
+// POST /api/files/upload-chunk - Upload a single chunk (supports both query & body params)
 router.post("/upload-chunk", uploadChunkMulter.single("chunk"), (req, res) => {
-  const { uploadId, chunkIndex, totalChunks } = req.body;
+  const uploadId = req.query.uploadId || req.body.uploadId;
+  const chunkIndex = req.query.chunkIndex !== undefined ? req.query.chunkIndex : req.body.chunkIndex;
+  const totalChunks = req.query.totalChunks || req.body.totalChunks;
+
   if (!req.file) {
     return res.status(400).json({ success: false, error: "No chunk received" });
   }

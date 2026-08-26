@@ -14,6 +14,7 @@ import {
 import {
   hashPassword,
   verifyPassword,
+  validatePasswordStrength,
   createSessionToken,
   authLimiter
 } from "../security.js";
@@ -36,10 +37,12 @@ router.post("/signup/send-otp", authLimiter, async (req, res) => {
     if (!email || !email.trim() || !email.includes("@")) {
       return res.status(400).json({ success: false, error: "Valid Gmail/Email address is required" });
     }
-    if (!password || password.length < 6) {
+
+    const passwordValidation = validatePasswordStrength(password);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
         success: false,
-        error: "Password must be at least 6 characters long"
+        error: passwordValidation.error
       });
     }
 
