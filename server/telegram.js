@@ -933,7 +933,7 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const CHUNK_SIZE = 512 * 1024; // 512KB per request chunk
+  const CHUNK_SIZE = 1024 * 1024; // 1MB per request chunk for ultra-fast 4K video buffering
   const ALIGNMENT = 4096; // 4KB
 
   if (rangeHeader && totalSize > 0) {
@@ -958,7 +958,7 @@ export async function streamGramMedia(
       "Content-Length": requestedLength,
       "Content-Type": contentType,
       "Content-Disposition": contentDisposition,
-      "Cache-Control": "no-cache, no-store, must-revalidate"
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
     });
 
     let clientDisconnected = false;

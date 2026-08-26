@@ -79,9 +79,9 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Serve frontend in production
+// Serve frontend in production with caching
 const clientDistPath = path.join(__dirname, "../client/dist");
-app.use(express.static(clientDistPath));
+app.use(express.static(clientDistPath, { maxAge: "7d", immutable: true }));
 
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api")) {

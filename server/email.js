@@ -27,43 +27,31 @@ export async function getEmailConfig() {
   };
 }
 
-// Create Nodemailer Transporter with universal cloud compatibility (Gmail preset & Port 465 SSL)
-export async function getTransporter() {
+// Create Nodemailer Transporter with IPv4 enforcement to prevent ENETUNREACH on Cloud/Render
+export async function getTransporter(portOverride = null) {
   const config = await getEmailConfig();
   if (!config.isConfigured) return null;
 
   const isGmail = config.host.includes("gmail.com") || config.user.endsWith("@gmail.com");
-
-  if (isGmail) {
-    return nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: config.user,
-        pass: config.pass
-      },
-      tls: {
-        rejectUnauthorized: false
-      },
-      connectionTimeout: 15000,
-      greetingTimeout: 12000,
-      socketTimeout: 20000
-    });
-  }
+  const host = isGmail ? "smtp.gmail.com" : config.host;
+  const port = portOverride || (isGmail ? 465 : config.port);
+  const secure = port === 465;
 
   return nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
+    host,
+    port,
+    secure,
     auth: {
       user: config.user,
       pass: config.pass
     },
+    family: 4, // Strict IPv4 resolution (prevents ENETUNREACH on Render/Cloud container networks)
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 15000,
-    greetingTimeout: 12000,
-    socketTimeout: 20000
+    connectionTimeout: 12000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 }
 
@@ -132,23 +120,39 @@ export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "s
   </html>
   `;
 
-  const transporter = await getTransporter();
-  if (!transporter) {
-    throw new Error("Unable to initialize email transporter. Please verify Gmail credentials.");
-  }
-
   const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
 
-  const info = await transporter.sendMail({
-    from: fromAddress,
-    to: to.trim().toLowerCase(),
-    subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
-    text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
-    html: htmlContent
-  });
+  // Try Port 465 (SSL + IPv4) first, fallback to Port 587 (STARTTLS + IPv4)
+  try {
+    const transporter465 = await getTransporter(465);
+    if (!transporter465) {
+      throw new Error("Unable to initialize email transporter.");
+    }
 
-  console.log(`✅ Real-time Gmail OTP sent to ${to} (MessageId: ${info.messageId})`);
-  return { success: true, messageId: info.messageId };
+    const info = await transporter465.sendMail({
+      from: fromAddress,
+      to: to.trim().toLowerCase(),
+      subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
+      text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
+      html: htmlContent
+    });
+
+    console.log(`✅ Real-time Gmail OTP sent to ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId };
+  } catch (err465) {
+    console.warn("Primary Gmail Port 465 failed, attempting Port 587 STARTTLS IPv4 fallback:", err465.message);
+    const transporter587 = await getTransporter(587);
+    const info = await transporter587.sendMail({
+      from: fromAddress,
+      to: to.trim().toLowerCase(),
+      subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
+      text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
+      html: htmlContent
+    });
+
+    console.log(`✅ Real-time Gmail OTP sent via Port 587 fallback to ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId };
+  }
 }
 
 // 2. Send File / Folder Share Notification Email
