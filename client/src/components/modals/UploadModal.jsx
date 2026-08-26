@@ -155,6 +155,20 @@ export default function UploadModal() {
           const progressRes = await DriveAPI.getUploadProgress(item.id);
           if (progressRes?.success && progressRes.progress) {
             const p = progressRes.progress;
+            if (p.status === "done" || p.percent >= 100) {
+              clearInterval(pollInterval);
+              updateItem(item.id, {
+                status: "done",
+                percent: 100,
+                loadedBytes: item.size,
+                speed: "",
+                eta: "",
+                phase: "Saved to Telegram Cloud!"
+              });
+              refresh();
+              return;
+            }
+
             const telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (p.percent || 0) * 0.09)));
             updateItem(item.id, {
               percent: telegramPercent,
@@ -162,7 +176,7 @@ export default function UploadModal() {
             });
           }
         } catch {}
-      }, 1200);
+      }, 1000);
 
       await uploadPromise;
 

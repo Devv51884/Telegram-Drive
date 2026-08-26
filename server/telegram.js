@@ -546,8 +546,9 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
     is_active: 1
   });
 
-  activeGramClient = client;
-  activeSessionString = sessionString;
+  const key = userId || "global";
+  userGramClients.set(key, client);
+  userSessionStrings.set(key, sessionString);
   activeAuthClients.delete(cleanPhone);
 
   return {
