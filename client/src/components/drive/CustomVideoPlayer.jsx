@@ -13,7 +13,11 @@ import {
   Check,
   Zap,
   Sliders,
-  Film
+  Film,
+  RotateCw,
+  RefreshCw,
+  FastForward,
+  Rewind
 } from "lucide-react";
 
 export default function CustomVideoPlayer({
@@ -26,6 +30,7 @@ export default function CustomVideoPlayer({
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const hideControlsTimer = useRef(null);
+  const lastTapRef = useRef(0);
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -38,6 +43,7 @@ export default function CustomVideoPlayer({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [skipAnimation, setSkipAnimation] = useState(null); // 'forward' | 'backward' | null
 
   // Settings Menu state
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -56,14 +62,14 @@ export default function CustomVideoPlayer({
   const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
   // Auto-hide controls logic
-  const handleMouseMove = () => {
+  const handleUserActivity = () => {
     setShowControls(true);
     if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
     hideControlsTimer.current = setTimeout(() => {
       if (isPlaying && !showSettingsMenu) {
         setShowControls(false);
       }
-    }, 3000);
+    }, 3500);
   };
 
   useEffect(() => {
@@ -89,9 +95,10 @@ export default function CustomVideoPlayer({
     if (!videoRef.current) return;
     setCurrentTime(videoRef.current.currentTime);
     if (videoRef.current.buffered.length > 0) {
-      setBuffered(
-        videoRef.current.buffered.end(videoRef.current.buffered.length - 1)
-      );
+      try {
+        const lastIdx = videoRef.current.buffered.length - 1;
+        setBuffered(videoRef.current.buffered.end(lastIdx));
+      } catch {}
     }
   };
 
@@ -101,6 +108,43 @@ export default function CustomVideoPlayer({
     const newTime = parseFloat(e.target.value);
     videoRef.current.currentTime = newTime;
     setCurrentTime(newTime);
+  };
+
+  // Fast skip 10s
+  const skipTime = (seconds) => {
+    if (!videoRef.current) return;
+    const newTime = Math.max(0, Math.min(duration || 0, videoRef.current.currentTime + seconds));
+    videoRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
+    setSkipAnimation(seconds > 0 ? "forward" : "backward");
+    setTimeout(() => setSkipAnimation(null), 700);
+    handleUserActivity();
+  };
+
+  // Double tap handler for mobile
+  const handleContainerClick = (e) => {
+    const now = Date.now();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const clickX = e.clientX - rect.left;
+    const isLeft = clickX < rect.width / 3;
+    const isRight = clickX > (rect.width * 2) / 3;
+
+    if (now - lastTapRef.current < 300) {
+      // Double tap detected
+      if (isLeft) {
+        skipTime(-10);
+      } else if (isRight) {
+        skipTime(10);
+      } else {
+        togglePlay();
+      }
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+      handleUserActivity();
+    }
   };
 
   // Handle Volume Change
@@ -133,13 +177,14 @@ export default function CustomVideoPlayer({
       videoRef.current.playbackRate = speed;
     }
     setCurrentMenuTab("main");
+    setShowSettingsMenu(false);
   };
 
   // Handle Quality Change
   const handleQualitySelect = (q) => {
     setSelectedQuality(q.label);
     setCurrentMenuTab("main");
-    // Switch video stream quality parameter seamlessly
+    setShowSettingsMenu(false);
     if (videoRef.current) {
       const currTime = videoRef.current.currentTime;
       const isCurrentlyPlaying = !videoRef.current.paused;
@@ -159,6 +204,20 @@ export default function CustomVideoPlayer({
       if (isCurrentlyPlaying) {
         videoRef.current.play().catch(() => {});
       }
+    }
+  };
+
+  // Retry Video
+  const handleRetry = () => {
+    setHasError(false);
+    setIsLoading(true);
+    if (videoRef.current) {
+      const currTime = currentTime;
+      const retryUrl = `${src}${src.includes("?") ? "&" : "?"}_t=${Date.now()}`;
+      videoRef.current.src = retryUrl;
+      videoRef.current.load();
+      videoRef.current.currentTime = currTime;
+      videoRef.current.play().catch(() => {});
     }
   };
 
@@ -188,7 +247,7 @@ export default function CustomVideoPlayer({
 
   // Format Seconds to MM:SS or HH:MM:SS
   const formatTime = (secs) => {
-    if (isNaN(secs)) return "0:00";
+    if (isNaN(secs) || secs < 0) return "0:00";
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     const s = Math.floor(secs % 60);
@@ -201,17 +260,16 @@ export default function CustomVideoPlayer({
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore when user is typing in an input
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
       if (e.code === "Space") {
         e.preventDefault();
         togglePlay();
       } else if (e.code === "ArrowLeft") {
         e.preventDefault();
-        if (videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
+        skipTime(-5);
       } else if (e.code === "ArrowRight") {
         e.preventDefault();
-        if (videoRef.current) videoRef.current.currentTime = Math.min(duration, videoRef.current.currentTime + 5);
+        skipTime(5);
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         toggleFullscreen();
@@ -225,12 +283,16 @@ export default function CustomVideoPlayer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [duration, isMuted, volume]);
 
+  const playedPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+  const bufferedPercent = duration > 0 ? Math.min(100, Math.max(0, (buffered / duration) * 100)) : 0;
+
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => isPlaying && !showSettingsMenu && setShowControls(false)}
-      className="relative w-full h-full max-h-[82vh] flex items-center justify-center bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 select-none group"
+      onMouseMove={handleUserActivity}
+      onTouchStart={handleUserActivity}
+      onClick={handleContainerClick}
+      className="relative w-full h-full max-h-[82vh] min-h-[260px] flex items-center justify-center bg-black rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-slate-800 select-none group"
     >
       {/* Video Element */}
       <video
@@ -239,14 +301,18 @@ export default function CustomVideoPlayer({
         autoPlay={autoPlay}
         preload="metadata"
         playsInline
-        onClick={togglePlay}
+        crossOrigin="anonymous"
         onPlay={() => {
           setIsPlaying(true);
           setIsLoading(false);
         }}
-        onPlaying={() => setIsLoading(false)}
+        onPlaying={() => {
+          setIsLoading(false);
+          setIsPlaying(true);
+        }}
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={handleTimeUpdate}
+        onProgress={handleTimeUpdate}
         onLoadedData={() => setIsLoading(false)}
         onLoadedMetadata={() => {
           if (videoRef.current) {
@@ -256,6 +322,7 @@ export default function CustomVideoPlayer({
         }}
         onWaiting={() => setIsLoading(true)}
         onCanPlay={() => setIsLoading(false)}
+        onEnded={() => setIsPlaying(false)}
         onError={() => {
           setIsLoading(false);
           const errCode = videoRef.current?.error?.code;
@@ -266,30 +333,51 @@ export default function CustomVideoPlayer({
         className="w-full h-full max-h-[80vh] object-contain cursor-pointer"
       />
 
+      {/* Double Tap Skip Ripple Animations */}
+      {skipAnimation === "backward" && (
+        <div className="absolute left-8 sm:left-16 z-30 flex flex-col items-center justify-center p-4 rounded-full bg-black/60 text-white animate-out fade-out zoom-out duration-500 pointer-events-none">
+          <Rewind className="w-8 h-8 fill-current text-blue-400" />
+          <span className="text-xs font-bold mt-1">-10s</span>
+        </div>
+      )}
+      {skipAnimation === "forward" && (
+        <div className="absolute right-8 sm:right-16 z-30 flex flex-col items-center justify-center p-4 rounded-full bg-black/60 text-white animate-out fade-out zoom-out duration-500 pointer-events-none">
+          <FastForward className="w-8 h-8 fill-current text-blue-400" />
+          <span className="text-xs font-bold mt-1">+10s</span>
+        </div>
+      )}
+
       {/* Playback Error Overlay */}
       {hasError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md z-30 p-6 text-center text-slate-300 gap-3">
-          <Film className="w-12 h-12 text-rose-500 mb-1" />
-          <h4 className="text-sm font-bold text-white">Browser Video Decoder Notice</h4>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-md z-30 p-4 sm:p-6 text-center text-slate-300 gap-3">
+          <Film className="w-10 h-10 sm:w-12 sm:h-12 text-rose-500 mb-1" />
+          <h4 className="text-sm sm:text-base font-bold text-white">Playback Notice</h4>
           <p className="text-xs text-slate-400 max-w-sm">
-            This video format may use an unsupported audio/video codec in your browser. You can open it in a new tab or download the original file.
+            Video stream had a glitch or uses a format not natively supported by your browser.
           </p>
-          <div className="flex items-center gap-2.5 mt-2">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+            <button
+              onClick={handleRetry}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-colors shadow-md"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Stream</span>
+            </button>
             <a
               href={src}
               target="_blank"
               rel="noreferrer"
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold border border-slate-700 transition-colors"
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold border border-slate-700 transition-colors"
             >
-              Open in New Tab
+              Open in Tab
             </a>
             {downloadUrl && (
               <a
                 href={downloadUrl}
                 download={fileName}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-colors"
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold border border-slate-700 transition-colors"
               >
-                Download Video
+                Download
               </a>
             )}
           </div>
@@ -298,27 +386,30 @@ export default function CustomVideoPlayer({
 
       {/* Loading Spinner */}
       {isLoading && !hasError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm z-10 pointer-events-none gap-2">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm z-10 pointer-events-none gap-2">
           <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-          <span className="text-xs text-slate-300 font-medium">Buffering Telegram 4K Stream...</span>
+          <span className="text-xs text-slate-300 font-medium tracking-wide">Buffering Partial Stream (206)...</span>
         </div>
       )}
 
-      {/* Center Big Play/Pause Animation Overlay (when clicked) */}
+      {/* Center Big Play Button Overlay */}
       {!isPlaying && !isLoading && !hasError && (
         <div
-          onClick={togglePlay}
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePlay();
+          }}
           className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer transition-opacity z-10"
         >
-          <div className="w-16 h-16 rounded-3xl bg-blue-600/90 text-white flex items-center justify-center shadow-2xl hover:scale-110 transition-transform border border-white/20">
-            <Play className="w-8 h-8 ml-1 fill-current" />
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl bg-blue-600/90 text-white flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all border border-white/20">
+            <Play className="w-7 h-7 sm:w-8 sm:h-8 ml-1 fill-current" />
           </div>
         </div>
       )}
 
       {/* Video Quality Badge Indicator (Top-Left) */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-        <span className="px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-white text-[11px] font-bold border border-white/15 shadow-sm flex items-center gap-1">
+      <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-20 flex items-center gap-2 pointer-events-none">
+        <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg bg-black/60 backdrop-blur-md text-white text-[10px] sm:text-[11px] font-bold border border-white/15 shadow-sm flex items-center gap-1">
           <Zap className="w-3 h-3 text-amber-400 fill-current" />
           {selectedQuality.split(" ")[0]}
         </span>
@@ -326,7 +417,10 @@ export default function CustomVideoPlayer({
 
       {/* Settings Popover Menu (Quality & Speed) */}
       {showSettingsMenu && (
-        <div className="absolute bottom-16 right-4 z-30 w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-2 shadow-2xl text-slate-200 text-xs animate-in fade-in zoom-in-95 duration-150">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-16 right-3 sm:right-4 z-30 w-56 sm:w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-2 shadow-2xl text-slate-200 text-xs animate-in fade-in zoom-in-95 duration-150"
+        >
           {currentMenuTab === "main" && (
             <div className="space-y-1">
               <div className="px-2.5 py-1.5 font-bold text-slate-400 text-[10px] uppercase tracking-wider border-b border-slate-800">
@@ -334,10 +428,10 @@ export default function CustomVideoPlayer({
               </div>
               <button
                 onClick={() => setCurrentMenuTab("quality")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors text-left"
               >
                 <div className="flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-blue-400" />
+                  <Sliders className="w-4 h-4 text-blue-400 flex-shrink-0" />
                   <span>Quality</span>
                 </div>
                 <span className="text-slate-400 font-medium text-[11px] truncate max-w-[90px]">
@@ -346,10 +440,10 @@ export default function CustomVideoPlayer({
               </button>
               <button
                 onClick={() => setCurrentMenuTab("speed")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors text-left"
               >
                 <div className="flex items-center gap-2">
-                  <Film className="w-4 h-4 text-emerald-400" />
+                  <Film className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                   <span>Playback Speed</span>
                 </div>
                 <span className="text-slate-400 font-medium text-[11px]">
@@ -420,12 +514,29 @@ export default function CustomVideoPlayer({
 
       {/* Bottom Control Bar */}
       <div
-        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 sm:p-4 transition-opacity duration-200 z-20 ${
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent px-3 sm:px-4 pt-4 pb-3 transition-opacity duration-200 z-20 ${
           showControls || showSettingsMenu ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        {/* Progress Bar / Scrubber */}
-        <div className="relative w-full flex items-center mb-2.5 group/progress cursor-pointer">
+        {/* Layered Progress Bar / Scrubber with Buffer Visualizer */}
+        <div className="relative w-full h-3 flex items-center mb-2 group/progress cursor-pointer">
+          {/* Background Track */}
+          <div className="absolute inset-x-0 h-1 sm:h-1.5 bg-slate-800/90 rounded-full overflow-hidden" />
+
+          {/* Buffered Track (shows real-time 206 chunk loading) */}
+          <div
+            className="absolute left-0 h-1 sm:h-1.5 bg-slate-500/50 rounded-full transition-all duration-150"
+            style={{ width: `${bufferedPercent}%` }}
+          />
+
+          {/* Played Progress Track */}
+          <div
+            className="absolute left-0 h-1 sm:h-1.5 bg-gradient-to-r from-blue-600 to-sky-400 rounded-full"
+            style={{ width: `${playedPercent}%` }}
+          />
+
+          {/* Scrubber Input Range slider */}
           <input
             type="range"
             min="0"
@@ -433,33 +544,51 @@ export default function CustomVideoPlayer({
             step="0.1"
             value={currentTime}
             onChange={handleSeek}
-            className="w-full h-1.5 bg-slate-700/80 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:h-2.5 transition-all"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
         </div>
 
         {/* Action Controls Row */}
-        <div className="flex items-center justify-between text-white text-xs">
-          {/* Left Controls: Play/Pause, Volume, Time */}
-          <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center justify-between text-white text-xs gap-2">
+          {/* Left Controls: Play/Pause, Skip Buttons, Volume, Time */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             <button
               onClick={togglePlay}
-              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+              className="p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors"
               title={isPlaying ? "Pause (Space)" : "Play (Space)"}
             >
               {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
             </button>
 
+            {/* Skip -10s */}
+            <button
+              onClick={() => skipTime(-10)}
+              className="p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors text-slate-300 hover:text-white"
+              title="Rewind 10s"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            {/* Skip +10s */}
+            <button
+              onClick={() => skipTime(10)}
+              className="p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors text-slate-300 hover:text-white"
+              title="Fast Forward 10s"
+            >
+              <RotateCw className="w-4 h-4" />
+            </button>
+
             {/* Volume Control */}
-            <div className="flex items-center gap-1.5 group/volume">
+            <div className="flex items-center gap-1 group/volume">
               <button
                 onClick={toggleMute}
-                className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+                className="p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors"
                 title="Mute / Unmute (M)"
               >
                 {isMuted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5 text-rose-400" />
+                  <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
                 ) : (
-                  <Volume2 className="w-5 h-5" />
+                  <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </button>
               <input
@@ -469,12 +598,12 @@ export default function CustomVideoPlayer({
                 step="0.05"
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-14 sm:w-20 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500 hidden sm:block"
+                className="w-12 sm:w-16 md:w-20 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500 hidden sm:block"
               />
             </div>
 
             {/* Time Stamp */}
-            <div className="text-[11px] font-mono text-slate-300">
+            <div className="text-[10px] sm:text-[11px] font-mono text-slate-300 whitespace-nowrap ml-0.5">
               <span>{formatTime(currentTime)}</span>
               <span className="text-slate-500 mx-1">/</span>
               <span>{formatTime(duration)}</span>
@@ -482,37 +611,37 @@ export default function CustomVideoPlayer({
           </div>
 
           {/* Right Controls: Quality/Speed Settings Gear, PiP, Fullscreen */}
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5">
             {/* Settings Gear (Quality & Speed) */}
             <button
               onClick={() => {
                 setShowSettingsMenu(!showSettingsMenu);
                 setCurrentMenuTab("main");
               }}
-              className={`p-1.5 rounded-lg hover:bg-white/20 transition-colors ${
+              className={`p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors ${
                 showSettingsMenu ? "bg-white/20 text-blue-400" : "text-white"
               }`}
               title="Quality & Playback Settings"
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {/* Picture in Picture */}
             <button
               onClick={togglePiP}
-              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors hidden sm:block"
+              className="p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors hidden sm:block text-slate-300 hover:text-white"
               title="Picture in Picture"
             >
-              <PictureInPicture className="w-5 h-5" />
+              <PictureInPicture className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {/* Fullscreen */}
             <button
               onClick={toggleFullscreen}
-              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+              className="p-1 sm:p-1.5 rounded-lg hover:bg-white/20 transition-colors text-slate-300 hover:text-white"
               title="Fullscreen (F)"
             >
-              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+              {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
             </button>
           </div>
         </div>

@@ -785,6 +785,39 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
       channelTitle = chat.title || chat.username || "Telegram Channel";
     } catch {}
 
+    // Pre-populate mediaLocationCache so immediate stream request is instant 0ms
+    if (msg.media) {
+      let location = null;
+      if (msg.media.document) {
+        const doc = msg.media.document;
+        location = new Api.InputDocumentFileLocation({
+          id: doc.id,
+          accessHash: doc.accessHash,
+          fileReference: doc.fileReference,
+          thumbSize: ""
+        });
+      } else if (msg.media.photo) {
+        const photo = msg.media.photo;
+        const sizes = photo.sizes || [];
+        const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
+        location = new Api.InputPhotoFileLocation({
+          id: photo.id,
+          accessHash: photo.accessHash,
+          fileReference: photo.fileReference,
+          thumbSize: largest?.type || "y"
+        });
+      }
+      if (location) {
+        const cacheKey = `${peer.toString()}_${messageId.toString()}`;
+        mediaLocationCache.set(cacheKey, {
+          totalSize: Number(fileSize),
+          location,
+          dcId: dcId || client.session.dcId
+        });
+        setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
+      }
+    }
+
     return {
       messageId: messageId.toString(),
       channelId: peer.toString(),
@@ -841,7 +874,7 @@ export async function streamGramMedia(
   const cacheKey = `${channelId}_${messageId}`;
   let mediaCache = mediaLocationCache.get(cacheKey);
 
-  if (!mediaCache) {
+  async function resolveAndCacheMedia() {
     const msgId = parseInt(messageId, 10);
     let msg = null;
 
@@ -940,7 +973,6 @@ export async function streamGramMedia(
     let totalSize = 0;
     let location = null;
     let dcId = undefined;
-
     let foundHash = null;
     let foundRef = null;
 
@@ -995,12 +1027,17 @@ export async function streamGramMedia(
       })();
     }
 
-    mediaCache = { totalSize, location, dcId };
-    mediaLocationCache.set(cacheKey, mediaCache);
+    const resolved = { totalSize, location, dcId };
+    mediaLocationCache.set(cacheKey, resolved);
     setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
+    return resolved;
   }
 
-  const { totalSize, location, dcId } = mediaCache;
+  if (!mediaCache) {
+    mediaCache = await resolveAndCacheMedia();
+  }
+
+  let { totalSize, location, dcId } = mediaCache;
 
   const lowerName = (fileName || "").toLowerCase().trim();
   let contentType = "application/octet-stream";
@@ -1037,7 +1074,7 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const TG_CHUNK_SIZE = 512 * 1024; // 512KB (GramJS chunk limit)
+  const TG_CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk limit)
   const ALIGNMENT = 4096; // 4KB
 
   let sender = null;
@@ -1049,7 +1086,7 @@ export async function streamGramMedia(
     } catch {}
   }
 
-  async function fetchMtprotoChunk(currOffset, currLimit) {
+  async function fetchMtprotoChunk(currOffset, currLimit, retryCount = 0) {
     const fetchLimit = Math.max(ALIGNMENT, Math.min(currLimit, TG_CHUNK_SIZE));
     const reqObj = new Api.upload.GetFile({
       location: location,
@@ -1072,15 +1109,23 @@ export async function streamGramMedia(
         const res = await client.invokeWithSender(reqObj, sender);
         return res?.bytes;
       }
-      if (err.errorMessage === "TIMEOUT") {
-        await new Promise((r) => setTimeout(r, 600));
-        if (sender) {
-          sender = await client.getSender(sender.dcId);
-          const res = await client.invokeWithSender(reqObj, sender);
-          return res?.bytes;
-        }
-        const res = await client.invoke(reqObj);
-        return res?.bytes;
+      if (err.errorMessage === "TIMEOUT" && retryCount < 2) {
+        await new Promise((r) => setTimeout(r, 400));
+        return fetchMtprotoChunk(currOffset, currLimit, retryCount + 1);
+      }
+      // Auto-refresh file reference on expiration and retry
+      if (
+        (err.message?.includes("FILE_REFERENCE") ||
+          err.message?.includes("FILEREF") ||
+          err.errorMessage?.includes("FILE_REFERENCE")) &&
+        retryCount < 2
+      ) {
+        mediaLocationCache.delete(cacheKey);
+        const refreshed = await resolveAndCacheMedia();
+        location = refreshed.location;
+        dcId = refreshed.dcId;
+        totalSize = refreshed.totalSize;
+        return fetchMtprotoChunk(currOffset, currLimit, retryCount + 1);
       }
       throw err;
     }
@@ -1148,7 +1193,8 @@ export async function streamGramMedia(
           bytesSent += slice.length;
         }
 
-        if (chunk.length < fetchLimit) break;
+        // True end-of-file reached if received chunk is not aligned to 4KB or 0 length
+        if (chunk.length < ALIGNMENT || bytesSent >= requestedLength) break;
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1156,7 +1202,7 @@ export async function streamGramMedia(
       }
     } catch (streamErr) {
       if (!clientDisconnected) {
-        console.warn("MTProto streaming interrupted:", streamErr.message);
+        console.warn("MTProto streaming notice:", streamErr.message);
       }
       if (streamErr.message?.includes("FILE_REFERENCE") || streamErr.message?.includes("FILEREF")) {
         mediaLocationCache.delete(cacheKey);
@@ -1191,7 +1237,13 @@ export async function streamGramMedia(
       while (totalSize === 0 || totalSent < totalSize) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
 
-        const chunk = await fetchMtprotoChunk(currentOffset, TG_CHUNK_SIZE);
+        let fetchLimit = TG_CHUNK_SIZE;
+        if (totalSize > 0) {
+          const remaining = totalSize - currentOffset;
+          fetchLimit = Math.max(ALIGNMENT, Math.min(TG_CHUNK_SIZE, Math.ceil(remaining / ALIGNMENT) * ALIGNMENT));
+        }
+
+        const chunk = await fetchMtprotoChunk(currentOffset, fetchLimit);
         if (!chunk || chunk.length === 0) break;
 
         currentOffset += chunk.length;
@@ -1199,7 +1251,7 @@ export async function streamGramMedia(
 
         res.write(chunk);
 
-        if (chunk.length < TG_CHUNK_SIZE) break;
+        if (chunk.length < ALIGNMENT || (totalSize > 0 && totalSent >= totalSize)) break;
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1207,7 +1259,7 @@ export async function streamGramMedia(
       }
     } catch (streamErr) {
       if (!clientDisconnected) {
-        console.warn("MTProto download error:", streamErr.message);
+        console.warn("MTProto download notice:", streamErr.message);
       }
       if (streamErr.message?.includes("FILE_REFERENCE") || streamErr.message?.includes("FILEREF")) {
         mediaLocationCache.delete(cacheKey);
