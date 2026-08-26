@@ -36,6 +36,7 @@ export default function CustomVideoPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
   // Settings Menu state
@@ -239,9 +240,14 @@ export default function CustomVideoPlayer({
         preload="metadata"
         playsInline
         onClick={togglePlay}
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          setIsLoading(false);
+        }}
+        onPlaying={() => setIsLoading(false)}
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={handleTimeUpdate}
+        onLoadedData={() => setIsLoading(false)}
         onLoadedMetadata={() => {
           if (videoRef.current) {
             setDuration(videoRef.current.duration || 0);
@@ -250,11 +256,45 @@ export default function CustomVideoPlayer({
         }}
         onWaiting={() => setIsLoading(true)}
         onCanPlay={() => setIsLoading(false)}
+        onError={() => {
+          setIsLoading(false);
+          setHasError(true);
+        }}
         className="w-full h-full max-h-[80vh] object-contain cursor-pointer"
       />
 
+      {/* Playback Error Overlay */}
+      {hasError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md z-30 p-6 text-center text-slate-300 gap-3">
+          <Film className="w-12 h-12 text-rose-500 mb-1" />
+          <h4 className="text-sm font-bold text-white">Browser Video Decoder Notice</h4>
+          <p className="text-xs text-slate-400 max-w-sm">
+            This video format may use an unsupported audio/video codec in your browser. You can open it in a new tab or download the original file.
+          </p>
+          <div className="flex items-center gap-2.5 mt-2">
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold border border-slate-700 transition-colors"
+            >
+              Open in New Tab
+            </a>
+            {downloadUrl && (
+              <a
+                href={downloadUrl}
+                download={fileName}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-colors"
+              >
+                Download Video
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Loading Spinner */}
-      {isLoading && (
+      {isLoading && !hasError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm z-10 pointer-events-none gap-2">
           <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
           <span className="text-xs text-slate-300 font-medium">Buffering Telegram 4K Stream...</span>
@@ -262,7 +302,7 @@ export default function CustomVideoPlayer({
       )}
 
       {/* Center Big Play/Pause Animation Overlay (when clicked) */}
-      {!isPlaying && !isLoading && (
+      {!isPlaying && !isLoading && !hasError && (
         <div
           onClick={togglePlay}
           className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer transition-opacity z-10"

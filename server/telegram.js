@@ -1009,8 +1009,44 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk size)
-  const ALIGNMENT = 4096; // 4KB
+  const TG_CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk size)
+  const ALIGNMENT = 4096; // 4KB alignment for MTProto upload.GetFile
+
+  let sender = null;
+  try {
+    sender = await client.getSender(dcId || client.session.dcId);
+  } catch {
+    try {
+      sender = await client.getSender(client.session.dcId);
+    } catch {}
+  }
+
+  async function fetchFileChunk(currOffset, currLimit) {
+    const reqObj = new Api.upload.GetFile({
+      location,
+      offset: bigInt(currOffset),
+      limit: Math.max(ALIGNMENT, Math.min(currLimit, TG_CHUNK_SIZE)),
+      precise: true
+    });
+
+    try {
+      if (sender) {
+        return await client.invokeWithSender(reqObj, sender);
+      }
+      return await client.invoke(reqObj);
+    } catch (err) {
+      if (err.newDc) {
+        sender = await client.getSender(err.newDc);
+        return await client.invokeWithSender(reqObj, sender);
+      }
+      if (err.errorMessage === "TIMEOUT") {
+        await new Promise((r) => setTimeout(r, 400));
+        if (sender) return await client.invokeWithSender(reqObj, sender);
+        return await client.invoke(reqObj);
+      }
+      throw err;
+    }
+  }
 
   if (rangeHeader && totalSize > 0) {
     // Parse Range: bytes=start-end
@@ -1024,7 +1060,9 @@ export async function streamGramMedia(
       return res.end();
     }
 
-    const rawEnd = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+    // For open-ended range requests (e.g. bytes=0-), cap at 2MB per burst for fast playback start & seeking
+    const STREAM_BURST = isDownload ? totalSize : 2 * 1024 * 1024;
+    const rawEnd = parts[1] && parts[1].trim() !== "" ? parseInt(parts[1], 10) : start + STREAM_BURST - 1;
     const end = Math.min(rawEnd, totalSize - 1);
     const requestedLength = Math.max(0, end - start + 1);
 
@@ -1047,44 +1085,38 @@ export async function streamGramMedia(
     try {
       const alignedStart = Math.floor(start / ALIGNMENT) * ALIGNMENT;
       const skipBytes = start - alignedStart;
-      const totalFetchLength = requestedLength + skipBytes;
-      // In GramJS iterDownload, limit is the number of chunk request iterations!
-      const chunkCountLimit = Math.ceil(totalFetchLength / CHUNK_SIZE) + 4;
-
-      const iter = client.iterDownload({
-        file: location,
-        offset: bigInt(alignedStart),
-        limit: chunkCountLimit,
-        requestSize: CHUNK_SIZE,
-        chunkSize: CHUNK_SIZE,
-        dcId: dcId
-      });
-
+      let currentOffset = alignedStart;
       let bytesSent = 0;
-      let bufferOffset = 0;
 
-      for await (const chunk of iter) {
+      while (bytesSent < requestedLength) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
-        if (!chunk || chunk.length === 0) continue;
 
-        const chunkStart = bufferOffset;
-        const chunkEnd = bufferOffset + chunk.length - 1;
-        bufferOffset += chunk.length;
+        const remainingRequested = requestedLength - bytesSent;
+        const remainingAligned = remainingRequested + (bytesSent === 0 ? skipBytes : 0);
+        const fetchSize = Math.min(TG_CHUNK_SIZE, Math.ceil(remainingAligned / ALIGNMENT) * ALIGNMENT);
 
-        // Skip bytes before the exact unaligned start
-        if (chunkEnd < skipBytes) continue;
+        const result = await fetchFileChunk(currentOffset, fetchSize);
+        if (!result || !result.bytes || result.bytes.length === 0) {
+          break;
+        }
 
-        const sliceStart = Math.max(0, skipBytes - chunkStart);
-        const remainingNeeded = requestedLength - bytesSent;
-        if (remainingNeeded <= 0) break;
+        const chunk = result.bytes;
+        currentOffset += chunk.length;
 
-        const sliceEnd = Math.min(chunk.length, sliceStart + remainingNeeded);
-        const slice = chunk.subarray(sliceStart, sliceEnd);
+        const isFirstChunk = (currentOffset - chunk.length) === alignedStart;
+        const chunkSkip = isFirstChunk ? skipBytes : 0;
+        const chunkAvailable = chunk.length - chunkSkip;
+        const toSend = Math.min(chunkAvailable, requestedLength - bytesSent);
 
-        res.write(slice);
-        bytesSent += slice.length;
+        if (toSend > 0) {
+          const slice = chunk.subarray(chunkSkip, chunkSkip + toSend);
+          res.write(slice);
+          bytesSent += slice.length;
+        }
 
-        if (bytesSent >= requestedLength) break;
+        if (chunk.length < Math.max(ALIGNMENT, Math.min(fetchSize, TG_CHUNK_SIZE))) {
+          break; // Reached end of file
+        }
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1104,13 +1136,13 @@ export async function streamGramMedia(
       }
     }
   } else {
-    // Full content download / stream (HTTP 200)
+    // Full content stream / download (HTTP 200)
     res.writeHead(200, {
       "Content-Length": totalSize > 0 ? totalSize : undefined,
       "Content-Type": contentType,
       "Content-Disposition": contentDisposition,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "no-cache, no-store, must-revalidate"
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
     });
 
     let clientDisconnected = false;
@@ -1121,18 +1153,24 @@ export async function streamGramMedia(
     }
 
     try {
-      const iter = client.iterDownload({
-        file: location,
-        requestSize: CHUNK_SIZE,
-        dcId: dcId
-      });
+      let currentOffset = 0;
+      let totalSent = 0;
 
-      for await (const chunk of iter) {
+      while (totalSize === 0 || totalSent < totalSize) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
-        if (chunk && chunk.length > 0) {
-          res.write(chunk);
-        }
+
+        const result = await fetchFileChunk(currentOffset, TG_CHUNK_SIZE);
+        if (!result || !result.bytes || result.bytes.length === 0) break;
+
+        const chunk = result.bytes;
+        currentOffset += chunk.length;
+        totalSent += chunk.length;
+
+        res.write(chunk);
+
+        if (chunk.length < TG_CHUNK_SIZE) break;
       }
+
       if (!res.writableEnded && !res.destroyed) {
         res.end();
       }
