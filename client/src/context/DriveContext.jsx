@@ -208,7 +208,16 @@ export function DriveProvider({ children }) {
   };
 
   const signupSendOtp = async (name, email, password) => {
-    return await DriveAPI.signupSendOtp({ name, email, password });
+    const res = await DriveAPI.signupSendOtp({ name, email, password });
+    if (res.autoVerified && res.token && res.user) {
+      localStorage.setItem("teledrive_auth_token", res.token);
+      setCurrentUser(res.user);
+      setIsAuthenticated(true);
+      showToast(res.message || "Account created successfully!");
+      fetchContents();
+      fetchMetadata();
+    }
+    return res;
   };
 
   const signupVerifyOtp = async (email, otp) => {

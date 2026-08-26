@@ -56,36 +56,115 @@ export const DriveAPI = {
   updateFolder: (id, data) => api.patch(`/folders/${id}`, data).then((r) => r.data),
   deleteFolder: (id) => api.delete(`/folders/${id}`).then((r) => r.data),
 
-  // Files
-  uploadFile: (file, folderId, onProgress, signal, uploadId) => {
-    const formData = new FormData();
-    if (uploadId) {
-      formData.append("uploadId", uploadId);
-    }
-    if (folderId && folderId !== "root") {
-      formData.append("folderId", folderId);
-    }
-    formData.append("file", file);
-    return api
-      .post("/files/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        timeout: 0, // Infinite timeout for large file streams up to 2GB
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        signal, // AbortSignal for instant upload cancellation
-        onUploadProgress: (progressEvent) => {
-          if (onProgress && progressEvent.total) {
-            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            onProgress({
-              loaded: progressEvent.loaded,
-              total: progressEvent.total,
-              percent,
-              stage: "browser"
-            });
+  // Files (Direct + 5MB Chunked Engine for Large Files up to 2GB)
+  uploadFile: async (file, folderId, onProgress, signal, uploadId = `up_${Date.now()}`) => {
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks (guarantees fast <2s requests that never timeout on Render)
+    const fileSize = file.size;
+
+    // 1. Direct Upload for Small Files <= 15MB
+    if (fileSize <= 15 * 1024 * 1024) {
+      const formData = new FormData();
+      if (uploadId) formData.append("uploadId", uploadId);
+      if (folderId && folderId !== "root") formData.append("folderId", folderId);
+      formData.append("file", file);
+
+      return api
+        .post("/files/upload", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 0,
+          signal,
+          onUploadProgress: (progressEvent) => {
+            if (onProgress && progressEvent.total) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress({
+                loaded: progressEvent.loaded,
+                total: progressEvent.total,
+                percent,
+                stage: "browser"
+              });
+            }
           }
+        })
+        .then((r) => r.data);
+    }
+
+    // 2. Resilient 5MB Chunked Upload Engine for Large Files > 15MB (up to 2GB)
+    const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+    let uploadedBytes = 0;
+
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      if (signal?.aborted) {
+        // Clean up server chunks on user abort
+        api.post("/files/upload-chunk/cancel", { uploadId, totalChunks }).catch(() => {});
+        throw new Error("canceled");
+      }
+
+      const start = chunkIndex * CHUNK_SIZE;
+      const end = Math.min(fileSize, start + CHUNK_SIZE);
+      const chunkBlob = file.slice(start, end);
+
+      const chunkForm = new FormData();
+      chunkForm.append("uploadId", uploadId);
+      chunkForm.append("chunkIndex", chunkIndex.toString());
+      chunkForm.append("totalChunks", totalChunks.toString());
+      chunkForm.append("chunk", chunkBlob, file.name);
+
+      // Upload chunk with automatic retry
+      let attempts = 0;
+      let chunkSuccess = false;
+      let lastErr = null;
+
+      while (attempts < 3 && !chunkSuccess) {
+        if (signal?.aborted) throw new Error("canceled");
+        attempts++;
+        try {
+          await api.post("/files/upload-chunk", chunkForm, {
+            headers: { "Content-Type": "multipart/form-data" },
+            timeout: 60000, // 60s per 5MB chunk is plenty
+            signal,
+            onUploadProgress: (e) => {
+              if (onProgress && e.total) {
+                const currentLoaded = uploadedBytes + e.loaded;
+                const percent = Math.min(95, Math.max(1, Math.round((currentLoaded * 95) / fileSize)));
+                onProgress({
+                  loaded: currentLoaded,
+                  total: fileSize,
+                  percent,
+                  stage: "browser"
+                });
+              }
+            }
+          });
+          chunkSuccess = true;
+          uploadedBytes += (end - start);
+        } catch (err) {
+          lastErr = err;
+          if (signal?.aborted || err.message === "canceled") throw err;
+          // Wait 1s before retrying
+          await new Promise((res) => setTimeout(res, 1000));
         }
-      })
-      .then((r) => r.data);
+      }
+
+      if (!chunkSuccess) {
+        api.post("/files/upload-chunk/cancel", { uploadId, totalChunks }).catch(() => {});
+        throw lastErr || new Error(`Failed to upload chunk ${chunkIndex + 1} of ${totalChunks}`);
+      }
+    }
+
+    // 3. Complete Assembly & Telegram Upload on Server
+    const completeRes = await api.post("/files/upload-chunk/complete", {
+      uploadId,
+      totalChunks,
+      fileName: file.name,
+      folderId: folderId && folderId !== "root" ? folderId : null,
+      mimeType: file.type,
+      totalSize: fileSize
+    }, {
+      timeout: 0,
+      signal
+    });
+
+    return completeRes.data;
   },
   getUploadProgress: (uploadId) =>
     api.get(`/files/upload-progress/${uploadId}`).then((r) => r.data),

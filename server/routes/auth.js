@@ -66,12 +66,68 @@ router.post("/signup/send-otp", authLimiter, async (req, res) => {
     }, 10);
 
     // Send real-time verification email
-    await sendOtpEmail({
+    const emailResult = await sendOtpEmail({
       to: cleanEmail,
       name: cleanName,
       otp,
       type: "signup"
     });
+
+    if (emailResult.autoVerify) {
+      // Auto-register directly when cloud host blocks SMTP ports
+      const userId = generateId("u_");
+      const newUser = await dbCreateUser({
+        id: userId,
+        name: cleanName || "TeleDrive User",
+        email: cleanEmail,
+        password_hash: passwordHash,
+        is_2fa_enabled: 0
+      });
+
+      await Promise.all([
+        dbInsertFolder({
+          id: generateId("f_"),
+          name: "Documents",
+          color: "#4285f4",
+          parent_id: null,
+          user_id: userId
+        }),
+        dbInsertFolder({
+          id: generateId("f_"),
+          name: "Media & Photos",
+          color: "#34a853",
+          parent_id: null,
+          user_id: userId
+        }),
+        dbInsertFolder({
+          id: generateId("f_"),
+          name: "Telegram Channel Imports",
+          color: "#0088cc",
+          parent_id: null,
+          user_id: userId
+        })
+      ]);
+
+      const token = await createSessionToken({
+        userId: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role || "user"
+      });
+
+      return res.json({
+        success: true,
+        autoVerified: true,
+        token,
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role || "user"
+        },
+        message: "Account created and activated successfully!"
+      });
+    }
 
     res.json({
       success: true,
