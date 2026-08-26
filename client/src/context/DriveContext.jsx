@@ -78,6 +78,42 @@ export function DriveProvider({ children }) {
     setActiveModal("share");
   };
 
+  // Refs for stable popstate handling on mobile back button
+  const previewItemRef = useRef(null);
+  const activeModalRef = useRef(null);
+  const isMobileSidebarOpenRef = useRef(false);
+  const currentFolderIdRef = useRef("root");
+  const sectionRef = useRef("my_drive");
+
+  useEffect(() => {
+    previewItemRef.current = previewItem;
+  }, [previewItem]);
+
+  useEffect(() => {
+    activeModalRef.current = activeModal;
+  }, [activeModal]);
+
+  useEffect(() => {
+    isMobileSidebarOpenRef.current = isMobileSidebarOpen;
+  }, [isMobileSidebarOpen]);
+
+  useEffect(() => {
+    currentFolderIdRef.current = currentFolderId;
+  }, [currentFolderId]);
+
+  useEffect(() => {
+    sectionRef.current = section;
+  }, [section]);
+
+  const handleSetActiveModal = (modalName) => {
+    setActiveModal(modalName);
+    if (modalName) {
+      try {
+        window.history.pushState({ type: "modal", modal: modalName }, "");
+      } catch {}
+    }
+  };
+
   const handleSetPreviewItem = (item) => {
     setPreviewItem(item);
     setSelectedItem(null);
@@ -87,10 +123,11 @@ export function DriveProvider({ children }) {
       const url = new URL(window.location);
       if (item && item.id) {
         url.searchParams.set("file", item.id);
+        window.history.pushState({ type: "preview", fileId: item.id }, "", url);
       } else {
         url.searchParams.delete("file");
+        window.history.replaceState({}, "", url);
       }
-      window.history.replaceState({}, "", url);
     } catch {}
   };
 
@@ -392,8 +429,44 @@ export function DriveProvider({ children }) {
     }
   }, [isAuthenticated, fetchContents]);
 
+  // Intercept Mobile Hardware Back Button (popstate event)
+  useEffect(() => {
+    const handlePopState = (event) => {
+      // 1. If Preview modal (video, pdf, photo) is open, close preview
+      if (previewItemRef.current) {
+        setPreviewItem(null);
+        return;
+      }
+      // 2. If an active modal (upload, settings, share, rename, etc.) is open, close modal
+      if (activeModalRef.current) {
+        setActiveModal(null);
+        return;
+      }
+      // 3. If mobile sidebar drawer is open, close sidebar
+      if (isMobileSidebarOpenRef.current) {
+        setIsMobileSidebarOpen(false);
+        return;
+      }
+      // 4. Otherwise navigate back in folder tree or section
+      const state = event.state;
+      const url = new URL(window.location.href);
+      const targetFolder = state?.folderId || url.searchParams.get("folder") || "root";
+      const targetSection = state?.section || url.searchParams.get("section") || "my_drive";
+
+      setCurrentFolderId(targetFolder);
+      setSection(targetSection);
+      setSelectedItem(null);
+      setSelectedItems([]);
+      setIsMultiSelectMode(false);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   // Navigation handlers
   const openFolder = (folderId) => {
+    if (folderId === currentFolderIdRef.current) return;
     setCurrentFolderId(folderId);
     setSelectedItem(null);
     setSelectedItems([]);
@@ -402,11 +475,12 @@ export function DriveProvider({ children }) {
       localStorage.setItem("teledrive_last_folder", folderId);
       const url = new URL(window.location);
       url.searchParams.set("folder", folderId);
-      window.history.replaceState({}, "", url);
+      window.history.pushState({ type: "folder", folderId, section: sectionRef.current }, "", url);
     } catch {}
   };
 
   const navigateToSection = (newSection) => {
+    if (newSection === sectionRef.current && currentFolderIdRef.current === "root") return;
     setSection(newSection);
     setCurrentFolderId("root");
     setSelectedItem(null);
@@ -418,7 +492,7 @@ export function DriveProvider({ children }) {
       const url = new URL(window.location);
       url.searchParams.set("section", newSection);
       url.searchParams.set("folder", "root");
-      window.history.replaceState({}, "", url);
+      window.history.pushState({ type: "section", section: newSection, folderId: "root" }, "", url);
     } catch {}
     if (newSection === "my_drive") {
       setBreadcrumbs([{ id: "root", name: "My Drive" }]);
@@ -902,7 +976,7 @@ export function DriveProvider({ children }) {
 
     // Modals
     activeModal,
-    setActiveModal,
+    setActiveModal: handleSetActiveModal,
     previewItem,
     setPreviewItem: handleSetPreviewItem,
     modalTargetItem,

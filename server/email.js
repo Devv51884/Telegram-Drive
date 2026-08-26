@@ -1,5 +1,11 @@
 import nodemailer from "nodemailer";
+import dns from "dns";
 import { dbGetSetting } from "./db.js";
+
+// Custom DNS lookup function that strictly forces IPv4 A-records
+const ipv4Lookup = (hostname, options, callback) => {
+  return dns.lookup(hostname, { family: 4 }, callback);
+};
 
 // Helper to get SMTP / Gmail configuration
 export async function getEmailConfig() {
@@ -10,7 +16,7 @@ export async function getEmailConfig() {
   const dbFrom = await dbGetSetting("SMTP_FROM");
 
   const host = dbHost || process.env.SMTP_HOST || (process.env.GMAIL_USER ? "smtp.gmail.com" : "");
-  const port = parseInt(dbPort || process.env.SMTP_PORT || "465", 10);
+  const port = parseInt(dbPort || process.env.SMTP_PORT || "587", 10);
   const user = dbUser || process.env.SMTP_USER || process.env.GMAIL_USER || "";
   const rawPass = dbPass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "";
   const pass = rawPass.replace(/\s+/g, "").trim();
@@ -34,7 +40,7 @@ export async function getTransporter(portOverride = null) {
 
   const isGmail = config.host.includes("gmail.com") || config.user.endsWith("@gmail.com");
   const host = isGmail ? "smtp.gmail.com" : config.host;
-  const port = portOverride || (isGmail ? 465 : config.port);
+  const port = portOverride || (isGmail ? 587 : config.port);
   const secure = port === 465;
 
   return nodemailer.createTransport({
@@ -45,7 +51,8 @@ export async function getTransporter(portOverride = null) {
       user: config.user,
       pass: config.pass
     },
-    family: 4, // Strict IPv4 resolution (prevents ENETUNREACH on Render/Cloud container networks)
+    lookup: ipv4Lookup, // Direct IPv4 lookup
+    family: 4,          // Strict IPv4 socket
     tls: {
       rejectUnauthorized: false
     },

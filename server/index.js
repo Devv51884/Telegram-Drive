@@ -4,8 +4,14 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import helmet from "helmet";
+import dns from "dns";
 import { getDb } from "./db.js";
 import { requireAuth, apiLimiter } from "./security.js";
+
+// Force Node.js to prioritize IPv4 over IPv6 globally (resolves ENETUNREACH on Render)
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 import authRouter from "./routes/auth.js";
 import foldersRouter from "./routes/folders.js";

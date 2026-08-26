@@ -96,6 +96,7 @@ export default function UploadModal() {
     const controller = new AbortController();
     let lastLoaded = 0;
     let lastTime = Date.now();
+    let pollInterval = null;
 
     updateItem(item.id, {
       status: "uploading",
@@ -106,13 +107,14 @@ export default function UploadModal() {
     });
 
     try {
-      await DriveAPI.uploadFile(
+      // Start upload promise
+      const uploadPromise = DriveAPI.uploadFile(
         item.file,
         currentFolderId,
         (browserProgress) => {
           const loaded = Number(browserProgress.loaded) || 0;
           const total = Number(browserProgress.total) || item.size || 1;
-          const rawPercent = Math.min(99, Math.max(1, Math.round((loaded * 100) / total)));
+          const rawPercent = Math.min(95, Math.max(1, Math.round((loaded * 95) / total)));
 
           const now = Date.now();
           const timeDiff = Math.max(0.1, (now - lastTime) / 1000);
@@ -136,12 +138,35 @@ export default function UploadModal() {
             percent: rawPercent,
             speed: speedStr || item.speed || "",
             eta: etaStr || item.eta || "",
-            phase: rawPercent >= 99 ? "Saving to Telegram Cloud..." : `Uploading to Telegram Cloud (${rawPercent}%)`
+            phase: rawPercent >= 90 ? "Transmitting to Telegram Cloud..." : `Uploading to Server (${rawPercent}%)`
           });
         },
         controller.signal,
         item.id
       );
+
+      // Start polling for Server-to-Telegram Live Upload progress
+      pollInterval = setInterval(async () => {
+        if (controller.signal.aborted) {
+          clearInterval(pollInterval);
+          return;
+        }
+        try {
+          const progressRes = await DriveAPI.getUploadProgress(item.id);
+          if (progressRes?.success && progressRes.progress) {
+            const p = progressRes.progress;
+            const telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (p.percent || 0) * 0.09)));
+            updateItem(item.id, {
+              percent: telegramPercent,
+              phase: `Syncing with Telegram Cloud (${p.percent || 0}%)`
+            });
+          }
+        } catch {}
+      }, 1200);
+
+      await uploadPromise;
+
+      if (pollInterval) clearInterval(pollInterval);
 
       updateItem(item.id, {
         status: "done",
@@ -153,6 +178,8 @@ export default function UploadModal() {
       });
       refresh();
     } catch (err) {
+      if (pollInterval) clearInterval(pollInterval);
+
       if (err.name === "CanceledError" || err.message === "canceled" || controller.signal.aborted) {
         updateItem(item.id, {
           status: "cancelled",
@@ -160,6 +187,7 @@ export default function UploadModal() {
           speed: "",
           eta: ""
         });
+      } else {
         const errorMsg = err.response?.data?.error || err.message || "Upload failed";
         updateItem(item.id, {
           status: "error",
@@ -174,7 +202,9 @@ export default function UploadModal() {
 
   const cancelUpload = (item) => {
     if (item.controller) {
-      item.controller.abort();
+      try {
+        item.controller.abort();
+      } catch {}
     }
     updateItem(item.id, {
       status: "cancelled",
@@ -187,7 +217,9 @@ export default function UploadModal() {
   const cancelAllUploads = () => {
     uploadList.forEach((item) => {
       if (item.controller && (item.status === "uploading" || item.status === "pending")) {
-        item.controller.abort();
+        try {
+          item.controller.abort();
+        } catch {}
       }
     });
     setUploadList((prev) =>
@@ -201,7 +233,7 @@ export default function UploadModal() {
 
   if (activeModal !== "upload" && !hasActiveUploads) return null;
 
-  // Render Minimized Floating Dock Widget
+  // Render Minimized Floating Dock Widget (Responsive across Mobile, Tablet, Laptop)
   if (isMinimized || (activeModal !== "upload" && hasActiveUploads)) {
     const activeCount = uploadList.filter(
       (i) => i.status === "uploading" || i.status === "pending"
@@ -209,19 +241,19 @@ export default function UploadModal() {
     const completedCount = uploadList.filter((i) => i.status === "done").length;
 
     return (
-      <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5 duration-200">
-        <div className="w-80 sm:w-96 bg-white dark:bg-[#1e1f20] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-3.5 flex flex-col gap-2.5 backdrop-blur-xl">
+      <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 z-40 max-w-[calc(100vw-24px)] animate-in slide-in-from-bottom-5 duration-200">
+        <div className="bg-white/95 dark:bg-[#1e1f20]/95 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-3.5 flex flex-col gap-2.5 backdrop-blur-xl">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 flex items-center justify-center">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 flex items-center justify-center flex-shrink-0">
                 {activeCount > 0 ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 )}
               </div>
-              <div>
-                <p className="text-xs font-bold text-slate-800 dark:text-white">
+              <div className="truncate">
+                <p className="text-xs font-bold text-slate-800 dark:text-white truncate">
                   {activeCount > 0
                     ? `Uploading ${activeCount} file${activeCount > 1 ? "s" : ""}`
                     : `All ${completedCount} uploads complete`}
@@ -232,7 +264,7 @@ export default function UploadModal() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -267,7 +299,7 @@ export default function UploadModal() {
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 mb-0.5">
                   <span className="truncate max-w-[180px] font-medium">{item.name}</span>
                   <span className="text-[10px] text-slate-400">
-                    {item.status === "done" ? "Done" : `${item.percent || 1}%`}
+                    {item.status === "done" ? "Done" : item.status === "cancelled" ? "Cancelled" : `${item.percent || 1}%`}
                   </span>
                 </div>
                 <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -277,6 +309,8 @@ export default function UploadModal() {
                         ? "bg-emerald-500"
                         : item.status === "error"
                         ? "bg-rose-500"
+                        : item.status === "cancelled"
+                        ? "bg-amber-500"
                         : "bg-blue-500"
                     }`}
                     style={{ width: `${Math.max(2, item.percent || 1)}%` }}
