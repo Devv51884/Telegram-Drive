@@ -259,7 +259,6 @@ router.post("/resend-verification", authLimiter, async (req, res) => {
 
     const newToken = crypto.randomBytes(32).toString("hex");
     const appUrl = getClientAppUrl(req);
-    const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(newToken)}`;
 
     await dbSaveVerificationToken(cleanEmail, newToken, "signup_link", meta, 24);
 
