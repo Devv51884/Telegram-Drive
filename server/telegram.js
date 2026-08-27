@@ -1198,7 +1198,7 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const TG_CHUNK_SIZE = 512 * 1024; // 512KB (GramJS max chunk limit)
+  const TG_CHUNK_SIZE = 128 * 1024; // 128KB (Standard MTProto valid chunk size)
   const ALIGNMENT = 4096; // 4KB
 
   let sender = null;
@@ -1210,12 +1210,11 @@ export async function streamGramMedia(
     } catch {}
   }
 
-  async function fetchMtprotoChunk(currOffset, currLimit, retryCount = 0) {
-    const fetchLimit = Math.max(ALIGNMENT, Math.min(currLimit, TG_CHUNK_SIZE));
+  async function fetchMtprotoChunk(currOffset, retryCount = 0) {
     const reqObj = new Api.upload.GetFile({
       location: location,
       offset: bigInt(currOffset),
-      limit: fetchLimit,
+      limit: TG_CHUNK_SIZE,
       precise: true
     });
 
@@ -1235,7 +1234,7 @@ export async function streamGramMedia(
       }
       if (err.errorMessage === "TIMEOUT" && retryCount < 2) {
         await new Promise((r) => setTimeout(r, 400));
-        return fetchMtprotoChunk(currOffset, currLimit, retryCount + 1);
+        return fetchMtprotoChunk(currOffset, retryCount + 1);
       }
       // Auto-refresh file reference on expiration and retry
       if (
@@ -1249,7 +1248,7 @@ export async function streamGramMedia(
         location = refreshed.location;
         dcId = refreshed.dcId;
         totalSize = refreshed.totalSize;
-        return fetchMtprotoChunk(currOffset, currLimit, retryCount + 1);
+        return fetchMtprotoChunk(currOffset, retryCount + 1);
       }
       throw err;
     }
@@ -1296,19 +1295,12 @@ export async function streamGramMedia(
       while (bytesSent < requestedLength && currentOffset < totalSize) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
 
-        const remainingRequested = requestedLength - bytesSent;
-        const remainingAligned = remainingRequested + (bytesSent === 0 ? skipBytes : 0);
-        let fetchLimit = Math.min(TG_CHUNK_SIZE, Math.ceil(remainingAligned / ALIGNMENT) * ALIGNMENT);
-        fetchLimit = Math.max(ALIGNMENT, fetchLimit);
-
-        const chunk = await fetchMtprotoChunk(currentOffset, fetchLimit);
+        const chunk = await fetchMtprotoChunk(currentOffset);
         if (!chunk || chunk.length === 0) break;
 
-        currentOffset += chunk.length;
-
-        const isFirstChunk = (currentOffset - chunk.length) === alignedStart;
+        const isFirstChunk = currentOffset === alignedStart;
         const chunkSkip = isFirstChunk ? skipBytes : 0;
-        const chunkAvailable = chunk.length - chunkSkip;
+        const chunkAvailable = Math.max(0, chunk.length - chunkSkip);
         const toSend = Math.min(chunkAvailable, requestedLength - bytesSent);
 
         if (toSend > 0) {
@@ -1317,8 +1309,10 @@ export async function streamGramMedia(
           bytesSent += slice.length;
         }
 
-        // True end-of-file reached if received chunk is not aligned to 4KB or 0 length
-        if (chunk.length < ALIGNMENT || bytesSent >= requestedLength) break;
+        currentOffset += chunk.length;
+
+        // End of range reached or EOF reached
+        if (bytesSent >= requestedLength || chunk.length < ALIGNMENT) break;
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1361,19 +1355,12 @@ export async function streamGramMedia(
       while (totalSize === 0 || totalSent < totalSize) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
 
-        let fetchLimit = TG_CHUNK_SIZE;
-        if (totalSize > 0) {
-          const remaining = totalSize - currentOffset;
-          fetchLimit = Math.max(ALIGNMENT, Math.min(TG_CHUNK_SIZE, Math.ceil(remaining / ALIGNMENT) * ALIGNMENT));
-        }
-
-        const chunk = await fetchMtprotoChunk(currentOffset, fetchLimit);
+        const chunk = await fetchMtprotoChunk(currentOffset);
         if (!chunk || chunk.length === 0) break;
 
+        res.write(chunk);
         currentOffset += chunk.length;
         totalSent += chunk.length;
-
-        res.write(chunk);
 
         if (chunk.length < ALIGNMENT || (totalSize > 0 && totalSent >= totalSize)) break;
       }
@@ -1462,19 +1449,15 @@ export async function autoHealTelegramImportReferences() {
         if (!msg) {
           try {
             const rawNum = f.telegram_channel_id.replace(/^-100/, "").replace(/^-/, "");
-            const targetPeer = await client.getInputEntity(bigInt(rawNum));
-            const messages = await client.getMessages(targetPeer, { ids: [msgId] });
-            if (messages && messages[0] && messages[0].media) msg = messages[0];
-          } catch (mErr2) {
-            if (
-              mErr2.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-              mErr2.code === 401 ||
-              mErr2.message?.includes("AUTH_KEY_UNREGISTERED")
-            ) {
-              await dbDeactivateTelegramSessions(null);
-              return;
+            // Only try resolving by number if not a bot or if user is connected
+            if (!activeBotToken || client !== activeBotGramClient) {
+              const targetPeer = await client.getInputEntity(bigInt(rawNum)).catch(() => null);
+              if (targetPeer) {
+                const messages = await client.getMessages(targetPeer, { ids: [msgId] }).catch(() => null);
+                if (messages && messages[0] && messages[0].media) msg = messages[0];
+              }
             }
-          }
+          } catch {}
         }
 
         if (msg && msg.media) {
