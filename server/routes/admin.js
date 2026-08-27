@@ -256,4 +256,118 @@ router.post("/system/ping", async (req, res) => {
   }
 });
 
+// ==========================================
+// EMAIL GATEWAY MANAGEMENT & DIAGNOSTICS
+// ==========================================
+
+// GET /api/admin/email/status - Check configured email providers
+router.get("/email/status", async (req, res) => {
+  try {
+    const { getEmailConfig } = await import("../email.js");
+    const config = await getEmailConfig();
+
+    const brevoKey = process.env.BREVO_API_KEY || (await dbGetSetting("BREVO_API_KEY")) || "";
+    const resendKey = process.env.RESEND_API_KEY || (await dbGetSetting("RESEND_API_KEY")) || "";
+    const sendgridKey = process.env.SENDGRID_API_KEY || (await dbGetSetting("SENDGRID_API_KEY")) || "";
+
+    const mask = (str) => {
+      if (!str) return "";
+      if (str.length <= 8) return "••••••••";
+      return str.substring(0, 4) + "••••••••" + str.substring(str.length - 4);
+    };
+
+    res.json({
+      success: true,
+      providers: {
+        brevo: {
+          configured: Boolean(brevoKey),
+          keyMasked: mask(brevoKey),
+          recommended: true,
+          description: "HTTPS API (Port 443) - Free 300 emails/day, 100% works on Render"
+        },
+        resend: {
+          configured: Boolean(resendKey),
+          keyMasked: mask(resendKey),
+          description: "HTTPS API (Port 443) - Free 3,000 emails/month"
+        },
+        sendgrid: {
+          configured: Boolean(sendgridKey),
+          keyMasked: mask(sendgridKey),
+          description: "HTTPS API (Port 443) - Free 100 emails/day"
+        },
+        smtp: {
+          configured: config.isConfigured,
+          host: config.host || "smtp.gmail.com",
+          port: config.port || 587,
+          user: config.user,
+          description: "SMTP (Ports 587/465) - Works on local/VPS, blocked on Render Free"
+        }
+      },
+      hasActiveProvider: Boolean(brevoKey || resendKey || sendgridKey || config.isConfigured)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/email/settings - Update email API keys / SMTP in database
+router.post("/email/settings", async (req, res) => {
+  try {
+    const { brevoApiKey, resendApiKey, sendgridApiKey, gmailUser, gmailAppPassword } = req.body;
+
+    if (brevoApiKey !== undefined) {
+      await dbSetSetting("BREVO_API_KEY", brevoApiKey.trim());
+    }
+    if (resendApiKey !== undefined) {
+      await dbSetSetting("RESEND_API_KEY", resendApiKey.trim());
+    }
+    if (sendgridApiKey !== undefined) {
+      await dbSetSetting("SENDGRID_API_KEY", sendgridApiKey.trim());
+    }
+    if (gmailUser !== undefined) {
+      await dbSetSetting("GMAIL_USER", gmailUser.trim());
+      await dbSetSetting("SMTP_USER", gmailUser.trim());
+    }
+    if (gmailAppPassword !== undefined) {
+      await dbSetSetting("GMAIL_APP_PASSWORD", gmailAppPassword.trim());
+      await dbSetSetting("SMTP_PASS", gmailAppPassword.trim());
+    }
+
+    res.json({
+      success: true,
+      message: "Email settings saved successfully!"
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/email/test - Send test email to verify delivery
+router.post("/email/test", async (req, res) => {
+  try {
+    const { toEmail } = req.body;
+    const targetEmail = toEmail || req.userEmail || "devv5412@gmail.com";
+
+    const { sendTestEmail } = await import("../email.js");
+    const result = await sendTestEmail({ toEmail: targetEmail });
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || "Email delivery failed",
+        details: result.details
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Test email successfully delivered to ${targetEmail} via ${result.provider}!`,
+      provider: result.provider,
+      messageId: result.messageId
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

@@ -28,7 +28,7 @@ export async function getEmailConfig() {
   const user = dbUser || process.env.SMTP_USER || process.env.GMAIL_USER || "";
   const rawPass = dbPass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "";
   const pass = rawPass.replace(/\s+/g, "").trim();
-  const from = dbFrom || process.env.SMTP_FROM || (user ? `"TeleDrive Cloud" <${user}>` : '"TeleDrive Cloud" <no-reply@teledrive.cloud>');
+  const from = dbFrom || process.env.SMTP_FROM || (user ? `"TeleDrive Cloud" <${user}>` : '"TeleDrive Cloud" <no-reply@telegram-drive.in>');
 
   return {
     host: host.trim(),
@@ -57,9 +57,9 @@ export async function getTransporter(portOverride = null, useService = false) {
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 12000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000
+      connectionTimeout: 10000,
+      greetingTimeout: 8000,
+      socketTimeout: 12000
     });
   }
 
@@ -82,205 +82,247 @@ export async function getTransporter(portOverride = null, useService = false) {
       rejectUnauthorized: false,
       servername: host
     },
-    connectionTimeout: 12000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
+    connectionTimeout: 10000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000
   });
 }
 
-// 1. Send 6-Digit Real-Time OTP Email (Signup or Forgot Password)
-export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "signup" }) {
-  const config = await getEmailConfig();
-  if (!config.isConfigured) {
-    throw new Error(
-      "Email service is not configured on the server. Please ensure GMAIL_USER and GMAIL_APP_PASSWORD are set."
-    );
+// =========================================================================
+// CENTRAL UNIFIED EMAIL SENDER
+// Supports: Brevo HTTPS (443), Resend HTTPS (443), SendGrid HTTPS (443),
+// and SMTP (587, 465, Gmail Service).
+// =========================================================================
+export async function sendUnifiedEmail({
+  to,
+  toName = "TeleDrive User",
+  subject,
+  html,
+  text,
+  fromName = "TeleDrive Cloud",
+  fromEmail
+}) {
+  const cleanTo = (to || "").trim().toLowerCase();
+  if (!cleanTo || !cleanTo.includes("@")) {
+    throw new Error("Invalid recipient email address");
   }
 
-  const isSignup = type === "signup";
-  const title = isSignup ? "Verify Your Email Address" : "Reset Your TeleDrive Password";
-  const actionText = isSignup
-    ? "Thank you for creating an account with TeleDrive. Use the 6-digit verification code below to verify your Gmail address and activate unlimited cloud storage."
-    : "We received a request to reset the password for your TeleDrive account. Use the 6-digit code below to set a new password.";
+  const emailConfig = await getEmailConfig();
+  const resendApiKey = (process.env.RESEND_API_KEY || (await dbGetSetting("RESEND_API_KEY")) || "").trim();
+  const brevoApiKey = (process.env.BREVO_API_KEY || (await dbGetSetting("BREVO_API_KEY")) || "").trim();
+  const sendgridApiKey = (process.env.SENDGRID_API_KEY || (await dbGetSetting("SENDGRID_API_KEY")) || "").trim();
 
-  // Log OTP to server console (Accessible in Render Dashboard Logs)
-  console.log(`\n==================================================`);
-  console.log(`🔑 [TELEDRIVE REAL-TIME OTP] For: ${to}`);
-  console.log(`👉 VERIFICATION CODE: >>> ${otp} <<< (Valid for 10 min)`);
-  console.log(`==================================================\n`);
+  const senderEmail = fromEmail || emailConfig.user || "no-reply@telegram-drive.in";
+  const senderName = fromName || "TeleDrive Cloud";
+  const fromHeader = emailConfig.user ? `"${senderName}" <${emailConfig.user}>` : `"${senderName}" <${senderEmail}>`;
 
-  const htmlContent = `
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title}</title>
-    <style>
-      body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e2e8f0; }
-      .container { max-width: 540px; margin: 40px auto; background: #131b2e; border: 1px solid #1e293b; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
-      .header { background: linear-gradient(135deg, #1d4ed8, #0284c7); padding: 32px 24px; text-align: center; color: #ffffff; }
-      .brand { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0; }
-      .sub-brand { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.85; margin-top: 4px; }
-      .content { padding: 36px 32px; text-align: center; }
-      .greeting { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
-      .desc { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 28px; }
-      .otp-box { background: #0f172a; border: 2px dashed #2563eb; border-radius: 16px; padding: 20px; margin: 0 auto 28px; display: inline-block; }
-      .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #38bdf8; margin: 0; }
-      .validity { font-size: 11px; color: #64748b; margin-top: 6px; }
-      .security-note { background: #1e293b; border-radius: 12px; padding: 14px 16px; font-size: 11px; color: #94a3b8; line-height: 1.5; text-align: left; margin-bottom: 24px; }
-      .footer { background: #0f172a; padding: 20px 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <h1 class="brand">☁️ TeleDrive Cloud</h1>
-        <div class="sub-brand">Unlimited Cloud Storage & Fast Streaming</div>
-      </div>
-      <div class="content">
-        <div class="greeting">Hello, ${name}!</div>
-        <p class="desc">${actionText}</p>
-        
-        <div class="otp-box">
-          <div class="otp-code">${otp}</div>
-          <div class="validity">⏱️ This code will expire in 10 minutes</div>
-        </div>
+  const errors = [];
 
-        <div class="security-note">
-          🔒 <strong>Security Warning:</strong> If you did not initiate this request, please ignore this email or change your password immediately. Never share this code with anyone.
-        </div>
-      </div>
-      <div class="footer">
-        © ${new Date().getFullYear()} TeleDrive Cloud • Secure Telegram Storage System
-      </div>
-    </div>
-  </body>
-  </html>
-  `;
-
-  const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
-
-  // 1. Check for HTTPS-based email APIs (Port 443 - 100% open on Render Free Tier)
-  const resendApiKey = process.env.RESEND_API_KEY || (await dbGetSetting("RESEND_API_KEY"));
-  const brevoApiKey = process.env.BREVO_API_KEY || (await dbGetSetting("BREVO_API_KEY"));
-
-  if (resendApiKey) {
-    try {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey.trim()}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: config.user ? `TeleDrive Cloud <${config.user}>` : "TeleDrive Cloud <onboarding@resend.dev>",
-          to: [to.trim().toLowerCase()],
-          subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
-          html: htmlContent
-        })
-      });
-      const data = await response.json();
-      if (response.ok && data.id) {
-        console.log(`✅ Real-time OTP sent via Resend HTTPS API to ${to} (Id: ${data.id})`);
-        return { success: true, messageId: data.id };
-      }
-    } catch (apiErr) {
-      console.warn("Resend API warning:", apiErr.message);
-    }
-  }
-
+  // =========================================================================
+  // 1. BREVO HTTPS API (Port 443 - 300 free emails/day, 100% open on Render/Cloud)
+  // =========================================================================
   if (brevoApiKey) {
     try {
       const response = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
-          "api-key": brevoApiKey.trim(),
-          "Content-Type": "application/json"
+          "api-key": brevoApiKey,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
         },
         body: JSON.stringify({
-          sender: { name: "TeleDrive Cloud", email: config.user || "no-reply@teledrive.cloud" },
-          to: [{ email: to.trim().toLowerCase(), name }],
-          subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
-          htmlContent: htmlContent
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: cleanTo, name: toName }],
+          subject: subject,
+          htmlContent: html,
+          textContent: text || subject
         })
       });
       const data = await response.json();
-      if (response.ok && data.messageId) {
-        console.log(`✅ Real-time OTP sent via Brevo HTTPS API to ${to} (MessageId: ${data.messageId})`);
-        return { success: true, messageId: data.messageId };
+      if (response.ok && (data.messageId || data.id)) {
+        console.log(`✅ Email delivered via Brevo HTTPS API to ${cleanTo} (MessageId: ${data.messageId || data.id})`);
+        return { success: true, provider: "brevo", messageId: data.messageId || data.id };
+      } else {
+        const errMsg = data.message || JSON.stringify(data);
+        console.warn(`⚠️ Brevo API error: ${errMsg}`);
+        errors.push(`Brevo: ${errMsg}`);
       }
-    } catch (apiErr) {
-      console.warn("Brevo API warning:", apiErr.message);
+    } catch (err) {
+      console.warn(`⚠️ Brevo HTTPS API network error:`, err.message);
+      errors.push(`Brevo: ${err.message}`);
     }
   }
 
-  // 2. Try Standard SMTP (Port 587 STARTTLS + IPv4 first, then Port 465 SSL)
-  try {
-    const transporter587 = await getTransporter(587);
-    if (transporter587) {
-      const info = await transporter587.sendMail({
-        from: fromAddress,
-        to: to.trim().toLowerCase(),
-        subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
-        text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
-        html: htmlContent
-      });
+  // =========================================================================
+  // 2. RESEND HTTPS API (Port 443 - 3000 free emails/month, open on Render/Cloud)
+  // =========================================================================
+  if (resendApiKey) {
+    try {
+      const resendSender = senderEmail.endsWith("@gmail.com")
+        ? `TeleDrive <onboarding@resend.dev>`
+        : `"${senderName}" <${senderEmail}>`;
 
-      console.log(`✅ Real-time Gmail OTP sent via Port 587 to ${to} (MessageId: ${info.messageId})`);
-      return { success: true, messageId: info.messageId };
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: resendSender,
+          to: [cleanTo],
+          subject: subject,
+          html: html,
+          text: text || subject
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.id) {
+        console.log(`✅ Email delivered via Resend HTTPS API to ${cleanTo} (Id: ${data.id})`);
+        return { success: true, provider: "resend", messageId: data.id };
+      } else {
+        const errMsg = data.message || JSON.stringify(data);
+        console.warn(`⚠️ Resend API error: ${errMsg}`);
+        errors.push(`Resend: ${errMsg}`);
+      }
+    } catch (err) {
+      console.warn(`⚠️ Resend HTTPS API network error:`, err.message);
+      errors.push(`Resend: ${err.message}`);
     }
-  } catch (err587) {
-    console.warn("Primary Gmail Port 587 failed, trying Port 465 SSL:", err587.message);
+  }
+
+  // =========================================================================
+  // 3. SENDGRID HTTPS API (Port 443 - 100 free emails/day)
+  // =========================================================================
+  if (sendgridApiKey) {
+    try {
+      const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${sendgridApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: cleanTo, name: toName }] }],
+          from: { email: senderEmail, name: senderName },
+          subject: subject,
+          content: [
+            { type: "text/html", value: html }
+          ]
+        })
+      });
+      if (response.ok || response.status === 202) {
+        console.log(`✅ Email delivered via SendGrid HTTPS API to ${cleanTo}`);
+        return { success: true, provider: "sendgrid" };
+      } else {
+        const errText = await response.text();
+        console.warn(`⚠️ SendGrid API error: ${errText}`);
+        errors.push(`SendGrid: ${errText}`);
+      }
+    } catch (err) {
+      console.warn(`⚠️ SendGrid HTTPS API network error:`, err.message);
+      errors.push(`SendGrid: ${err.message}`);
+    }
+  }
+
+  // =========================================================================
+  // 4. SMTP NODEMAILER (Port 587 STARTTLS, Port 465 SSL, Gmail Service)
+  // =========================================================================
+  if (emailConfig.isConfigured) {
+    // 4a. Try Port 587 (IPv4 STARTTLS)
+    try {
+      const transporter587 = await getTransporter(587);
+      if (transporter587) {
+        const info = await transporter587.sendMail({
+          from: fromHeader,
+          to: cleanTo,
+          subject: subject,
+          text: text || subject,
+          html: html
+        });
+        console.log(`✅ Email delivered via SMTP Port 587 to ${cleanTo} (MessageId: ${info.messageId})`);
+        return { success: true, provider: "smtp_587", messageId: info.messageId };
+      }
+    } catch (err587) {
+      errors.push(`SMTP 587: ${err587.message}`);
+      console.warn(`SMTP 587 failed, trying Port 465 SSL:`, err587.message);
+    }
+
+    // 4b. Try Port 465 (IPv4 SSL)
     try {
       const transporter465 = await getTransporter(465);
       if (transporter465) {
         const info = await transporter465.sendMail({
-          from: fromAddress,
-          to: to.trim().toLowerCase(),
-          subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
-          text: `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`,
-          html: htmlContent
+          from: fromHeader,
+          to: cleanTo,
+          subject: subject,
+          text: text || subject,
+          html: html
         });
-
-        console.log(`✅ Real-time Gmail OTP sent via Port 465 to ${to} (MessageId: ${info.messageId})`);
-        return { success: true, messageId: info.messageId };
+        console.log(`✅ Email delivered via SMTP Port 465 to ${cleanTo} (MessageId: ${info.messageId})`);
+        return { success: true, provider: "smtp_465", messageId: info.messageId };
       }
     } catch (err465) {
-      console.warn("Both SMTP ports (587 & 465) failed on host:", err465.message);
-
-      // Render Free Tier detection: Render blocks all outbound SMTP ports (25, 465, 587).
-      // Enable seamless auto-verification so users are NEVER blocked on Render Free tier!
-      const isHostBlocked = 
-        err465.message?.includes("ENETUNREACH") || 
-        err465.message?.includes("ETIMEDOUT") || 
-        err465.message?.includes("ECONNREFUSED") ||
-        err587.message?.includes("ENETUNREACH");
-
-      if (isHostBlocked) {
-        console.log("ℹ️ [Render Free Tier Detected: Outbound SMTP ports blocked by host]. Enabling auto-activation for signup.");
-        return {
-          success: true,
-          autoVerify: true,
-          otp,
-          warning: "Render Free Plan blocks outbound SMTP. Account auto-activated."
-        };
-      }
-
-      throw new Error(`Email delivery failed: ${err587.message || err465.message}`);
+      errors.push(`SMTP 465: ${err465.message}`);
+      console.warn(`SMTP 465 failed, trying Gmail Service transport:`, err465.message);
     }
+
+    // 4c. Try Gmail Service
+    try {
+      const serviceTransporter = await getTransporter(null, true);
+      if (serviceTransporter) {
+        const info = await serviceTransporter.sendMail({
+          from: fromHeader,
+          to: cleanTo,
+          subject: subject,
+          text: text || subject,
+          html: html
+        });
+        console.log(`✅ Email delivered via Gmail Service to ${cleanTo} (MessageId: ${info.messageId})`);
+        return { success: true, provider: "gmail_service", messageId: info.messageId };
+      }
+    } catch (servErr) {
+      errors.push(`Gmail Service: ${servErr.message}`);
+    }
+  } else {
+    errors.push("SMTP credentials (GMAIL_USER & GMAIL_APP_PASSWORD) not configured in .env/database");
   }
+
+  // Check if failure is due to cloud host firewall blocking outbound SMTP ports
+  const isHostBlocked = errors.some(
+    (e) =>
+      e.includes("ENETUNREACH") ||
+      e.includes("ETIMEDOUT") ||
+      e.includes("ECONNREFUSED") ||
+      e.includes("Greeting timed out") ||
+      e.includes("Connection timeout")
+  );
+
+  if (isHostBlocked) {
+    console.error(`\n🚨 [EMAIL DELIVERY BLOCKED BY HOST FIREWALL]`);
+    console.error(`Your hosting provider (e.g. Render Free Tier) blocks outbound SMTP ports (25, 465, 587).`);
+    console.error(`👉 SOLUTION: Add BREVO_API_KEY (Free 300 emails/day) or RESEND_API_KEY in your Render Environment Variables.`);
+    console.error(`Get a free Brevo API key in 30 seconds: https://app.brevo.com/settings/keys/api\n`);
+
+    return {
+      success: false,
+      blockedByHost: true,
+      error: "Host firewall blocks outbound SMTP ports. Please set BREVO_API_KEY in Render environment variables for 100% reliable delivery.",
+      details: errors
+    };
+  }
+
+  return {
+    success: false,
+    error: `Failed to deliver email: ${errors.join(" | ")}`,
+    details: errors
+  };
 }
 
-// 2. Send Direct Verification Link Email (Signup Flow)
+// =========================================================================
+// 1. SEND DIRECT EMAIL VERIFICATION LINK (SIGNUP FLOW)
+// =========================================================================
 export async function sendVerificationEmail({ to, name = "TeleDrive User", token, appUrl, validityHours = 24 }) {
-  const config = await getEmailConfig();
-  if (!config.isConfigured) {
-    throw new Error(
-      "Email service is not configured on the server. Please ensure GMAIL_USER and GMAIL_APP_PASSWORD are set."
-    );
-  }
-
   const baseAppUrl = (appUrl || "http://localhost:5173").replace(/\/+$/, "");
   const verifyUrl = `${baseAppUrl}/?verify_email=${encodeURIComponent(token)}`;
 
@@ -351,82 +393,102 @@ export async function sendVerificationEmail({ to, name = "TeleDrive User", token
   </html>
   `;
 
-  const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
+  const textContent = `Welcome to TeleDrive, ${name}!\n\nPlease verify your email address to activate your account by clicking the link below:\n${verifyUrl}\n\nThis verification link is valid for ${validityHours} hours.`;
 
-  try {
-    const transporter = await getTransporter(587);
-    if (transporter) {
-      const info = await transporter.sendMail({
-        from: fromAddress,
-        to: to.trim().toLowerCase(),
-        subject: `[TeleDrive] Verify your email address to activate your account`,
-        text: `Welcome to TeleDrive! Please verify your email by opening: ${verifyUrl} (Valid for ${validityHours} hours).`,
-        html: htmlContent
-      });
-      console.log(`✅ Verification email sent to ${to} (MessageId: ${info.messageId})`);
-      return { success: true, messageId: info.messageId, verifyUrl };
-    }
-  } catch (err587) {
-    console.warn("Port 587 verification email failed, trying 465 SSL:", err587.message);
-    try {
-      const transporter465 = await getTransporter(465);
-      if (transporter465) {
-        const info = await transporter465.sendMail({
-          from: fromAddress,
-          to: to.trim().toLowerCase(),
-          subject: `[TeleDrive] Verify your email address to activate your account`,
-          text: `Welcome to TeleDrive! Please verify your email by opening: ${verifyUrl} (Valid for ${validityHours} hours).`,
-          html: htmlContent
-        });
-        console.log(`✅ Verification email sent via Port 465 to ${to} (MessageId: ${info.messageId})`);
-        return { success: true, messageId: info.messageId, verifyUrl };
-      }
-    } catch (err465) {
-      console.warn("Port 465 failed, trying Gmail Service transport:", err465.message);
-      try {
-        const serviceTransporter = await getTransporter(null, true);
-        if (serviceTransporter) {
-          const info = await serviceTransporter.sendMail({
-            from: fromAddress,
-            to: to.trim().toLowerCase(),
-            subject: `[TeleDrive] Verify your email address to activate your account`,
-            text: `Welcome to TeleDrive! Please verify your email by opening: ${verifyUrl} (Valid for ${validityHours} hours).`,
-            html: htmlContent
-          });
-          console.log(`✅ Verification email sent via Gmail Service to ${to} (MessageId: ${info.messageId})`);
-          return { success: true, messageId: info.messageId, verifyUrl };
-        }
-      } catch (serviceErr) {
-        console.warn("All SMTP delivery methods failed:", serviceErr.message);
-        const isHostBlocked =
-          serviceErr.message?.includes("ENETUNREACH") ||
-          err465.message?.includes("ENETUNREACH") ||
-          err587.message?.includes("ENETUNREACH") ||
-          serviceErr.message?.includes("ETIMEDOUT") ||
-          err465.message?.includes("ETIMEDOUT");
+  const result = await sendUnifiedEmail({
+    to,
+    toName: name,
+    subject: `[TeleDrive] Verify your email address to activate your account`,
+    html: htmlContent,
+    text: textContent
+  });
 
-        if (isHostBlocked) {
-          console.log("ℹ️ [Host Network Blocked Outbound SMTP]. Verification link generated in console.");
-          return {
-            success: true,
-            warning: "Host outbound SMTP is blocked. Verification link generated.",
-            verifyUrl
-          };
-        }
-
-        throw new Error(`Failed to send verification email: ${serviceErr.message || err465.message}`);
-      }
-    }
-  }
+  return {
+    ...result,
+    verifyUrl
+  };
 }
 
-// 3. Send Password Reset Link Email
-export async function sendPasswordResetEmail({ to, name = "TeleDrive User", token, appUrl, validityHours = 1 }) {
-  const config = await getEmailConfig();
-  if (!config.isConfigured) {
-    throw new Error("Email service is not configured on the server.");
-  }
+// =========================================================================
+// 2. SEND 6-DIGIT OTP EMAIL (SIGNUP / FORGOT PASSWORD)
+// =========================================================================
+export async function sendOtpEmail({ to, name = "TeleDrive User", otp, type = "signup" }) {
+  const isSignup = type === "signup";
+  const title = isSignup ? "Verify Your Email Address" : "Reset Your TeleDrive Password";
+  const actionText = isSignup
+    ? "Thank you for creating an account with TeleDrive. Use the 6-digit verification code below to verify your Gmail address and activate unlimited cloud storage."
+    : "We received a request to reset the password for your TeleDrive account. Use the 6-digit code below to set a new password.";
 
+  console.log(`\n==================================================`);
+  console.log(`🔑 [TELEDRIVE REAL-TIME OTP] For: ${to}`);
+  console.log(`👉 VERIFICATION CODE: >>> ${otp} <<< (Valid for 10 min)`);
+  console.log(`==================================================\n`);
+
+  const htmlContent = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <style>
+      body { margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e2e8f0; }
+      .container { max-width: 540px; margin: 40px auto; background: #131b2e; border: 1px solid #1e293b; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+      .header { background: linear-gradient(135deg, #1d4ed8, #0284c7); padding: 32px 24px; text-align: center; color: #ffffff; }
+      .brand { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0; }
+      .sub-brand { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.85; margin-top: 4px; }
+      .content { padding: 36px 32px; text-align: center; }
+      .greeting { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
+      .desc { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 28px; }
+      .otp-box { background: #0f172a; border: 2px dashed #2563eb; border-radius: 16px; padding: 20px; margin: 0 auto 28px; display: inline-block; }
+      .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #38bdf8; margin: 0; }
+      .validity { font-size: 11px; color: #64748b; margin-top: 6px; }
+      .security-note { background: #1e293b; border-radius: 12px; padding: 14px 16px; font-size: 11px; color: #94a3b8; line-height: 1.5; text-align: left; margin-bottom: 24px; }
+      .footer { background: #0f172a; padding: 20px 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1 class="brand">☁️ TeleDrive Cloud</h1>
+        <div class="sub-brand">Unlimited Cloud Storage & Fast Streaming</div>
+      </div>
+      <div class="content">
+        <div class="greeting">Hello, ${name}!</div>
+        <p class="desc">${actionText}</p>
+        
+        <div class="otp-box">
+          <div class="otp-code">${otp}</div>
+          <div class="validity">⏱️ This code will expire in 10 minutes</div>
+        </div>
+
+        <div class="security-note">
+          🔒 <strong>Security Warning:</strong> If you did not initiate this request, please ignore this email or change your password immediately. Never share this code with anyone.
+        </div>
+      </div>
+      <div class="footer">
+        © ${new Date().getFullYear()} TeleDrive Cloud • Secure Telegram Storage System
+      </div>
+    </div>
+  </body>
+  </html>
+  `;
+
+  const textContent = `${isSignup ? "Your TeleDrive Verification Code is:" : "Your TeleDrive Password Reset Code is:"} ${otp}. Valid for 10 minutes.`;
+
+  return await sendUnifiedEmail({
+    to,
+    toName: name,
+    subject: isSignup ? `[TeleDrive] ${otp} is your verification code` : `[TeleDrive] ${otp} is your password reset code`,
+    html: htmlContent,
+    text: textContent
+  });
+}
+
+// =========================================================================
+// 3. SEND PASSWORD RESET LINK EMAIL
+// =========================================================================
+export async function sendPasswordResetEmail({ to, name = "TeleDrive User", token, appUrl, validityHours = 1 }) {
   const baseAppUrl = (appUrl || "http://localhost:5173").replace(/\/+$/, "");
   const resetUrl = `${baseAppUrl}/?reset_password=${encodeURIComponent(token)}`;
 
@@ -481,59 +543,35 @@ export async function sendPasswordResetEmail({ to, name = "TeleDrive User", toke
   </html>
   `;
 
-  const fromAddress = config.user ? `"TeleDrive Cloud" <${config.user}>` : config.from;
+  const textContent = `Hello ${name},\n\nWe received a request to reset the password for your TeleDrive account. Open this link to set a new password:\n${resetUrl}\n\nThis link is valid for ${validityHours} hour.`;
 
-  try {
-    const transporter587 = await getTransporter(587);
-    if (transporter587) {
-      await transporter587.sendMail({
-        from: fromAddress,
-        to: to.trim().toLowerCase(),
-        subject: `[TeleDrive] Reset your password`,
-        text: `Reset your TeleDrive password by opening: ${resetUrl}`,
-        html: htmlContent
-      });
-      return { success: true };
-    }
-  } catch (err587) {
-    try {
-      const transporter465 = await getTransporter(465);
-      if (transporter465) {
-        await transporter465.sendMail({
-          from: fromAddress,
-          to: to.trim().toLowerCase(),
-          subject: `[TeleDrive] Reset your password`,
-          text: `Reset your TeleDrive password by opening: ${resetUrl}`,
-          html: htmlContent
-        });
-        return { success: true };
-      }
-    } catch (err465) {
-      try {
-        const serviceTransporter = await getTransporter(null, true);
-        if (serviceTransporter) {
-          await serviceTransporter.sendMail({
-            from: fromAddress,
-            to: to.trim().toLowerCase(),
-            subject: `[TeleDrive] Reset your password`,
-            text: `Reset your TeleDrive password by opening: ${resetUrl}`,
-            html: htmlContent
-          });
-          return { success: true };
-        }
-      } catch (serviceErr) {
-        console.warn("Password reset email delivery warning:", serviceErr.message);
-        return { success: true, warning: serviceErr.message, resetUrl };
-      }
-    }
-  }
+  const result = await sendUnifiedEmail({
+    to,
+    toName: name,
+    subject: `[TeleDrive] Reset your password`,
+    html: htmlContent,
+    text: textContent
+  });
+
+  return {
+    ...result,
+    resetUrl
+  };
 }
 
-// 4. Send Access Request Email to File/Folder Owner (Google Drive Style)
-export async function sendAccessRequestEmail({ toOwner, ownerName, requesterEmail, requesterName, itemName, itemType = "file", message = "", shareUrl }) {
-  const config = await getEmailConfig();
-  if (!config.isConfigured) return { success: true, simulated: true };
-
+// =========================================================================
+// 4. SEND ACCESS REQUEST EMAIL TO FILE/FOLDER OWNER
+// =========================================================================
+export async function sendAccessRequestEmail({
+  toOwner,
+  ownerName,
+  requesterEmail,
+  requesterName,
+  itemName,
+  itemType = "file",
+  message = "",
+  shareUrl
+}) {
   const htmlContent = `
   <!DOCTYPE html>
   <html>
@@ -563,9 +601,9 @@ export async function sendAccessRequestEmail({ toOwner, ownerName, requesterEmai
         </p>
 
         <div class="requester-card">
-          <div style="font-size: 15px; font-weight: 700; color: #ffffff;">${itemType === 'folder' ? '📁' : '📄'} ${itemName}</div>
+          <div style="font-size: 15px; font-weight: 700; color: #ffffff;">${itemType === "folder" ? "📁" : "📄"} ${itemName}</div>
           <div style="font-size: 12px; color: #38bdf8; margin-top: 6px;">Requester: ${requesterEmail}</div>
-          ${message ? `<div style="font-size: 12px; color: #cbd5e1; margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 8px; font-style: italic;">"${message}"</div>` : ''}
+          ${message ? `<div style="font-size: 12px; color: #cbd5e1; margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 8px; font-style: italic;">"${message}"</div>` : ""}
         </div>
 
         <div style="text-align: center;">
@@ -580,28 +618,27 @@ export async function sendAccessRequestEmail({ toOwner, ownerName, requesterEmai
   </html>
   `;
 
-  try {
-    const transporter = await getTransporter();
-    if (transporter) {
-      await transporter.sendMail({
-        from: config.from,
-        to: toOwner.trim().toLowerCase(),
-        subject: `[TeleDrive] Access request for: "${itemName}" from ${requesterName || requesterEmail}`,
-        html: htmlContent
-      });
-      return { success: true };
-    }
-  } catch (err) {
-    console.warn("Access request email warning:", err.message);
-    return { success: false, error: err.message };
-  }
+  return await sendUnifiedEmail({
+    to: toOwner,
+    toName: ownerName,
+    subject: `[TeleDrive] Access request for "${itemName}" from ${requesterName || requesterEmail}`,
+    html: htmlContent,
+    text: `${requesterName || requesterEmail} requested access to "${itemName}". Manage access at: ${shareUrl}`
+  });
 }
 
-// 5. Send Access Granted Email to Requester
-export async function sendAccessGrantedEmail({ toRequester, requesterName, ownerName, itemName, itemType = "file", shareUrl, permission = "viewer" }) {
-  const config = await getEmailConfig();
-  if (!config.isConfigured) return { success: true, simulated: true };
-
+// =========================================================================
+// 5. SEND ACCESS GRANTED EMAIL TO REQUESTER
+// =========================================================================
+export async function sendAccessGrantedEmail({
+  toRequester,
+  requesterName,
+  ownerName,
+  itemName,
+  itemType = "file",
+  shareUrl,
+  permission = "viewer"
+}) {
   const htmlContent = `
   <!DOCTYPE html>
   <html>
@@ -630,11 +667,11 @@ export async function sendAccessGrantedEmail({ toRequester, requesterName, owner
         </p>
 
         <div class="item-box">
-          <div style="font-size: 15px; font-weight: 700; color: #ffffff;">${itemType === 'folder' ? '📁' : '📄'} ${itemName}</div>
+          <div style="font-size: 15px; font-weight: 700; color: #ffffff;">${itemType === "folder" ? "📁" : "📄"} ${itemName}</div>
           <div style="font-size: 12px; color: #34d399; margin-top: 4px;">Role: ${permission}</div>
         </div>
 
-        <a href="${shareUrl}" class="btn" target="_blank">Open ${itemType === 'folder' ? 'Folder' : 'File'} in TeleDrive</a>
+        <a href="${shareUrl}" class="btn" target="_blank">Open ${itemType === "folder" ? "Folder" : "File"} in TeleDrive</a>
       </div>
       <div class="footer">
         © ${new Date().getFullYear()} TeleDrive Cloud
@@ -644,26 +681,26 @@ export async function sendAccessGrantedEmail({ toRequester, requesterName, owner
   </html>
   `;
 
-  try {
-    const transporter = await getTransporter();
-    if (transporter) {
-      await transporter.sendMail({
-        from: config.from,
-        to: toRequester.trim().toLowerCase(),
-        subject: `[TeleDrive] Access granted for "${itemName}"`,
-        html: htmlContent
-      });
-      return { success: true };
-    }
-  } catch (err) {
-    console.warn("Access granted email warning:", err.message);
-    return { success: false, error: err.message };
-  }
+  return await sendUnifiedEmail({
+    to: toRequester,
+    toName: requesterName,
+    subject: `[TeleDrive] Access granted for "${itemName}"`,
+    html: htmlContent,
+    text: `Your access request for "${itemName}" has been granted. Open at: ${shareUrl}`
+  });
 }
 
-// 6. Send File / Folder Share Notification Email
-export async function sendShareNotificationEmail({ to, senderName, itemName, itemType = "folder", permission = "viewer", shareUrl }) {
-  const config = await getEmailConfig();
+// =========================================================================
+// 6. SEND FILE / FOLDER SHARE NOTIFICATION EMAIL
+// =========================================================================
+export async function sendShareNotificationEmail({
+  to,
+  senderName,
+  itemName,
+  itemType = "folder",
+  permission = "viewer",
+  shareUrl
+}) {
   const htmlContent = `
   <!DOCTYPE html>
   <html>
@@ -691,7 +728,7 @@ export async function sendShareNotificationEmail({ to, senderName, itemName, ite
         
         <div class="item-card">
           <div>
-            <div style="font-size: 14px; font-weight: 700; color: #fff;">${itemType === 'folder' ? '📁' : '📄'} ${itemName}</div>
+            <div style="font-size: 14px; font-weight: 700; color: #fff;">${itemType === "folder" ? "📁" : "📄"} ${itemName}</div>
             <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Role: ${permission}</div>
           </div>
         </div>
@@ -706,19 +743,66 @@ export async function sendShareNotificationEmail({ to, senderName, itemName, ite
   </html>
   `;
 
-  try {
-    const transporter = await getTransporter();
-    if (!transporter) return { success: true, simulated: true };
+  return await sendUnifiedEmail({
+    to,
+    subject: `[TeleDrive] ${senderName} shared "${itemName}" with you`,
+    html: htmlContent,
+    text: `${senderName} shared a ${itemType} ("${itemName}") with you. Open: ${shareUrl}`
+  });
+}
 
-    await transporter.sendMail({
-      from: config.from,
-      to: to.trim().toLowerCase(),
-      subject: `[TeleDrive] ${senderName} shared "${itemName}" with you`,
-      html: htmlContent
-    });
-    return { success: true };
-  } catch (err) {
-    console.warn("Share email notification warning:", err.message);
-    return { success: false, error: err.message };
+// =========================================================================
+// 7. SEND TEST EMAIL (FOR ADMIN DASHBOARD BENCHMARKING)
+// =========================================================================
+export async function sendTestEmail({ toEmail }) {
+  const cleanTo = (toEmail || "").trim().toLowerCase();
+  if (!cleanTo || !cleanTo.includes("@")) {
+    throw new Error("Please provide a valid destination email address.");
   }
+
+  const htmlContent = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8">
+    <title>TeleDrive Email Gateway Test</title>
+    <style>
+      body { margin: 0; padding: 0; background-color: #070b14; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e2e8f0; }
+      .container { max-width: 520px; margin: 40px auto; background: #0f172a; border: 1px solid #1e293b; border-radius: 24px; overflow: hidden; }
+      .header { background: linear-gradient(135deg, #10b981, #0284c7); padding: 30px; text-align: center; color: #ffffff; }
+      .content { padding: 30px; text-align: center; }
+      .badge { display: inline-block; background: #064e3b; color: #34d399; font-weight: 700; padding: 6px 14px; border-radius: 10px; font-size: 12px; margin: 16px 0; }
+      .footer { background: #090d18; padding: 16px; text-align: center; font-size: 11px; color: #64748b; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1 style="margin: 0; font-size: 22px;">☁️ TeleDrive Cloud</h1>
+        <div style="font-size: 12px; opacity: 0.9; margin-top: 4px;">Email Gateway Diagnostics</div>
+      </div>
+      <div class="content">
+        <div class="badge">✅ Delivery Successful</div>
+        <h2 style="font-size: 17px; color: #ffffff; margin: 0 0 10px 0;">Outbound Email Dispatch Active</h2>
+        <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0;">
+          This test email confirms that your TeleDrive Cloud email service is properly configured and delivering messages to inboxes.
+        </p>
+        <p style="font-size: 11px; color: #64748b; margin-top: 20px;">
+          Timestamp: ${new Date().toUTCString()}
+        </p>
+      </div>
+      <div class="footer">
+        © ${new Date().getFullYear()} TeleDrive Cloud Gateway
+      </div>
+    </div>
+  </body>
+  </html>
+  `;
+
+  return await sendUnifiedEmail({
+    to: cleanTo,
+    subject: `[TeleDrive] Email Gateway Test Message - Success`,
+    html: htmlContent,
+    text: `TeleDrive Email Gateway Test: Outbound email delivery is working properly!`
+  });
 }

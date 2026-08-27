@@ -32,7 +32,11 @@ import {
   Cloud,
   Layers,
   Clock,
-  Sparkles
+  Sparkles,
+  Mail,
+  Send,
+  Key,
+  Loader2
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -49,6 +53,15 @@ export default function AdminPage() {
   const [pingResult, setPingResult] = useState(null);
   const [pinging, setPinging] = useState(false);
 
+  // Email diagnostics & settings state
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [savingEmailSettings, setSavingEmailSettings] = useState(false);
+  const [brevoKeyInput, setBrevoKeyInput] = useState("");
+  const [resendKeyInput, setResendKeyInput] = useState("");
+  const [showEmailConfig, setShowEmailConfig] = useState(false);
+
   // Password reset modal state
   const [resettingUser, setResettingUser] = useState(null);
   const [newPassword, setNewPassword] = useState("");
@@ -60,6 +73,7 @@ export default function AdminPage() {
       fetchOverview();
       if (activeTab === "users") fetchUsers();
       if (activeTab === "files") fetchFiles();
+      if (activeTab === "system") fetchEmailStatus();
     }
   }, [activeTab, isAdmin]);
 
@@ -195,6 +209,57 @@ export default function AdminPage() {
       showToast("Ping test failed", "error");
     } finally {
       setPinging(false);
+    }
+  };
+
+  const fetchEmailStatus = async () => {
+    try {
+      const res = await DriveAPI.getEmailStatus();
+      if (res.success) {
+        setEmailStatus(res);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch email status:", err);
+    }
+  };
+
+  const handleTestEmail = async (e) => {
+    if (e) e.preventDefault();
+    const target = testEmailAddress.trim() || currentUser?.email || "devv5412@gmail.com";
+    setTestingEmail(true);
+    try {
+      const res = await DriveAPI.testEmailDelivery(target);
+      if (res.success) {
+        showToast(res.message || `Test email successfully sent to ${target}!`, "success");
+      } else {
+        showToast(res.error || "Email delivery failed", "error");
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || err.message || "Email test failed", "error");
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
+  const handleSaveEmailSettings = async (e) => {
+    e.preventDefault();
+    setSavingEmailSettings(true);
+    try {
+      const res = await DriveAPI.updateEmailSettings({
+        brevoApiKey: brevoKeyInput.trim() || undefined,
+        resendApiKey: resendKeyInput.trim() || undefined
+      });
+      if (res.success) {
+        showToast("Email API settings saved successfully!", "success");
+        setBrevoKeyInput("");
+        setResendKeyInput("");
+        setShowEmailConfig(false);
+        fetchEmailStatus();
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to update email settings", "error");
+    } finally {
+      setSavingEmailSettings(false);
     }
   };
 
@@ -1058,6 +1123,177 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* EMAIL GATEWAY STATUS & REAL-TIME TESTING CARD */}
+              <div className="bg-white dark:bg-[#1e1f20] p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center">
+                      <Mail className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                        <span>Email Verification & Gateway Diagnostics</span>
+                        {emailStatus?.hasActiveProvider ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                            Action Needed
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Manage email delivery for signup verification links and password resets
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowEmailConfig(!showEmailConfig)}
+                      className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323436] text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      <span>{showEmailConfig ? "Hide Config" : "Configure Keys"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fetchEmailStatus}
+                      className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title="Refresh Status"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Email Providers Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={`p-4 rounded-2xl border transition-all ${emailStatus?.providers?.brevo?.configured ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-[#282a2c] border-slate-200 dark:border-slate-700/60'}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-800 dark:text-white">Brevo API (v3)</span>
+                      {emailStatus?.providers?.brevo?.configured ? (
+                        <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Ready
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-blue-500">Recommended</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      HTTPS Port 443 • Free 300/day. 100% reliable on Render Free Tier.
+                    </p>
+                  </div>
+
+                  <div className={`p-4 rounded-2xl border transition-all ${emailStatus?.providers?.resend?.configured ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-[#282a2c] border-slate-200 dark:border-slate-700/60'}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-800 dark:text-white">Resend API</span>
+                      {emailStatus?.providers?.resend?.configured ? (
+                        <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Ready
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400">Optional</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      HTTPS Port 443 • Free 3,000/month. Fast API dispatch.
+                    </p>
+                  </div>
+
+                  <div className={`p-4 rounded-2xl border transition-all ${emailStatus?.providers?.smtp?.configured ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-[#282a2c] border-slate-200 dark:border-slate-700/60'}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-800 dark:text-white">Gmail SMTP</span>
+                      {emailStatus?.providers?.smtp?.configured ? (
+                        <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Set
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400">Unset</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Ports 587/465 • Works locally & VPS (Blocked on Render Free).
+                    </p>
+                  </div>
+                </div>
+
+                {/* Optional Configuration Expansion */}
+                {showEmailConfig && (
+                  <form onSubmit={handleSaveEmailSettings} className="p-4 rounded-2xl bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in duration-150">
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-purple-500" />
+                      <span>Update Cloud Email Keys (Saved to Database)</span>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          Brevo API Key (xkeysib-...)
+                        </label>
+                        <input
+                          type="password"
+                          placeholder={emailStatus?.providers?.brevo?.keyMasked || "Paste Brevo API Key"}
+                          value={brevoKeyInput}
+                          onChange={(e) => setBrevoKeyInput(e.target.value)}
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          Resend API Key (re_...)
+                        </label>
+                        <input
+                          type="password"
+                          placeholder={emailStatus?.providers?.resend?.keyMasked || "Paste Resend API Key"}
+                          value={resendKeyInput}
+                          onChange={(e) => setResendKeyInput(e.target.value)}
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="submit"
+                        disabled={savingEmailSettings}
+                        className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                      >
+                        {savingEmailSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        <span>Save Email Settings</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Send Test Email Input */}
+                <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-[#282a2c]/60 border border-blue-100 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex-1 min-w-[240px]">
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Send Live Test Verification Email
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="Enter test email address (e.g. devv5412@gmail.com)"
+                      value={testEmailAddress}
+                      onChange={(e) => setTestEmailAddress(e.target.value)}
+                      className="w-full px-3.5 py-2 text-xs bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="pt-4 sm:pt-4">
+                    <button
+                      type="button"
+                      onClick={handleTestEmail}
+                      disabled={testingEmail}
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-2 transition-all disabled:opacity-50"
+                    >
+                      {testingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      <span>{testingEmail ? "Sending Test..." : "Send Test Email"}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

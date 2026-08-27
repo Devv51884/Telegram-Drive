@@ -98,6 +98,8 @@ export default function AuthScreen() {
     setSuccessMsg("");
     setRequires2FA(false);
     setPin("");
+    setVerificationLink("");
+    setHasEmailWarning(false);
   };
 
   // 2. Handle Process Verification Token from Email Link
@@ -181,6 +183,8 @@ export default function AuthScreen() {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
+    setVerificationLink("");
+    setHasEmailWarning(false);
 
     if (!name.trim()) return setError("Full Name is required");
     if (!email || !email.includes("@")) return setError("Please enter a valid Gmail / Email address");
@@ -199,8 +203,13 @@ export default function AuthScreen() {
       if (res.success) {
         setView("verification_sent");
         setCountdown(60);
-        if (res.verificationUrl) setVerificationLink(res.verificationUrl);
-        if (res.warning) setHasEmailWarning(true);
+        if (res.warning) {
+          setHasEmailWarning(true);
+          if (res.verificationUrl) setVerificationLink(res.verificationUrl);
+        } else {
+          setHasEmailWarning(false);
+          setVerificationLink("");
+        }
         setSuccessMsg(res.message || `A verification link has been sent to ${email}`);
       } else {
         setError(res.error || "Failed to send verification link.");
@@ -217,15 +226,22 @@ export default function AuthScreen() {
     if (countdown > 0 || !email) return;
     setError("");
     setSuccessMsg("");
+    setVerificationLink("");
+    setHasEmailWarning(false);
     setLoading(true);
 
     try {
       const res = await resendVerificationLink(email.trim());
       if (res.success) {
         setCountdown(60);
-        if (res.verificationUrl) setVerificationLink(res.verificationUrl);
-        if (res.warning) setHasEmailWarning(true);
-        setSuccessMsg(`A new verification link was generated for ${email}`);
+        if (res.warning) {
+          setHasEmailWarning(true);
+          if (res.verificationUrl) setVerificationLink(res.verificationUrl);
+        } else {
+          setHasEmailWarning(false);
+          setVerificationLink("");
+        }
+        setSuccessMsg(res.message || `A new verification link was sent to ${email}`);
       } else {
         setError(res.error || "Failed to resend link");
       }

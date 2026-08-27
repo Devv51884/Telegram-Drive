@@ -90,29 +90,36 @@ router.post("/signup/send-verification", authLimiter, async (req, res) => {
     }, 24);
 
     // Send direct verification link email
-    let emailWarning = null;
+    let emailResult = null;
     try {
-      const emailResult = await sendVerificationEmail({
+      emailResult = await sendVerificationEmail({
         to: cleanEmail,
         name: cleanName,
         token,
         appUrl,
         validityHours: 24
       });
-      if (emailResult?.warning) emailWarning = emailResult.warning;
     } catch (mailErr) {
       console.warn("Signup verification mail warning:", mailErr.message);
-      emailWarning = mailErr.message;
+      emailResult = { success: false, error: mailErr.message };
     }
 
     const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(token)}`;
 
+    if (!emailResult?.success) {
+      return res.json({
+        success: true,
+        email: cleanEmail,
+        verificationUrl,
+        warning: emailResult?.error || "Email delivery failed on host.",
+        message: `Account created. Due to host SMTP limits, you can activate your account using the instant link below or check server logs.`
+      });
+    }
+
     res.json({
       success: true,
       email: cleanEmail,
-      verificationUrl,
-      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox (and spam/promotions folder) to activate your account.`,
-      warning: emailWarning
+      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox (and spam/promotions folder) to activate your account.`
     });
   } catch (err) {
     console.error("Signup verification send error:", err.message);
@@ -256,27 +263,36 @@ router.post("/resend-verification", authLimiter, async (req, res) => {
 
     await dbSaveVerificationToken(cleanEmail, newToken, "signup_link", meta, 24);
 
-    let emailWarning = null;
+    let emailResult = null;
     try {
-      const emailResult = await sendVerificationEmail({
+      emailResult = await sendVerificationEmail({
         to: cleanEmail,
         name: meta?.name || "TeleDrive User",
         token: newToken,
         appUrl,
         validityHours: 24
       });
-      if (emailResult?.warning) emailWarning = emailResult.warning;
     } catch (mailErr) {
-      console.warn("Resend verification mail warning:", mailErr.message);
-      emailWarning = mailErr.message;
+      console.warn("Resend verification mail error:", mailErr.message);
+      emailResult = { success: false, error: mailErr.message };
+    }
+
+    const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(newToken)}`;
+
+    if (!emailResult?.success) {
+      return res.json({
+        success: true,
+        email: cleanEmail,
+        verificationUrl,
+        warning: emailResult?.error || "Email delivery failed on host.",
+        message: `A fresh verification link was generated.`
+      });
     }
 
     res.json({
       success: true,
       email: cleanEmail,
-      verificationUrl,
-      message: `A fresh verification link has been sent to ${cleanEmail}.`,
-      warning: emailWarning
+      message: `A fresh verification link has been sent to ${cleanEmail}.`
     });
   } catch (err) {
     console.error("Resend verification error:", err.message);
