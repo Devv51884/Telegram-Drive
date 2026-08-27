@@ -429,19 +429,10 @@ async function streamTelegramBotFile(file, range, req, res) {
     res.setHeader("Accept-Ranges", "bytes");
   }
 
-  // Forward incoming Range header directly to Telegram Bot API CDN for native HTTP 206 slicing
-  const axiosHeaders = {
-    "User-Agent": "TeleDrive/1.0"
-  };
-  if (range) {
-    axiosHeaders["Range"] = range;
-  }
-
   const response = await axios({
     method: "GET",
     url: downloadUrl,
     responseType: "stream",
-    headers: axiosHeaders,
     timeout: 0,
     validateStatus: (status) => status < 400
   });
@@ -450,14 +441,16 @@ async function streamTelegramBotFile(file, range, req, res) {
   const actualTotalSize = totalSize > 0 ? totalSize : remoteContentLength;
 
   let clientClosed = false;
-  req.on("close", () => {
-    clientClosed = true;
-    if (response.data?.destroy) {
-      try {
-        response.data.destroy();
-      } catch {}
-    }
-  });
+  if (req) {
+    req.on("close", () => {
+      clientClosed = true;
+      if (response.data?.destroy) {
+        try {
+          response.data.destroy();
+        } catch {}
+      }
+    });
+  }
 
   // 1. If Telegram CDN natively returned HTTP 206 Partial Content
   if (response.status === 206) {
@@ -477,7 +470,7 @@ async function streamTelegramBotFile(file, range, req, res) {
   if (range && actualTotalSize > 0) {
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10) || 0;
-    const rawEnd = parts[1] ? parseInt(parts[1], 10) : actualTotalSize - 1;
+    const rawEnd = parts[1] && parts[1].trim() !== "" ? parseInt(parts[1], 10) : actualTotalSize - 1;
     const end = Math.min(rawEnd, actualTotalSize - 1);
     const chunkLength = Math.max(0, end - start + 1);
 
@@ -505,7 +498,9 @@ async function streamTelegramBotFile(file, range, req, res) {
       // Finish if chunk is beyond requested range end
       if (chunkStart > end) {
         if (!res.writableEnded && !res.destroyed) res.end();
-        if (response.data?.destroy) response.data.destroy();
+        if (response.data?.destroy) {
+          try { response.data.destroy(); } catch {}
+        }
         return;
       }
 
@@ -518,7 +513,9 @@ async function streamTelegramBotFile(file, range, req, res) {
 
       if (bytesSent >= chunkLength) {
         if (!res.writableEnded && !res.destroyed) res.end();
-        if (response.data?.destroy) response.data.destroy();
+        if (response.data?.destroy) {
+          try { response.data.destroy(); } catch {}
+        }
       }
     });
 
@@ -563,6 +560,7 @@ router.get("/:id/stream", async (req, res) => {
     const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
+    const targetUserId = file.user_id || req.userId || null;
 
     // Strategy 1: Bot API CDN Stream (Fastest for files under 20MB with Bot API file_id)
     const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
@@ -591,7 +589,8 @@ router.get("/:id/stream", async (req, res) => {
           file.telegram_file_reference || null,
           file.telegram_access_hash || null,
           file.telegram_file_id || null,
-          fileSize
+          fileSize,
+          targetUserId
         );
         return;
       } catch (primaryErr) {
@@ -610,7 +609,8 @@ router.get("/:id/stream", async (req, res) => {
             file.telegram_file_reference || null,
             file.telegram_access_hash || null,
             file.telegram_file_id || null,
-            fileSize
+            fileSize,
+            targetUserId
           );
           return;
         } catch (secondaryErr) {
@@ -651,6 +651,7 @@ router.get("/:id/download", async (req, res) => {
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
     const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
+    const targetUserId = file.user_id || req.userId || null;
 
     // Strategy 1: Telegram Bot API Download (Uploaded files)
     if (isUploaded && isBotApiFileId) {
@@ -692,7 +693,8 @@ router.get("/:id/download", async (req, res) => {
           file.telegram_file_reference || null,
           file.telegram_access_hash || null,
           file.telegram_file_id || null,
-          fileSize
+          fileSize,
+          targetUserId
         );
         return;
       } catch (dlErr) {
@@ -711,7 +713,8 @@ router.get("/:id/download", async (req, res) => {
             file.telegram_file_reference || null,
             file.telegram_access_hash || null,
             file.telegram_file_id || null,
-            fileSize
+            fileSize,
+            targetUserId
           );
           return;
         }

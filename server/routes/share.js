@@ -85,14 +85,10 @@ async function streamTelegramBotFile(file, range, req, res) {
     res.setHeader("Accept-Ranges", "bytes");
   }
 
-  const axiosHeaders = { "User-Agent": "TeleDrive/1.0" };
-  if (range) axiosHeaders["Range"] = range;
-
   const response = await axios({
     method: "GET",
     url: downloadUrl,
     responseType: "stream",
-    headers: axiosHeaders,
     timeout: 0,
     validateStatus: (status) => status < 400
   });
@@ -101,14 +97,16 @@ async function streamTelegramBotFile(file, range, req, res) {
   const actualTotalSize = totalSize > 0 ? totalSize : remoteContentLength;
 
   let clientClosed = false;
-  req.on("close", () => {
-    clientClosed = true;
-    if (response.data?.destroy) {
-      try {
-        response.data.destroy();
-      } catch {}
-    }
-  });
+  if (req) {
+    req.on("close", () => {
+      clientClosed = true;
+      if (response.data?.destroy) {
+        try {
+          response.data.destroy();
+        } catch {}
+      }
+    });
+  }
 
   if (response.status === 206) {
     res.writeHead(206, {
@@ -117,7 +115,7 @@ async function streamTelegramBotFile(file, range, req, res) {
       "Content-Length": response.headers["content-length"] || (remoteContentLength > 0 ? remoteContentLength : undefined),
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
-      "Cache-Control": "no-cache, no-store, must-revalidate"
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
     });
     response.data.pipe(res);
     return;
@@ -126,7 +124,7 @@ async function streamTelegramBotFile(file, range, req, res) {
   if (range && actualTotalSize > 0) {
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10) || 0;
-    const rawEnd = parts[1] ? parseInt(parts[1], 10) : actualTotalSize - 1;
+    const rawEnd = parts[1] && parts[1].trim() !== "" ? parseInt(parts[1], 10) : actualTotalSize - 1;
     const end = Math.min(rawEnd, actualTotalSize - 1);
     const chunkLength = Math.max(0, end - start + 1);
 
@@ -136,7 +134,7 @@ async function streamTelegramBotFile(file, range, req, res) {
       "Content-Length": chunkLength,
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
-      "Cache-Control": "no-cache, no-store, must-revalidate"
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
     });
 
     let bytesRead = 0;
@@ -151,7 +149,9 @@ async function streamTelegramBotFile(file, range, req, res) {
       if (chunkEnd < start) return;
       if (chunkStart > end) {
         if (!res.writableEnded && !res.destroyed) res.end();
-        if (response.data?.destroy) response.data.destroy();
+        if (response.data?.destroy) {
+          try { response.data.destroy(); } catch {}
+        }
         return;
       }
 
@@ -164,7 +164,9 @@ async function streamTelegramBotFile(file, range, req, res) {
 
       if (bytesSent >= chunkLength) {
         if (!res.writableEnded && !res.destroyed) res.end();
-        if (response.data?.destroy) response.data.destroy();
+        if (response.data?.destroy) {
+          try { response.data.destroy(); } catch {}
+        }
       }
     });
 
@@ -712,6 +714,7 @@ router.get("/public/:token/stream", async (req, res) => {
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
     const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
+    const targetUserId = file.user_id || req.userId || null;
 
     if (isUploaded && isBotApiFileId) {
       try {
@@ -737,7 +740,8 @@ router.get("/public/:token/stream", async (req, res) => {
           file.telegram_file_reference || null,
           file.telegram_access_hash || null,
           file.telegram_file_id || null,
-          fileSize
+          fileSize,
+          targetUserId
         );
         return;
       } catch (mtprotoErr) {
@@ -756,7 +760,8 @@ router.get("/public/:token/stream", async (req, res) => {
             file.telegram_file_reference || null,
             file.telegram_access_hash || null,
             file.telegram_file_id || null,
-            fileSize
+            fileSize,
+            targetUserId
           );
           return;
         } catch (secErr) {
@@ -802,6 +807,7 @@ router.get("/public/:token/download", async (req, res) => {
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
     const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
+    const targetUserId = file.user_id || req.userId || null;
 
     if (file.telegram_file_id && isUploaded && isBotApiFileId) {
       try {
@@ -842,7 +848,8 @@ router.get("/public/:token/download", async (req, res) => {
         file.telegram_file_reference || null,
         file.telegram_access_hash || null,
         file.telegram_file_id || null,
-        fileSize
+        fileSize,
+        targetUserId
       );
       return;
     }
@@ -892,6 +899,7 @@ router.get("/public/:token/file/:fileId/stream", async (req, res) => {
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
     const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
+    const targetUserId = file.user_id || req.userId || null;
 
     if (isUploaded && isBotApiFileId) {
       try {
@@ -916,7 +924,8 @@ router.get("/public/:token/file/:fileId/stream", async (req, res) => {
         file.telegram_file_reference || null,
         file.telegram_access_hash || null,
         file.telegram_file_id || null,
-        fileSize
+        fileSize,
+        targetUserId
       );
       return;
     }
@@ -1005,7 +1014,8 @@ router.get("/public/:token/file/:fileId/download", async (req, res) => {
         file.telegram_file_reference || null,
         file.telegram_access_hash || null,
         file.telegram_file_id || null,
-        fileSize
+        fileSize,
+        file.user_id || req.userId || null
       );
       return;
     }

@@ -73,42 +73,51 @@ export async function getStorageGramClient() {
       } catch {}
     }
 
+    let savedSession = activeBotSessionString;
+    if (!savedSession) {
+      try {
+        const { dbGetSetting } = await import("./db.js");
+        savedSession = await dbGetSetting("storage_bot_session");
+      } catch {}
+    }
+
     try {
-      const botSession = new StringSession(activeBotSessionString || "");
+      const botSession = new StringSession(savedSession || "");
       const botClient = new TelegramClient(botSession, config.apiId, config.apiHash, {
         connectionRetries: 3,
         useWSS: false
       });
 
+      if (savedSession) {
+        await botClient.connect();
+        try {
+          const isAuth = await botClient.checkAuthorization();
+          if (isAuth) {
+            activeBotSessionString = savedSession;
+            activeBotGramClient = botClient;
+            activeBotToken = config.botToken;
+            return activeBotGramClient;
+          }
+        } catch {}
+      }
+
       await botClient.start({
         botAuthToken: config.botToken
       });
 
-      activeBotSessionString = botClient.session.save();
+      const newSession = botClient.session.save();
+      activeBotSessionString = newSession;
       activeBotGramClient = botClient;
       activeBotToken = config.botToken;
+
+      try {
+        const { dbSetSetting } = await import("./db.js");
+        await dbSetSetting("storage_bot_session", newSession);
+      } catch {}
+
       console.log("🤖 MTProto Storage Bot Client active for high-speed channel streaming/downloads.");
       return activeBotGramClient;
     } catch (botGramErr) {
-      if (
-        botGramErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-        botGramErr.code === 401 ||
-        botGramErr.message?.includes("AUTH_KEY_UNREGISTERED")
-      ) {
-        activeBotSessionString = "";
-        try {
-          const freshSession = new StringSession("");
-          const freshClient = new TelegramClient(freshSession, config.apiId, config.apiHash, {
-            connectionRetries: 3,
-            useWSS: false
-          });
-          await freshClient.start({ botAuthToken: config.botToken });
-          activeBotSessionString = freshClient.session.save();
-          activeBotGramClient = freshClient;
-          activeBotToken = config.botToken;
-          return activeBotGramClient;
-        } catch {}
-      }
       console.error("Failed to initialize MTProto Storage Bot Client:", botGramErr.message);
     }
   }
@@ -906,7 +915,8 @@ export async function streamGramMedia(
   storedFileRef = null,    // base64 fileReference from DB
   storedAccessHash = null, // accessHash string from DB
   storedDocId = null,      // docId string from DB
-  fileSize = 0             // totalSize from DB
+  fileSize = 0,            // totalSize from DB
+  userId = null
 ) {
   // Set explicit CORS and media headers on stream response
   if (res && !res.headersSent) {
@@ -919,14 +929,14 @@ export async function streamGramMedia(
   // Use User account client for imported posts; Use Storage Bot for platform uploads; fallback seamlessly
   let client = null;
   if (!useStorageBot) {
-    client = await getUserGramClient();
+    client = await getUserGramClient(userId);
     if (!client) client = await getStorageGramClient();
   } else {
     client = await getStorageGramClient();
-    if (!client) client = await getUserGramClient();
+    if (!client) client = await getUserGramClient(userId);
   }
   if (!client) {
-    client = await getGramClient();
+    client = await getGramClient(userId);
   }
   if (!client) {
     throw new Error("Telegram MTProto streaming client unavailable");
@@ -942,15 +952,15 @@ export async function streamGramMedia(
       let location = null;
       if (!isPhoto) {
         location = new Api.InputDocumentFileLocation({
-          id: bigInt(storedDocId),
-          accessHash: bigInt(storedAccessHash),
+          id: bigInt(storedDocId.toString()),
+          accessHash: bigInt(storedAccessHash.toString()),
           fileReference: Buffer.from(storedFileRef, "base64"),
           thumbSize: ""
         });
       } else {
         location = new Api.InputPhotoFileLocation({
-          id: bigInt(storedDocId),
-          accessHash: bigInt(storedAccessHash),
+          id: bigInt(storedDocId.toString()),
+          accessHash: bigInt(storedAccessHash.toString()),
           fileReference: Buffer.from(storedFileRef, "base64"),
           thumbSize: "y"
         });
@@ -958,7 +968,7 @@ export async function streamGramMedia(
       mediaCache = {
         totalSize: Number(fileSize) || 0,
         location,
-        dcId: client.session.dcId
+        dcId: null // Let it resolve dynamically or use active DC
       };
       mediaLocationCache.set(cacheKey, mediaCache);
     } catch (directLocErr) {
@@ -1034,7 +1044,7 @@ export async function streamGramMedia(
     // 3. Try alternate client fallback (User <-> Storage Bot)
     if (!msg || !msg.media) {
       try {
-        const altClient = await getGramClient(null, !useStorageBot);
+        const altClient = await getGramClient(userId, !useStorageBot);
         if (altClient && altClient !== client) {
           try {
             const messages = await altClient.getMessages(channelId, { ids: [msgId] });
@@ -1070,14 +1080,14 @@ export async function streamGramMedia(
         const isPhoto = mimeType?.startsWith("image/") || (fileName && fileName.match(/\.(png|jpg|jpeg|webp)$/i));
         const location = !isPhoto
           ? new Api.InputDocumentFileLocation({
-              id: bigInt(storedDocId),
-              accessHash: bigInt(storedAccessHash),
+              id: bigInt(storedDocId.toString()),
+              accessHash: bigInt(storedAccessHash.toString()),
               fileReference: Buffer.from(storedFileRef, "base64"),
               thumbSize: ""
             })
           : new Api.InputPhotoFileLocation({
-              id: bigInt(storedDocId),
-              accessHash: bigInt(storedAccessHash),
+              id: bigInt(storedDocId.toString()),
+              accessHash: bigInt(storedAccessHash.toString()),
               fileReference: Buffer.from(storedFileRef, "base64"),
               thumbSize: "y"
             });
@@ -1102,8 +1112,8 @@ export async function streamGramMedia(
       const doc = media.document;
       totalSize = Number(doc.size || 0);
       location = new Api.InputDocumentFileLocation({
-        id: doc.id,
-        accessHash: doc.accessHash,
+        id: bigInt(doc.id.toString()),
+        accessHash: bigInt(doc.accessHash.toString()),
         fileReference: doc.fileReference,
         thumbSize: ""
       });
@@ -1117,8 +1127,8 @@ export async function streamGramMedia(
       const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
       totalSize = Number(largest?.size || (largest?.bytes ? largest.bytes.length : 1024 * 500));
       location = new Api.InputPhotoFileLocation({
-        id: photo.id,
-        accessHash: photo.accessHash,
+        id: bigInt(photo.id.toString()),
+        accessHash: bigInt(photo.accessHash.toString()),
         fileReference: photo.fileReference,
         thumbSize: largest?.type || "y"
       });
@@ -1130,7 +1140,7 @@ export async function streamGramMedia(
       throw new Error("Unsupported media type for MTProto streaming");
     }
 
-    // Auto-backfill to SQLite and Supabase if file was previously unhashed
+    // Auto-backfill to SQLite and Supabase if file was previously unhashed or ref changed
     if (foundHash) {
       (async () => {
         try {
@@ -1198,29 +1208,32 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const TG_CHUNK_SIZE = 128 * 1024; // 128KB (Standard MTProto valid chunk size)
-  const ALIGNMENT = 4096; // 4KB
+  const CHUNK_SIZE = 128 * 1024; // 128KB MTProto compliant chunk size
 
-  let sender = null;
-  try {
-    sender = await client.getSender(dcId || client.session.dcId);
-  } catch {
+  async function getActiveSender(targetDc) {
     try {
-      sender = await client.getSender(client.session.dcId);
-    } catch {}
+      return await client.getSender(targetDc || dcId || client.session.dcId);
+    } catch {
+      try {
+        return await client.getSender(client.session.dcId);
+      } catch {
+        return null;
+      }
+    }
   }
 
-  async function fetchMtprotoChunk(currOffset, retryCount = 0) {
+  let sender = await getActiveSender(dcId);
+
+  async function fetchMtprotoChunk(chunkOffset, retryCount = 0) {
     const reqObj = new Api.upload.GetFile({
       location: location,
-      offset: bigInt(currOffset),
-      limit: TG_CHUNK_SIZE,
+      offset: bigInt(chunkOffset.toString()),
+      limit: CHUNK_SIZE,
       precise: true
     });
 
     try {
       if (sender) {
-        sender = await client.getSender(sender.dcId || dcId || client.session.dcId);
         const res = await client.invokeWithSender(reqObj, sender);
         return res?.bytes;
       }
@@ -1228,13 +1241,16 @@ export async function streamGramMedia(
       return res?.bytes;
     } catch (err) {
       if (err.newDc) {
-        sender = await client.getSender(err.newDc);
-        const res = await client.invokeWithSender(reqObj, sender);
-        return res?.bytes;
+        dcId = err.newDc;
+        sender = await getActiveSender(err.newDc);
+        if (sender) {
+          const res = await client.invokeWithSender(reqObj, sender);
+          return res?.bytes;
+        }
       }
       if (err.errorMessage === "TIMEOUT" && retryCount < 2) {
         await new Promise((r) => setTimeout(r, 400));
-        return fetchMtprotoChunk(currOffset, retryCount + 1);
+        return fetchMtprotoChunk(chunkOffset, retryCount + 1);
       }
       // Auto-refresh file reference on expiration and retry
       if (
@@ -1248,7 +1264,8 @@ export async function streamGramMedia(
         location = refreshed.location;
         dcId = refreshed.dcId;
         totalSize = refreshed.totalSize;
-        return fetchMtprotoChunk(currOffset, retryCount + 1);
+        sender = await getActiveSender(dcId);
+        return fetchMtprotoChunk(chunkOffset, retryCount + 1);
       }
       throw err;
     }
@@ -1287,32 +1304,31 @@ export async function streamGramMedia(
     }
 
     try {
-      const alignedStart = Math.floor(start / ALIGNMENT) * ALIGNMENT;
-      const skipBytes = start - alignedStart;
-      let currentOffset = alignedStart;
+      const initialChunkIndex = Math.floor(start / CHUNK_SIZE);
+      let currentChunkOffset = initialChunkIndex * CHUNK_SIZE;
       let bytesSent = 0;
 
-      while (bytesSent < requestedLength && currentOffset < totalSize) {
+      while (bytesSent < requestedLength && currentChunkOffset < totalSize) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
 
-        const chunk = await fetchMtprotoChunk(currentOffset);
+        const chunk = await fetchMtprotoChunk(currentChunkOffset);
         if (!chunk || chunk.length === 0) break;
 
-        const isFirstChunk = currentOffset === alignedStart;
-        const chunkSkip = isFirstChunk ? skipBytes : 0;
-        const chunkAvailable = Math.max(0, chunk.length - chunkSkip);
-        const toSend = Math.min(chunkAvailable, requestedLength - bytesSent);
+        const isFirstChunk = currentChunkOffset === initialChunkIndex * CHUNK_SIZE;
+        const skip = isFirstChunk ? (start - currentChunkOffset) : 0;
+        const available = Math.max(0, chunk.length - skip);
+        const toTake = Math.min(available, requestedLength - bytesSent);
 
-        if (toSend > 0) {
-          const slice = chunk.subarray(chunkSkip, chunkSkip + toSend);
+        if (toTake > 0) {
+          const slice = chunk.subarray(skip, skip + toTake);
           res.write(slice);
           bytesSent += slice.length;
         }
 
-        currentOffset += chunk.length;
+        currentChunkOffset += CHUNK_SIZE;
 
         // End of range reached or EOF reached
-        if (bytesSent >= requestedLength || chunk.length < ALIGNMENT) break;
+        if (bytesSent >= requestedLength || chunk.length < CHUNK_SIZE) break;
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1349,20 +1365,20 @@ export async function streamGramMedia(
     }
 
     try {
-      let currentOffset = 0;
+      let currentChunkOffset = 0;
       let totalSent = 0;
 
       while (totalSize === 0 || totalSent < totalSize) {
         if (clientDisconnected || res.writableEnded || res.destroyed) break;
 
-        const chunk = await fetchMtprotoChunk(currentOffset);
+        const chunk = await fetchMtprotoChunk(currentChunkOffset);
         if (!chunk || chunk.length === 0) break;
 
         res.write(chunk);
-        currentOffset += chunk.length;
+        currentChunkOffset += CHUNK_SIZE;
         totalSent += chunk.length;
 
-        if (chunk.length < ALIGNMENT || (totalSize > 0 && totalSent >= totalSize)) break;
+        if (chunk.length < CHUNK_SIZE || (totalSize > 0 && totalSent >= totalSize)) break;
       }
 
       if (!res.writableEnded && !res.destroyed) {
@@ -1386,76 +1402,82 @@ export async function autoHealTelegramImportReferences() {
   try {
     const { getSqliteDb, getSupabaseClient } = await import("./db.js");
     const sqlite = await getSqliteDb();
-    let client = (await getUserGramClient()) || (await getStorageGramClient());
-    if (!client) client = await getGramClient();
-    if (!client) return;
-
-    try {
-      const isAuth = await client.checkAuthorization();
-      if (!isAuth) {
-        return;
-      }
-    } catch (authErr) {
-      if (
-        authErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-        authErr.code === 401 ||
-        authErr.message?.includes("AUTH_KEY_UNREGISTERED")
-      ) {
-        await dbDeactivateTelegramSessions(null);
-      }
-      return;
-    }
 
     const unlinkedFiles = await sqlite.all(
-      "SELECT id, telegram_channel_id, telegram_message_id, telegram_post_url FROM files WHERE source_type = 'telegram_post' AND (telegram_access_hash IS NULL OR telegram_file_reference IS NULL) LIMIT 50"
+      "SELECT id, telegram_channel_id, telegram_message_id, telegram_post_url, user_id FROM files WHERE source_type = 'telegram_post' AND (telegram_access_hash IS NULL OR telegram_file_reference IS NULL) LIMIT 50"
     );
 
     if (!unlinkedFiles || unlinkedFiles.length === 0) return;
-    console.log(`🔧 Auto-healing ${unlinkedFiles.length} unhashed Telegram import reference(s)...`);
 
-    try {
-      await client.getDialogs({ limit: 100 });
-    } catch (dlgErr) {
-      if (
-        dlgErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-        dlgErr.code === 401 ||
-        dlgErr.message?.includes("AUTH_KEY_UNREGISTERED")
-      ) {
-        await dbDeactivateTelegramSessions(null);
-        return;
+    const userClients = new Map();
+    let storageBotClient = null;
+
+    async function getClientForUser(uId) {
+      const key = uId || "default";
+      if (userClients.has(key)) return userClients.get(key);
+      try {
+        const uClient = await getUserGramClient(uId);
+        userClients.set(key, uClient);
+        return uClient;
+      } catch {
+        userClients.set(key, null);
+        return null;
       }
     }
+
+    async function getBotClient() {
+      if (storageBotClient !== null) return storageBotClient;
+      try {
+        storageBotClient = await getStorageGramClient();
+      } catch {
+        storageBotClient = null;
+      }
+      return storageBotClient;
+    }
+
+    let healedCount = 0;
 
     for (const f of unlinkedFiles) {
       try {
         if (!f.telegram_channel_id || !f.telegram_message_id) continue;
         const msgId = parseInt(f.telegram_message_id, 10);
+        if (isNaN(msgId)) continue;
+
+        const isPrivateOrSaved = f.telegram_channel_id === "me" || f.telegram_channel_id.startsWith("-100") || (f.telegram_post_url && f.telegram_post_url.includes("/c/"));
+
+        // 1. Try User's Telegram Session
+        let clientToUse = await getClientForUser(f.user_id);
+
+        // 2. If no user session and channel is not strictly private Saved Messages, only try Storage Bot if public
+        if (!clientToUse && !isPrivateOrSaved) {
+          clientToUse = await getBotClient();
+        }
+
+        if (!clientToUse) continue;
+
         let msg = null;
 
+        // Try safely resolving message
         try {
-          const messages = await client.getMessages(f.telegram_channel_id, { ids: [msgId] });
-          if (messages && messages[0] && messages[0].media) msg = messages[0];
-        } catch (mErr1) {
-          if (
-            mErr1.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-            mErr1.code === 401 ||
-            mErr1.message?.includes("AUTH_KEY_UNREGISTERED")
-          ) {
-            await dbDeactivateTelegramSessions(null);
-            return;
+          const messages = await clientToUse.getMessages(f.telegram_channel_id, { ids: [msgId] });
+          if (messages && messages[0] && messages[0].media) {
+            msg = messages[0];
+          }
+        } catch (e1) {
+          // If error is CHANNEL_INVALID or bot has no access to this private channel, silently skip
+          if (e1.errorMessage === "CHANNEL_INVALID" || e1.errorMessage === "CHANNEL_PRIVATE" || e1.code === 400) {
+            continue;
           }
         }
 
-        if (!msg) {
+        // If not found and client is a user client, try entity lookup from dialogs
+        if (!msg && clientToUse !== storageBotClient) {
           try {
             const rawNum = f.telegram_channel_id.replace(/^-100/, "").replace(/^-/, "");
-            // Only try resolving by number if not a bot or if user is connected
-            if (!activeBotToken || client !== activeBotGramClient) {
-              const targetPeer = await client.getInputEntity(bigInt(rawNum)).catch(() => null);
-              if (targetPeer) {
-                const messages = await client.getMessages(targetPeer, { ids: [msgId] }).catch(() => null);
-                if (messages && messages[0] && messages[0].media) msg = messages[0];
-              }
+            const targetPeer = await clientToUse.getInputEntity(bigInt(rawNum)).catch(() => null);
+            if (targetPeer) {
+              const messages = await clientToUse.getMessages(targetPeer, { ids: [msgId] }).catch(() => null);
+              if (messages && messages[0] && messages[0].media) msg = messages[0];
             }
           } catch {}
         }
@@ -1489,6 +1511,7 @@ export async function autoHealTelegramImportReferences() {
                 .update({ telegram_file_id: foundDocId, telegram_access_hash: foundHash, telegram_file_reference: foundRef })
                 .eq("id", f.id);
             }
+            healedCount++;
           }
         }
       } catch (itemErr) {
@@ -1497,13 +1520,15 @@ export async function autoHealTelegramImportReferences() {
           itemErr.code === 401 ||
           itemErr.message?.includes("AUTH_KEY_UNREGISTERED")
         ) {
-          await dbDeactivateTelegramSessions(null);
-          return;
+          await dbDeactivateTelegramSessions(f.user_id);
+          userClients.delete(f.user_id || "default");
         }
-        console.warn(`Could not auto-heal file ${f.id}:`, itemErr.message);
       }
     }
-    console.log("✅ Auto-healing Telegram import references complete.");
+
+    if (healedCount > 0) {
+      console.log(`✅ Auto-healed ${healedCount} Telegram import reference(s).`);
+    }
   } catch (err) {
     if (
       err.errorMessage === "AUTH_KEY_UNREGISTERED" ||
@@ -1511,8 +1536,6 @@ export async function autoHealTelegramImportReferences() {
       err.message?.includes("AUTH_KEY_UNREGISTERED")
     ) {
       await dbDeactivateTelegramSessions(null);
-    } else {
-      console.warn("Auto-heal process notice:", err.message);
     }
   }
 }
