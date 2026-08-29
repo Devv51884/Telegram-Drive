@@ -298,7 +298,8 @@ export async function uploadFileToTelegram(
   originalname,
   mimetype,
   caption = "",
-  progressCallback = null
+  progressCallback = null,
+  userId = null
 ) {
   const config = await getTelegramConfig();
   const isFilePath = typeof fileInput === "string";
@@ -384,21 +385,43 @@ export async function uploadFileToTelegram(
 
   // ==========================================
   // Strategy 2: Large File MTProto GramJS Upload (up to 2GB)
-  // Used for files > 50MB up to 2GB directly into storage channel
+  // Used for files > 20MB up to 2GB directly into storage channel
   // ==========================================
-  const gramClient = await getGramClient();
+  const gramClient = await getGramClient(userId, true);
   if (gramClient) {
     try {
-      const targetPeer = config.chatId || "me";
+      const rawTargetPeer = config.chatId || "me";
+      let targetPeer = rawTargetPeer;
+
+      // Entity resolution for storage channel to prevent entity lookup stalls
+      if (rawTargetPeer !== "me") {
+        try {
+          targetPeer = await gramClient.getInputEntity(rawTargetPeer);
+        } catch {
+          try {
+            const rawNum = rawTargetPeer.toString().replace(/^-100/, "").replace(/^-/, "");
+            targetPeer = await gramClient.getInputEntity(bigInt(`-100${rawNum}`));
+          } catch {
+            try {
+              const rawNum = rawTargetPeer.toString().replace(/^-100/, "").replace(/^-/, "");
+              targetPeer = await gramClient.getInputEntity(bigInt(rawNum));
+            } catch {
+              targetPeer = rawTargetPeer.startsWith("-100") ? bigInt(rawTargetPeer) : bigInt(`-100${rawTargetPeer.replace(/^-/, "")}`);
+            }
+          }
+        }
+      }
+
+      console.log(`📤 Uploading large file "${originalname}" (${(fileSize / (1024 * 1024)).toFixed(1)} MB) to Telegram MTProto...`);
 
       const res = await gramClient.sendFile(targetPeer, {
         file: fileInput,
         caption: caption || originalname,
         forceDocument: true,
-        workers: 4,
+        workers: 1, // Single worker is rock-solid and prevents socket race deadlocks on cloud hosting
         progressCallback: (progress) => {
           if (progressCallback) {
-            const percent = Math.min(99, Math.round(progress * 100));
+            const percent = Math.min(99, Math.max(1, Math.round(progress * 100)));
             const loaded = Math.round(progress * fileSize);
             progressCallback({ loaded, total: fileSize, percent });
           }

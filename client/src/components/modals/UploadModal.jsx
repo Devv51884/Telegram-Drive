@@ -96,7 +96,6 @@ export default function UploadModal() {
     const controller = new AbortController();
     let lastLoaded = 0;
     let lastTime = Date.now();
-    let pollInterval = null;
 
     updateItem(item.id, {
       status: "uploading",
@@ -135,9 +134,14 @@ export default function UploadModal() {
             lastTime = now;
           }
 
-          let phaseText = `Uploading to Server (${Math.min(90, rawPercent)}%)`;
-          if (browserProgress.stage === "telegram_cloud" || rawPercent >= 90) {
-            phaseText = rawPercent >= 99 ? "Finalizing Cloud Storage..." : `Syncing with Telegram Cloud (${rawPercent}%)`;
+          let phaseText = `Uploading to Server (${Math.min(85, rawPercent)}%)`;
+          if (browserProgress.stage === "assembling") {
+            phaseText = "Assembling Chunks on Server...";
+          } else if (browserProgress.stage === "telegram_cloud") {
+            const tgPct = browserProgress.telegramPercent !== undefined ? browserProgress.telegramPercent : Math.max(0, rawPercent - 90) * 10;
+            phaseText = rawPercent >= 99 ? "Finalizing Cloud Storage..." : `Syncing with Telegram Cloud (${tgPct}%)`;
+          } else if (browserProgress.stage === "done" || rawPercent >= 100) {
+            phaseText = "Saved to Telegram Cloud!";
           }
 
           updateItem(item.id, {
@@ -152,42 +156,7 @@ export default function UploadModal() {
         item.id
       );
 
-      // Start polling for Server-to-Telegram Live Upload progress
-      pollInterval = setInterval(async () => {
-        if (controller.signal.aborted) {
-          clearInterval(pollInterval);
-          return;
-        }
-        try {
-          const progressRes = await DriveAPI.getUploadProgress(item.id);
-          if (progressRes?.success && progressRes.progress) {
-            const p = progressRes.progress;
-            if (p.status === "done" || p.percent >= 100) {
-              clearInterval(pollInterval);
-              updateItem(item.id, {
-                status: "done",
-                percent: 100,
-                loadedBytes: item.size,
-                speed: "",
-                eta: "",
-                phase: "Saved to Telegram Cloud!"
-              });
-              refresh();
-              return;
-            }
-
-            const telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (p.percent || 0) * 0.09)));
-            updateItem(item.id, {
-              percent: telegramPercent,
-              phase: `Syncing with Telegram Cloud (${p.percent || 0}%)`
-            });
-          }
-        } catch {}
-      }, 1000);
-
       await uploadPromise;
-
-      if (pollInterval) clearInterval(pollInterval);
 
       updateItem(item.id, {
         status: "done",

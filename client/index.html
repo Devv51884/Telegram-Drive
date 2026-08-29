@@ -1,15 +1,148 @@
 <!doctype html>
 <html lang="en" class="h-full">
   <head>
+    <!-- Basic Meta Tags -->
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TeleDrive - Telegram Cloud Storage</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <title>TeleDrive — Free Unlimited Telegram Cloud Storage & File Manager</title>
+    <meta name="description" content="TeleDrive is a powerful, free unlimited cloud storage and file management platform powered by Telegram MTProto API. Store up to 2GB per file, stream high-definition videos, preview PDFs, organize folders, and share files securely." />
+    <meta name="keywords" content="telegram drive, teledrive, telegram cloud storage, unlimited cloud storage, free cloud drive, telegram file manager, telegram drive in, unlimited cloud drive, free file hosting, secure telegram storage, stream telegram videos, telegram cloud backup" />
+    <meta name="author" content="TeleDrive Cloud" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="theme-color" content="#0284c7" />
+    <link rel="canonical" href="https://telegram-drive.in/" />
+
+    <!-- Favicon & Icons -->
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="apple-touch-icon" href="/logo.svg" />
+
+    <!-- Open Graph (Facebook, LinkedIn, Discord, Telegram) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://telegram-drive.in/" />
+    <meta property="og:site_name" content="TeleDrive" />
+    <meta property="og:title" content="TeleDrive — Free Unlimited Telegram Cloud Storage & File Manager" />
+    <meta property="og:description" content="Unlimited Free Cloud Storage powered by Telegram MTProto API. Upload up to 2GB files, stream 4K/HD video instantly, manage folders, and share files with end-to-end security." />
+    <meta property="og:image" content="https://telegram-drive.in/logo.svg" />
+
+    <!-- Twitter Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://telegram-drive.in/" />
+    <meta name="twitter:title" content="TeleDrive — Free Unlimited Telegram Cloud Storage" />
+    <meta name="twitter:description" content="Store unlimited files with up to 2GB per file on Telegram Cloud. High-speed video streaming, folder organization, and encrypted sharing." />
+    <meta name="twitter:image" content="https://telegram-drive.in/logo.svg" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <!-- JSON-LD Structured Data for Google Rich Snippets & AI Search (ChatGPT, Perplexity, Claude, Bing) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://telegram-drive.in/#software",
+          "name": "TeleDrive",
+          "url": "https://telegram-drive.in/",
+          "applicationCategory": "CloudStorageApplication",
+          "operatingSystem": "Web, Android, iOS, Windows, macOS, Linux",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          },
+          "description": "TeleDrive provides unlimited free cloud storage using Telegram MTProto infrastructure with instant streaming, 2GB upload limit per file, and secure sharing.",
+          "featureList": [
+            "Unlimited Telegram Cloud Storage",
+            "Up to 2GB file upload support",
+            "Instant 4K & HD video streaming without download",
+            "Built-in PDF, Audio, Video, and Image viewers",
+            "Smart folder organization and drag-and-drop",
+            "Password-protected and expiring share links",
+            "Telegram Channel and Saved Messages integration"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://telegram-drive.in/#website",
+          "url": "https://telegram-drive.in/",
+          "name": "TeleDrive Cloud Storage",
+          "description": "Unlimited Free Telegram Cloud Storage Platform",
+          "publisher": {
+            "@id": "https://telegram-drive.in/#organization"
+          }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://telegram-drive.in/#organization",
+          "name": "TeleDrive",
+          "url": "https://telegram-drive.in/",
+          "logo": "https://telegram-drive.in/logo.svg"
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://telegram-drive.in/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Is TeleDrive really free and unlimited?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes, TeleDrive connects directly to Telegram's cloud storage infrastructure via the official MTProto API, enabling 100% free and unlimited file storage."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What is the maximum file upload size?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "You can upload and store individual files up to 2GB each on TeleDrive."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I stream videos directly on TeleDrive?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes, TeleDrive features high-speed byte-range video streaming, allowing you to watch MP4, MKV, and WebM videos instantly with seeking support without downloading the full file."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Are my files secure and private?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "All data is securely transferred over TLS/SSL and stored on Telegram's encrypted distributed cloud servers with granular access controls and signed tokens."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
   <body class="h-full bg-slate-50 text-slate-900 dark:bg-[#131314] dark:text-[#e3e3e3] antialiased selection:bg-blue-500 selection:text-white">
+    <!-- Non-JS Semantic Fallback for Search Engine Crawlers & AI Indexers -->
+    <noscript>
+      <div style="padding: 30px; font-family: sans-serif; max-width: 800px; margin: auto;">
+        <h1>TeleDrive — Free Unlimited Telegram Cloud Storage & File Manager</h1>
+        <p>
+          TeleDrive transforms Telegram's cloud infrastructure into an unlimited, secure, and intuitive personal cloud storage system. Upload up to 2GB per file, organize with folders, stream HD videos instantly, and share files globally.
+        </p>
+        <h2>Key Features:</h2>
+        <ul>
+          <li><strong>Unlimited Storage:</strong> Zero storage caps powered by Telegram MTProto API.</li>
+          <li><strong>2GB Per File:</strong> Upload large videos, software, archives, and documents.</li>
+          <li><strong>Instant Streaming:</strong> Stream 4K/1080p videos with full seek bar support.</li>
+          <li><strong>Secure Sharing:</strong> Create password-protected links with custom expiry.</li>
+          <li><strong>Privacy First:</strong> End-to-end encrypted transfer and secure JWT sessions.</li>
+        </ul>
+      </div>
+    </noscript>
+
     <div id="root" class="h-full"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

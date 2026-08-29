@@ -195,7 +195,8 @@ router.post("/upload-chunk/complete", async (req, res) => {
             status: "telegram_uploading",
             updatedAt: Date.now()
           });
-        }
+        },
+        targetUserId
       );
 
       // 3. Save to database

@@ -129,7 +129,7 @@ export const DriveAPI = {
             onUploadProgress: (e) => {
               if (onProgress && e.total) {
                 const currentLoaded = uploadedBytes + e.loaded;
-                const percent = Math.min(95, Math.max(1, Math.round((currentLoaded * 95) / fileSize)));
+                const percent = Math.min(85, Math.max(1, Math.round((currentLoaded * 85) / fileSize)));
                 onProgress({
                   loaded: currentLoaded,
                   total: fileSize,
@@ -154,6 +154,15 @@ export const DriveAPI = {
         api.post("/files/upload-chunk/cancel", { uploadId, totalChunks }).catch(() => {});
         throw lastErr || new Error(`Failed to upload chunk ${chunkIndex + 1} of ${totalChunks}`);
       }
+    }
+
+    if (onProgress) {
+      onProgress({
+        loaded: fileSize,
+        total: fileSize,
+        percent: 88,
+        stage: "assembling"
+      });
     }
 
     // 3. Complete Assembly & Telegram Upload on Server (Async Resilient Engine)
@@ -192,7 +201,7 @@ export const DriveAPI = {
                 loaded: fileSize,
                 total: fileSize,
                 percent: 100,
-                stage: "telegram_cloud"
+                stage: "done"
               });
             }
             return { success: true, file: prog.file };
@@ -200,13 +209,19 @@ export const DriveAPI = {
           if (prog.status === "error") {
             throw new Error(prog.error || "Telegram upload failed on server");
           }
-          if (onProgress && prog.percent !== undefined) {
-            const telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (prog.percent || 0) * 0.09)));
+          if (onProgress) {
+            let telegramPercent = 90;
+            if (prog.status === "assembling") {
+              telegramPercent = 88;
+            } else if (prog.percent !== undefined) {
+              telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (prog.percent || 0) * 0.09)));
+            }
             onProgress({
-              loaded: Math.round(prog.loaded || (fileSize * (telegramPercent / 100))),
+              loaded: Math.round(fileSize * (telegramPercent / 100)),
               total: fileSize,
               percent: telegramPercent,
-              stage: "telegram_cloud"
+              telegramPercent: prog.percent || 0,
+              stage: prog.status === "assembling" ? "assembling" : "telegram_cloud"
             });
           }
         }
