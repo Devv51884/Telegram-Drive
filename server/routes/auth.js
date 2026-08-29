@@ -40,8 +40,8 @@ function getClientAppUrl(req) {
 // 1. LINK-BASED EMAIL VERIFICATION (STRICT GMAIL SIGNUP)
 // ==========================================
 
-// POST /api/auth/signup/send-verification - Step 1: Send verification link to user's Gmail
-router.post("/signup/send-verification", authLimiter, async (req, res) => {
+// POST /api/auth/signup/send-verification & /api/auth/signup/send_verification - Step 1: Send verification link to user's Gmail
+router.post(["/signup/send-verification", "/signup/send_verification"], authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -104,15 +104,10 @@ router.post("/signup/send-verification", authLimiter, async (req, res) => {
       emailResult = { success: false, error: mailErr.message };
     }
 
-    const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(token)}`;
-
     if (!emailResult?.success) {
-      return res.json({
-        success: true,
-        email: cleanEmail,
-        verificationUrl,
-        warning: emailResult?.error || "Email delivery failed on host.",
-        message: `Account created. Due to host SMTP limits, you can activate your account using the instant link below or check server logs.`
+      return res.status(400).json({
+        success: false,
+        error: emailResult?.error || "Could not deliver verification email to this address. Please check your email configuration or try again."
       });
     }
 
@@ -130,8 +125,8 @@ router.post("/signup/send-verification", authLimiter, async (req, res) => {
   }
 });
 
-// GET /api/auth/verify-email - Step 2: User clicks verification link in their email
-router.get("/verify-email", async (req, res) => {
+// GET /api/auth/verify-email & /api/auth/verify_email - Step 2: User clicks verification link in their email
+router.get(["/verify-email", "/verify_email"], async (req, res) => {
   try {
     const { token } = req.query;
 
@@ -221,8 +216,8 @@ router.get("/verify-email", async (req, res) => {
   }
 });
 
-// POST /api/auth/resend-verification - Resend verification email
-router.post("/resend-verification", authLimiter, async (req, res) => {
+// POST /api/auth/resend-verification & /api/auth/resend_verification - Resend verification email
+router.post(["/resend-verification", "/resend_verification"], authLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email || !email.trim() || !email.includes("@")) {
@@ -279,19 +274,16 @@ router.post("/resend-verification", authLimiter, async (req, res) => {
     const verificationUrl = `${appUrl}/?verify_email=${encodeURIComponent(newToken)}`;
 
     if (!emailResult?.success) {
-      return res.json({
-        success: true,
-        email: cleanEmail,
-        verificationUrl,
-        warning: emailResult?.error || "Email delivery failed on host.",
-        message: `A fresh verification link was generated.`
+      return res.status(400).json({
+        success: false,
+        error: emailResult?.error || "Could not deliver verification email to this address. Please try again."
       });
     }
 
     res.json({
       success: true,
       email: cleanEmail,
-      message: `A fresh verification link has been sent to ${cleanEmail}.`
+      message: `A fresh verification link has been sent to ${cleanEmail}. Please check your inbox.`
     });
   } catch (err) {
     console.error("Resend verification error:", err.message);
@@ -300,7 +292,7 @@ router.post("/resend-verification", authLimiter, async (req, res) => {
 });
 
 // POST /api/auth/forgot-password/send-link - Step 1: Send Password Reset Link to user's Gmail
-router.post("/forgot-password/send-link", authLimiter, async (req, res) => {
+router.post(["/forgot-password/send-link", "/forgot-password/send_link"], authLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email || !email.trim() || !email.includes("@")) {
@@ -319,34 +311,37 @@ router.post("/forgot-password/send-link", authLimiter, async (req, res) => {
 
     const resetToken = crypto.randomBytes(32).toString("hex");
     const appUrl = getClientAppUrl(req);
-    const resetUrl = `${appUrl}/?reset_password=${encodeURIComponent(resetToken)}`;
 
     await dbSaveVerificationToken(cleanEmail, resetToken, "password_reset_link", {
       userId: user.id,
       email: cleanEmail
     }, 1);
 
-    let emailWarning = null;
+    let emailResult = null;
     try {
-      const emailResult = await sendPasswordResetEmail({
+      emailResult = await sendPasswordResetEmail({
         to: cleanEmail,
         name: user.name || "TeleDrive User",
         token: resetToken,
         appUrl,
         validityHours: 1
       });
-      if (emailResult?.warning) emailWarning = emailResult.warning;
     } catch (mailErr) {
       console.warn("Password reset mail warning:", mailErr.message);
-      emailWarning = mailErr.message;
+      emailResult = { success: false, error: mailErr.message };
+    }
+
+    if (!emailResult?.success) {
+      return res.status(400).json({
+        success: false,
+        error: emailResult?.error || "Failed to send password reset email. Please try again."
+      });
     }
 
     res.json({
       success: true,
       email: cleanEmail,
-      resetUrl,
-      message: `A password reset link has been sent to ${cleanEmail}. Valid for 1 hour.`,
-      warning: emailWarning
+      message: `A password reset link has been sent to ${cleanEmail}. Please check your inbox.`
     });
   } catch (err) {
     console.error("Forgot password send link error:", err.message);

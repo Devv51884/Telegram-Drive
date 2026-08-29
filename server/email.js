@@ -88,6 +88,57 @@ export async function getTransporter(portOverride = null, useService = false) {
   });
 }
 
+let cachedBrevoSender = null;
+let lastBrevoSenderFetch = 0;
+
+async function getBrevoVerifiedSender(apiKey, preferredEmail = "") {
+  const now = Date.now();
+  if (cachedBrevoSender && now - lastBrevoSenderFetch < 15 * 60 * 1000) {
+    return cachedBrevoSender;
+  }
+
+  // 1. Check explicit environment variable or db setting
+  const explicitEmail = (process.env.BREVO_SENDER_EMAIL || (await dbGetSetting("BREVO_SENDER_EMAIL")) || "").trim();
+  const explicitName = (process.env.BREVO_SENDER_NAME || (await dbGetSetting("BREVO_SENDER_NAME")) || "TeleDrive Cloud").trim();
+  if (explicitEmail) {
+    cachedBrevoSender = { email: explicitEmail, name: explicitName };
+    lastBrevoSenderFetch = now;
+    return cachedBrevoSender;
+  }
+
+  // 2. Fetch list of verified senders directly from Brevo account API
+  try {
+    const res = await fetch("https://api.brevo.com/v3/senders", {
+      headers: { "api-key": apiKey, Accept: "application/json" }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const senders = data.senders || [];
+      if (senders.length > 0) {
+        const match = senders.find((s) => s.email?.toLowerCase() === preferredEmail?.toLowerCase() && s.active);
+        const activeSender = match || senders.find((s) => s.active) || senders[0];
+        if (activeSender && activeSender.email) {
+          cachedBrevoSender = {
+            email: activeSender.email.trim(),
+            name: activeSender.name || "TeleDrive Cloud"
+          };
+          lastBrevoSenderFetch = now;
+          console.log(`📧 [BREVO AUTO-DETECT] Using verified sender from Brevo account: ${cachedBrevoSender.email}`);
+          return cachedBrevoSender;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Brevo verified senders lookup warning:", err.message);
+  }
+
+  // 3. Fallback to configured user or gmail
+  const fallback = preferredEmail || process.env.GMAIL_USER || "devv5920@gmail.com";
+  cachedBrevoSender = { email: fallback.trim(), name: "TeleDrive Cloud" };
+  lastBrevoSenderFetch = now;
+  return cachedBrevoSender;
+}
+
 // =========================================================================
 // CENTRAL UNIFIED EMAIL SENDER
 // Supports: Brevo HTTPS (443), Resend HTTPS (443), SendGrid HTTPS (443),
@@ -108,9 +159,12 @@ export async function sendUnifiedEmail({
   }
 
   const emailConfig = await getEmailConfig();
-  const resendApiKey = (process.env.RESEND_API_KEY || (await dbGetSetting("RESEND_API_KEY")) || "").trim();
-  const brevoApiKey = (process.env.BREVO_API_KEY || (await dbGetSetting("BREVO_API_KEY")) || "").trim();
-  const sendgridApiKey = (process.env.SENDGRID_API_KEY || (await dbGetSetting("SENDGRID_API_KEY")) || "").trim();
+  const rawBrevoKey = process.env.BREVO_API_KEY || (await dbGetSetting("BREVO_API_KEY")) || "";
+  const brevoApiKey = rawBrevoKey.replace(/['"]+/g, "").trim();
+  const rawResendKey = process.env.RESEND_API_KEY || (await dbGetSetting("RESEND_API_KEY")) || "";
+  const resendApiKey = rawResendKey.replace(/['"]+/g, "").trim();
+  const rawSendgridKey = process.env.SENDGRID_API_KEY || (await dbGetSetting("SENDGRID_API_KEY")) || "";
+  const sendgridApiKey = rawSendgridKey.replace(/['"]+/g, "").trim();
 
   const senderEmail = fromEmail || emailConfig.user || "no-reply@telegram-drive.in";
   const senderName = fromName || "TeleDrive Cloud";
@@ -123,6 +177,7 @@ export async function sendUnifiedEmail({
   // =========================================================================
   if (brevoApiKey) {
     try {
+      const brevoSender = await getBrevoVerifiedSender(brevoApiKey, fromEmail || emailConfig.user);
       const response = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
@@ -131,7 +186,7 @@ export async function sendUnifiedEmail({
           "Accept": "application/json"
         },
         body: JSON.stringify({
-          sender: { name: senderName, email: senderEmail },
+          sender: { name: senderName || brevoSender.name, email: brevoSender.email },
           to: [{ email: cleanTo, name: toName }],
           subject: subject,
           htmlContent: html,
@@ -140,11 +195,11 @@ export async function sendUnifiedEmail({
       });
       const data = await response.json();
       if (response.ok && (data.messageId || data.id)) {
-        console.log(`✅ Email delivered via Brevo HTTPS API to ${cleanTo} (MessageId: ${data.messageId || data.id})`);
+        console.log(`✅ Email delivered via Brevo HTTPS API to ${cleanTo} (MessageId: ${data.messageId || data.id}, Sender: ${brevoSender.email})`);
         return { success: true, provider: "brevo", messageId: data.messageId || data.id };
       } else {
         const errMsg = data.message || JSON.stringify(data);
-        console.warn(`⚠️ Brevo API error: ${errMsg}`);
+        console.warn(`⚠️ Brevo API error (Sender: ${brevoSender.email}): ${errMsg}`);
         errors.push(`Brevo: ${errMsg}`);
       }
     } catch (err) {

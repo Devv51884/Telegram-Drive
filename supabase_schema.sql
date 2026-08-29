@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
 -- 3. Create / Update Telegram Sessions Table
 CREATE TABLE IF NOT EXISTS public.telegram_sessions (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     phone_number TEXT,
     session_string TEXT,
     user_info TEXT,
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS public.telegram_sessions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS first_name TEXT;
 ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS last_name TEXT;
 ALTER TABLE public.telegram_sessions ADD COLUMN IF NOT EXISTS username TEXT;

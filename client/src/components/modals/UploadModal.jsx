@@ -114,7 +114,9 @@ export default function UploadModal() {
         (browserProgress) => {
           const loaded = Number(browserProgress.loaded) || 0;
           const total = Number(browserProgress.total) || item.size || 1;
-          const rawPercent = Math.min(95, Math.max(1, Math.round((loaded * 95) / total)));
+          const rawPercent = browserProgress.percent !== undefined 
+            ? browserProgress.percent 
+            : Math.min(95, Math.max(1, Math.round((loaded * 95) / total)));
 
           const now = Date.now();
           const timeDiff = Math.max(0.1, (now - lastTime) / 1000);
@@ -133,12 +135,17 @@ export default function UploadModal() {
             lastTime = now;
           }
 
+          let phaseText = `Uploading to Server (${Math.min(90, rawPercent)}%)`;
+          if (browserProgress.stage === "telegram_cloud" || rawPercent >= 90) {
+            phaseText = rawPercent >= 99 ? "Finalizing Cloud Storage..." : `Syncing with Telegram Cloud (${rawPercent}%)`;
+          }
+
           updateItem(item.id, {
             loadedBytes: loaded,
-            percent: rawPercent,
+            percent: Math.min(99, rawPercent),
             speed: speedStr || item.speed || "",
             eta: etaStr || item.eta || "",
-            phase: rawPercent >= 90 ? "Transmitting to Telegram Cloud..." : `Uploading to Server (${rawPercent}%)`
+            phase: phaseText
           });
         },
         controller.signal,

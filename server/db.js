@@ -382,41 +382,48 @@ export async function syncFromSupabase() {
       }
     }
 
-    // 5. Sync Telegram Active Session
-    const { data: sessionData, error: sessErr } = await supabase
-      .from("telegram_sessions")
-      .select("*")
-      .eq("is_active", 1)
-      .maybeSingle();
+    // 5. Sync Telegram Active Sessions
+    try {
+      const { data: sessionRows, error: sessErr } = await supabase
+        .from("telegram_sessions")
+        .select("*")
+        .eq("is_active", 1);
 
-    if (!sessErr && sessionData) {
-      const infoStr = typeof sessionData.user_info === "object" ? JSON.stringify(sessionData.user_info) : sessionData.user_info;
-      let parsedInfo = {};
-      try {
-        parsedInfo = JSON.parse(infoStr);
-      } catch {}
+      if (!sessErr && sessionRows && sessionRows.length > 0) {
+        for (const sessionData of sessionRows) {
+          const infoStr = typeof sessionData.user_info === "object" ? JSON.stringify(sessionData.user_info) : sessionData.user_info;
+          let parsedInfo = {};
+          try {
+            parsedInfo = JSON.parse(infoStr);
+          } catch {}
 
-      await sqlite.run(
-        `INSERT INTO telegram_sessions (id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-          session_string = excluded.session_string,
-          user_info = excluded.user_info,
-          first_name = excluded.first_name,
-          last_name = excluded.last_name,
-          username = excluded.username,
-          is_active = excluded.is_active`,
-        [
-          sessionData.id,
-          sessionData.phone_number,
-          sessionData.session_string,
-          infoStr,
-          sessionData.first_name || parsedInfo.firstName || null,
-          sessionData.last_name || parsedInfo.lastName || null,
-          sessionData.username || parsedInfo.username || null,
-          sessionData.is_active
-        ]
-      );
+          await sqlite.run(
+            `INSERT INTO telegram_sessions (id, user_id, phone_number, session_string, user_info, first_name, last_name, username, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+              user_id = excluded.user_id,
+              session_string = excluded.session_string,
+              user_info = excluded.user_info,
+              first_name = excluded.first_name,
+              last_name = excluded.last_name,
+              username = excluded.username,
+              is_active = excluded.is_active`,
+            [
+              sessionData.id,
+              sessionData.user_id || null,
+              sessionData.phone_number,
+              sessionData.session_string,
+              infoStr,
+              sessionData.first_name || parsedInfo.firstName || null,
+              sessionData.last_name || parsedInfo.lastName || null,
+              sessionData.username || parsedInfo.username || null,
+              sessionData.is_active !== undefined ? sessionData.is_active : 1
+            ]
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("Supabase telegram session sync warning:", e.message);
     }
 
     // 6. Sync Item Permissions
@@ -918,7 +925,22 @@ export async function dbGetActiveTelegramSession(userId = null) {
         console.warn("Supabase user session fetch error:", err.message);
       }
     }
-    // Strict isolation: Return null if this user has not connected Telegram yet
+    // Fallback: If no session found with this userId, check if there is an unassociated active session
+    const unassociated = await sqlite.get(
+      "SELECT * FROM telegram_sessions WHERE (user_id IS NULL OR user_id = '') AND is_active = 1 ORDER BY updated_at DESC LIMIT 1"
+    );
+    if (unassociated && unassociated.session_string) {
+      await sqlite.run("UPDATE telegram_sessions SET user_id = ? WHERE id = ?", [userId, unassociated.id]);
+      try {
+        const supabase = await getSupabaseClient();
+        if (supabase) {
+          await supabase.from("telegram_sessions").update({ user_id: userId }).eq("id", unassociated.id);
+        }
+      } catch {}
+      unassociated.user_id = userId;
+      return unassociated;
+    }
+
     return null;
   }
 
@@ -934,7 +956,6 @@ export async function dbGetActiveTelegramSession(userId = null) {
       const { data: anySession } = await supabase
         .from("telegram_sessions")
         .select("*")
-        .is("user_id", null)
         .eq("is_active", 1)
         .order("updated_at", { ascending: false })
         .limit(1)

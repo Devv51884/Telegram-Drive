@@ -170,23 +170,26 @@ export async function getUserGramClient(userId = null) {
 
     await client.connect();
 
-    // Verify session authorization
+    // Verify session authorization safely without false-positive deactivation
     try {
       const isAuth = await client.checkAuthorization();
       if (!isAuth) {
-        await dbDeactivateTelegramSessions(userId);
-        return null;
+        // If explicitly unauthorized after clean connect
+        console.warn(`Telegram session authorization check returned false for user ${key}.`);
       }
     } catch (authCheckErr) {
       if (
         authCheckErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+        authCheckErr.errorMessage === "SESSION_REVOKED" ||
         authCheckErr.code === 401 ||
-        authCheckErr.message?.includes("AUTH_KEY_UNREGISTERED")
+        authCheckErr.message?.includes("AUTH_KEY_UNREGISTERED") ||
+        authCheckErr.message?.includes("SESSION_REVOKED")
       ) {
-        console.warn(`Telegram session expired for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
+        console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
         await dbDeactivateTelegramSessions(userId);
         return null;
       }
+      console.warn(`Non-fatal Telegram auth check warning for user ${key}:`, authCheckErr.message);
     }
 
     userGramClients.set(key, client);
@@ -195,17 +198,46 @@ export async function getUserGramClient(userId = null) {
   } catch (userGramErr) {
     if (
       userGramErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
+      userGramErr.errorMessage === "SESSION_REVOKED" ||
       userGramErr.code === 401 ||
-      userGramErr.message?.includes("AUTH_KEY_UNREGISTERED")
+      userGramErr.message?.includes("AUTH_KEY_UNREGISTERED") ||
+      userGramErr.message?.includes("SESSION_REVOKED")
     ) {
-      console.warn(`Telegram session expired for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
+      console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
       await dbDeactivateTelegramSessions(userId);
+      return null;
     } else {
-      console.warn(`User MTProto session connect error (user: ${key}):`, userGramErr.message);
+      console.warn(`User MTProto session temporary connect glitch (user: ${key}):`, userGramErr.message);
     }
     return null;
   }
 }
+
+// Periodic Telegram MTProto socket keepalive to prevent Telegram from disconnecting idle connections
+setInterval(async () => {
+  try {
+    for (const [key, client] of userGramClients.entries()) {
+      if (client) {
+        try {
+          if (!client.connected) {
+            await client.connect().catch(() => {});
+          } else {
+            await client.getMe().catch(() => {});
+          }
+        } catch {}
+      }
+    }
+    if (activeBotGramClient) {
+      try {
+        if (!activeBotGramClient.connected) {
+          await activeBotGramClient.connect().catch(() => {});
+        } else {
+          await activeBotGramClient.getMe().catch(() => {});
+        }
+      } catch {}
+    }
+  } catch {}
+}, 4 * 60 * 1000);
 
 // General Gram Client resolver (Supports both Storage Bot and User Account)
 export async function getGramClient(userId = null, preferStorageBot = false) {

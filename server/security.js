@@ -149,13 +149,19 @@ export async function requireAuth(req, res, next) {
     fullApiPath.startsWith("/api/auth/signup") ||
     fullApiPath.startsWith("/api/auth/login") ||
     fullApiPath.startsWith("/api/auth/forgot-password") ||
+    fullApiPath.startsWith("/api/auth/forgot_password") ||
     fullApiPath.startsWith("/api/auth/verify-email") ||
+    fullApiPath.startsWith("/api/auth/verify_email") ||
     fullApiPath.startsWith("/api/auth/resend-verification") ||
+    fullApiPath.startsWith("/api/auth/resend_verification") ||
     reqPath.startsWith("/signup") ||
     reqPath.startsWith("/login") ||
     reqPath.startsWith("/forgot-password") ||
+    reqPath.startsWith("/forgot_password") ||
     reqPath.startsWith("/verify-email") ||
-    reqPath.startsWith("/resend-verification");
+    reqPath.startsWith("/verify_email") ||
+    reqPath.startsWith("/resend-verification") ||
+    reqPath.startsWith("/resend_verification");
 
   const isPublicStreamOrDownload =
     fullApiPath.includes("/stream") ||

@@ -98,7 +98,7 @@ router.post("/upload-chunk", uploadChunkMulter.single("chunk"), (req, res) => {
   });
 });
 
-// POST /api/files/upload-chunk/complete - Merge chunks on disk & stream to Telegram Cloud
+// POST /api/files/upload-chunk/complete - Merge chunks on disk & stream to Telegram Cloud (Async resilient background processing)
 router.post("/upload-chunk/complete", async (req, res) => {
   const { uploadId, totalChunks, fileName, folderId, mimeType: customMime, totalSize } = req.body;
 
@@ -121,96 +121,134 @@ router.post("/upload-chunk/complete", async (req, res) => {
 
   const type = detectFileType(mimeType, cleanName);
   const targetFolder = folderId === "root" || !folderId ? null : folderId;
-  const assembledFilePath = path.join(uploadDir, `${Date.now()}_${crypto.randomBytes(6).toString("hex")}_${cleanName}`);
+  const targetUserId = req.userId || null;
+  const expectedSize = parseInt(totalSize, 10) || 0;
 
-  try {
-    // 1. Verify and assemble all chunks sequentially
-    const writeStream = fs.createWriteStream(assembledFilePath);
+  // Set initial assembling status
+  activeUploadProgress.set(uploadId, {
+    loaded: 0,
+    total: expectedSize,
+    percent: 0,
+    status: "assembling",
+    updatedAt: Date.now()
+  });
 
-    for (let i = 0; i < numChunks; i++) {
-      const chunkPath = path.join(chunksDir, `${uploadId}_chunk_${i}`);
-      if (!fs.existsSync(chunkPath)) {
-        writeStream.destroy();
-        try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
-        return res.status(400).json({ success: false, error: `Missing chunk ${i} of ${numChunks}` });
+  // Respond immediately (<100ms) to prevent reverse proxy (Cloudflare/Render/Nginx) 502/504 timeouts
+  res.json({
+    success: true,
+    status: "processing",
+    uploadId,
+    message: "Chunks received. Processing Telegram Cloud upload in background."
+  });
+
+  // Execute chunk merging & Telegram upload asynchronously in the background
+  (async () => {
+    const assembledFilePath = path.join(uploadDir, `${Date.now()}_${crypto.randomBytes(6).toString("hex")}_${cleanName}`);
+    try {
+      // 1. Verify and assemble all chunks sequentially
+      const writeStream = fs.createWriteStream(assembledFilePath);
+
+      for (let i = 0; i < numChunks; i++) {
+        const chunkPath = path.join(chunksDir, `${uploadId}_chunk_${i}`);
+        if (!fs.existsSync(chunkPath)) {
+          writeStream.destroy();
+          try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
+          activeUploadProgress.set(uploadId, {
+            status: "error",
+            error: `Missing chunk ${i + 1} of ${numChunks}. Upload was incomplete.`,
+            percent: 0,
+            updatedAt: Date.now()
+          });
+          return;
+        }
+
+        const chunkBuffer = fs.readFileSync(chunkPath);
+        writeStream.write(chunkBuffer);
+        try { fs.unlinkSync(chunkPath); } catch {}
       }
 
-      const chunkBuffer = fs.readFileSync(chunkPath);
-      writeStream.write(chunkBuffer);
-      try { fs.unlinkSync(chunkPath); } catch {}
+      await new Promise((resolve, reject) => {
+        writeStream.end(resolve);
+        writeStream.on("error", reject);
+      });
+
+      const assembledStats = fs.statSync(assembledFilePath);
+      const finalSize = assembledStats.size || expectedSize;
+
+      activeUploadProgress.set(uploadId, {
+        loaded: 0,
+        total: finalSize,
+        percent: 0,
+        status: "telegram_uploading",
+        updatedAt: Date.now()
+      });
+
+      // 2. Upload assembled file to Telegram Cloud
+      const result = await uploadFileToTelegram(
+        assembledFilePath,
+        cleanName,
+        mimeType,
+        `Uploaded to TeleDrive: ${cleanName}`,
+        (progressData) => {
+          activeUploadProgress.set(uploadId, {
+            ...progressData,
+            status: "telegram_uploading",
+            updatedAt: Date.now()
+          });
+        }
+      );
+
+      // 3. Save to database
+      const fileId = generateId("file_");
+      const fileRecord = {
+        id: fileId,
+        user_id: targetUserId,
+        name: cleanName,
+        folder_id: targetFolder,
+        size: result.fileSize || finalSize,
+        mime_type: mimeType,
+        type: type,
+        source_type: result.sourceType || "upload",
+        telegram_file_id: result.fileId || null,
+        telegram_message_id: result.messageId ? result.messageId.toString() : null,
+        telegram_channel_id: result.channelId ? result.channelId.toString() : null,
+        telegram_access_hash: result.accessHash || null,
+        telegram_file_reference: result.fileReference || null,
+        is_starred: 0,
+        is_trash: 0
+      };
+
+      const saved = await dbInsertFile(fileRecord);
+
+      // 4. Delete assembled temporary file
+      try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
+
+      // 5. Mark as done with file object
+      activeUploadProgress.set(uploadId, {
+        loaded: finalSize,
+        total: finalSize,
+        percent: 100,
+        status: "done",
+        file: saved,
+        updatedAt: Date.now()
+      });
+
+      console.log(`🚀 [ASYNC UPLOAD COMPLETED] File "${cleanName}" (${(finalSize / (1024 * 1024)).toFixed(1)} MB) saved to Telegram Cloud.`);
+
+      // Clear from memory after 10 minutes
+      setTimeout(() => activeUploadProgress.delete(uploadId), 10 * 60 * 1000);
+    } catch (err) {
+      console.error("Async chunk complete error:", err.message);
+      try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
+      activeUploadProgress.set(uploadId, {
+        status: "error",
+        error: err.message || "Failed to complete Telegram Cloud upload",
+        percent: 0,
+        updatedAt: Date.now()
+      });
+      setTimeout(() => activeUploadProgress.delete(uploadId), 5 * 60 * 1000);
     }
-
-    await new Promise((resolve, reject) => {
-      writeStream.end(resolve);
-      writeStream.on("error", reject);
-    });
-
-    const assembledStats = fs.statSync(assembledFilePath);
-    const finalSize = assembledStats.size || parseInt(totalSize, 10) || 0;
-
-    activeUploadProgress.set(uploadId, {
-      loaded: 0,
-      total: finalSize,
-      percent: 0,
-      status: "telegram_uploading"
-    });
-
-    // 2. Upload assembled file to Telegram Cloud
-    const result = await uploadFileToTelegram(
-      assembledFilePath,
-      cleanName,
-      mimeType,
-      `Uploaded to TeleDrive: ${cleanName}`,
-      (progressData) => {
-        activeUploadProgress.set(uploadId, {
-          ...progressData,
-          status: "telegram_uploading",
-          updatedAt: Date.now()
-        });
-      }
-    );
-
-    activeUploadProgress.set(uploadId, {
-      loaded: finalSize,
-      total: finalSize,
-      percent: 100,
-      status: "done"
-    });
-
-    // 3. Save to database
-    const fileId = generateId("file_");
-    const fileRecord = {
-      id: fileId,
-      user_id: req.userId || null,
-      name: cleanName,
-      folder_id: targetFolder,
-      size: result.fileSize || finalSize,
-      mime_type: mimeType,
-      type: type,
-      source_type: result.sourceType || "upload",
-      telegram_file_id: result.fileId || null,
-      telegram_message_id: result.messageId ? result.messageId.toString() : null,
-      telegram_channel_id: result.channelId ? result.channelId.toString() : null,
-      telegram_access_hash: result.accessHash || null,
-      telegram_file_reference: result.fileReference || null,
-      is_starred: 0,
-      is_trash: 0
-    };
-
-    const saved = await dbInsertFile(fileRecord);
-
-    // 4. Delete assembled temporary file
-    try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
-
-    res.json({
-      success: true,
-      file: saved
-    });
-  } catch (err) {
-    console.error("Chunk complete error:", err.message);
-    try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
-    res.status(500).json({ success: false, error: err.message || "Failed to complete chunked upload" });
-  }
+  })();
 });
 
 // POST /api/files/upload-chunk/cancel - Clean up chunks on cancellation

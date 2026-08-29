@@ -156,7 +156,7 @@ export const DriveAPI = {
       }
     }
 
-    // 3. Complete Assembly & Telegram Upload on Server
+    // 3. Complete Assembly & Telegram Upload on Server (Async Resilient Engine)
     const completeRes = await api.post("/files/upload-chunk/complete", {
       uploadId,
       totalChunks,
@@ -165,14 +165,61 @@ export const DriveAPI = {
       mimeType: file.type,
       totalSize: fileSize
     }, {
-      timeout: 0,
+      timeout: 30000,
       signal
     });
 
-    return completeRes.data;
+    // If server responded immediately with file, return directly
+    if (completeRes.data?.file) {
+      return completeRes.data;
+    }
+
+    // Server is processing in background; poll /files/upload-progress/:uploadId until done
+    let pollCount = 0;
+    const maxPolls = 600; // up to 10 minutes
+    while (pollCount < maxPolls) {
+      if (signal?.aborted) throw new Error("canceled");
+      await new Promise((res) => setTimeout(res, 1000));
+      pollCount++;
+
+      try {
+        const progressRes = await api.get(`/files/upload-progress/${encodeURIComponent(uploadId)}`);
+        const prog = progressRes.data?.progress;
+        if (prog) {
+          if (prog.status === "done" && prog.file) {
+            if (onProgress) {
+              onProgress({
+                loaded: fileSize,
+                total: fileSize,
+                percent: 100,
+                stage: "telegram_cloud"
+              });
+            }
+            return { success: true, file: prog.file };
+          }
+          if (prog.status === "error") {
+            throw new Error(prog.error || "Telegram upload failed on server");
+          }
+          if (onProgress && prog.percent !== undefined) {
+            const telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (prog.percent || 0) * 0.09)));
+            onProgress({
+              loaded: Math.round(prog.loaded || (fileSize * (telegramPercent / 100))),
+              total: fileSize,
+              percent: telegramPercent,
+              stage: "telegram_cloud"
+            });
+          }
+        }
+      } catch (pollErr) {
+        if (pollErr.message === "canceled" || signal?.aborted) throw pollErr;
+        if (pollErr.message?.includes("Telegram upload failed")) throw pollErr;
+      }
+    }
+
+    throw new Error("Upload processing took longer than expected. Please check your files list.");
   },
   getUploadProgress: (uploadId) =>
-    api.get(`/files/upload-progress/${uploadId}`).then((r) => r.data),
+    api.get(`/files/upload-progress/${encodeURIComponent(uploadId)}`).then((r) => r.data),
   importLink: (postUrl, folderId, customName) =>
     api.post("/files/import-link", { postUrl, folderId, customName }).then((r) => r.data),
   updateFile: (id, data) => api.patch(`/files/${id}`, data).then((r) => r.data),

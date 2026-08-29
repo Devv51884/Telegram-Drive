@@ -61,9 +61,6 @@ export default function AuthScreen() {
 
   // Countdown timer for Resend Link
   const [countdown, setCountdown] = useState(0);
-  const [verificationLink, setVerificationLink] = useState("");
-  const [hasEmailWarning, setHasEmailWarning] = useState(false);
-  const [resetLink, setResetLink] = useState("");
 
   // 1. Detect URL Params for email verification or password reset tokens on page mount
   useEffect(() => {
@@ -98,8 +95,6 @@ export default function AuthScreen() {
     setSuccessMsg("");
     setRequires2FA(false);
     setPin("");
-    setVerificationLink("");
-    setHasEmailWarning(false);
   };
 
   // 2. Handle Process Verification Token from Email Link
@@ -203,13 +198,6 @@ export default function AuthScreen() {
       if (res.success) {
         setView("verification_sent");
         setCountdown(60);
-        if (res.warning) {
-          setHasEmailWarning(true);
-          if (res.verificationUrl) setVerificationLink(res.verificationUrl);
-        } else {
-          setHasEmailWarning(false);
-          setVerificationLink("");
-        }
         setSuccessMsg(res.message || `A verification link has been sent to ${email}`);
       } else {
         setError(res.error || "Failed to send verification link.");
@@ -226,21 +214,12 @@ export default function AuthScreen() {
     if (countdown > 0 || !email) return;
     setError("");
     setSuccessMsg("");
-    setVerificationLink("");
-    setHasEmailWarning(false);
     setLoading(true);
 
     try {
       const res = await resendVerificationLink(email.trim());
       if (res.success) {
         setCountdown(60);
-        if (res.warning) {
-          setHasEmailWarning(true);
-          if (res.verificationUrl) setVerificationLink(res.verificationUrl);
-        } else {
-          setHasEmailWarning(false);
-          setVerificationLink("");
-        }
         setSuccessMsg(res.message || `A new verification link was sent to ${email}`);
       } else {
         setError(res.error || "Failed to resend link");
@@ -268,7 +247,6 @@ export default function AuthScreen() {
       if (res.success) {
         setView("forgot_sent");
         setCountdown(60);
-        if (res.resetUrl) setResetLink(res.resetUrl);
         setSuccessMsg(res.message || `Password reset link sent to ${email}`);
       } else {
         setError(res.error || "Could not send password reset link");
@@ -634,24 +612,6 @@ export default function AuthScreen() {
               </p>
             </div>
 
-            {hasEmailWarning && (
-              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] leading-relaxed text-left">
-                <strong>Hosting Notice:</strong> Outbound email delivery is restricted by the cloud host environment. You can activate your account immediately using the instant activation button below!
-              </div>
-            )}
-
-            {verificationLink && (
-              <div className="pt-1">
-                <a
-                  href={verificationLink}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 text-xs transition-all animate-pulse"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>⚡ Activate Account Now (Instant Link)</span>
-                </a>
-              </div>
-            )}
-
             <div className="space-y-2 pt-2">
               <button
                 type="button"
@@ -822,18 +782,6 @@ export default function AuthScreen() {
             <p className="text-[11px] text-slate-400 leading-relaxed">
               Open the link in your email to set a new password. The link is valid for 1 hour.
             </p>
-
-            {resetLink && (
-              <div className="pt-1">
-                <a
-                  href={resetLink}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold rounded-2xl shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 text-xs transition-all animate-pulse"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>⚡ Reset Password Now (Direct Link)</span>
-                </a>
-              </div>
-            )}
 
             <div className="space-y-2 pt-2">
               <button
