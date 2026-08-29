@@ -170,12 +170,15 @@ export async function getUserGramClient(userId = null) {
 
     await client.connect();
 
-    // Verify session authorization safely without false-positive deactivation
+    // Verify session authorization safely
     try {
       const isAuth = await client.checkAuthorization();
       if (!isAuth) {
-        // If explicitly unauthorized after clean connect
-        console.warn(`Telegram session authorization check returned false for user ${key}.`);
+        console.warn(`Telegram session authorization returned false for user ${key}. Deactivating expired session.`);
+        userGramClients.delete(key);
+        userSessionStrings.delete(key);
+        await dbDeactivateTelegramSessions(userId);
+        return null;
       }
     } catch (authCheckErr) {
       if (
@@ -185,7 +188,9 @@ export async function getUserGramClient(userId = null) {
         authCheckErr.message?.includes("AUTH_KEY_UNREGISTERED") ||
         authCheckErr.message?.includes("SESSION_REVOKED")
       ) {
-        console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
+        console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating expired session.`);
+        userGramClients.delete(key);
+        userSessionStrings.delete(key);
         await dbDeactivateTelegramSessions(userId);
         return null;
       }
@@ -203,11 +208,13 @@ export async function getUserGramClient(userId = null) {
       userGramErr.message?.includes("AUTH_KEY_UNREGISTERED") ||
       userGramErr.message?.includes("SESSION_REVOKED")
     ) {
-      console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating.`);
+      console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating expired session.`);
+      userGramClients.delete(key);
+      userSessionStrings.delete(key);
       await dbDeactivateTelegramSessions(userId);
       return null;
     } else {
-      console.warn(`User MTProto session temporary connect glitch (user: ${key}):`, userGramErr.message);
+      console.warn(`User MTProto session connect glitch (user: ${key}):`, userGramErr.message);
     }
     return null;
   }
