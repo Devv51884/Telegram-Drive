@@ -148,14 +148,23 @@ app.get("/sitemap.xml", (req, res) => {
 </urlset>`);
 });
 
-// Serve frontend in production with caching
+// Serve frontend in production with smart caching (no-cache on HTML, immutable on hashed assets)
 const clientDistPath = path.join(__dirname, "../client/dist");
-app.use(express.static(clientDistPath, { maxAge: "7d", immutable: true }));
+app.use(express.static(clientDistPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    } else if (filePath.includes("/assets/")) {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    }
+  }
+}));
 
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ success: false, error: "API endpoint not found" });
   }
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.sendFile(path.join(clientDistPath, "index.html"), (err) => {
     if (err) {
       res.status(200).send("TeleDrive API Server is running. Client UI running in dev mode on port 3000.");
