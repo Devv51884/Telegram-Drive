@@ -178,8 +178,6 @@ export default function AuthScreen() {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
-    setVerificationLink("");
-    setHasEmailWarning(false);
 
     if (!name.trim()) return setError("Full Name is required");
     if (!email || !email.includes("@")) return setError("Please enter a valid Gmail / Email address");
