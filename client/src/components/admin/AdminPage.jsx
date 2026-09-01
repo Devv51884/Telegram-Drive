@@ -37,7 +37,9 @@ import {
   Loader2,
   MessageSquare,
   Inbox,
-  Check
+  Check,
+  Sparkles,
+  Mail
 } from "lucide-react";
 
 export default function AdminPage() {
