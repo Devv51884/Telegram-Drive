@@ -131,6 +131,11 @@ export async function requireAuth(req, res, next) {
   const baseUrl = req.baseUrl || "";
   const fullApiPath = (baseUrl + reqPath).split("?")[0];
 
+  // 1. Non-API requests (HTML pages, assets, favicon, sitemap, robots) are public
+  if (!fullApiPath.startsWith("/api") && !reqPath.startsWith("/api")) {
+    return next();
+  }
+
   // Whitelist of strictly public endpoints that do not require authentication
   const publicPaths = [
     "/api/health",
@@ -142,7 +147,9 @@ export async function requireAuth(req, res, next) {
     "/api/auth/forgot-password/verify-otp",
     "/api/settings/auth/status",
     "/api/settings/auth/login",
-    "/api/settings/auth/setup"
+    "/api/settings/auth/setup",
+    "/api/contact/settings",
+    "/api/contact/submit"
   ];
 
   const isPublicAuthRoute =
@@ -154,6 +161,14 @@ export async function requireAuth(req, res, next) {
     fullApiPath.startsWith("/api/auth/verify_email") ||
     fullApiPath.startsWith("/api/auth/resend-verification") ||
     fullApiPath.startsWith("/api/auth/resend_verification") ||
+    reqPath.startsWith("/auth/signup") ||
+    reqPath.startsWith("/auth/login") ||
+    reqPath.startsWith("/auth/forgot-password") ||
+    reqPath.startsWith("/auth/forgot_password") ||
+    reqPath.startsWith("/auth/verify-email") ||
+    reqPath.startsWith("/auth/verify_email") ||
+    reqPath.startsWith("/auth/resend-verification") ||
+    reqPath.startsWith("/auth/resend_verification") ||
     reqPath.startsWith("/signup") ||
     reqPath.startsWith("/login") ||
     reqPath.startsWith("/forgot-password") ||
@@ -162,6 +177,12 @@ export async function requireAuth(req, res, next) {
     reqPath.startsWith("/verify_email") ||
     reqPath.startsWith("/resend-verification") ||
     reqPath.startsWith("/resend_verification");
+
+  const isPublicContact =
+    fullApiPath.startsWith("/api/contact/settings") ||
+    fullApiPath.startsWith("/api/contact/submit") ||
+    reqPath.startsWith("/contact/settings") ||
+    reqPath.startsWith("/contact/submit");
 
   const isPublicStreamOrDownload =
     fullApiPath.includes("/stream") ||
@@ -173,7 +194,15 @@ export async function requireAuth(req, res, next) {
     reqPath.includes("/share/public") ||
     reqPath.includes("/share/request-access");
 
-  if (publicPaths.includes(fullApiPath) || isPublicAuthRoute || reqPath === "/health" || isPublicStreamOrDownload) {
+  if (
+    publicPaths.includes(fullApiPath) ||
+    publicPaths.includes(reqPath) ||
+    isPublicAuthRoute ||
+    isPublicContact ||
+    reqPath === "/health" ||
+    reqPath === "/api/health" ||
+    isPublicStreamOrDownload
+  ) {
     // If token is provided, optionally attach authenticated user context
     let token = null;
     const authHeader = req.headers["authorization"];

@@ -72,8 +72,8 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Security Middleware 3: Security & Session Authentication Middleware
-app.use(requireAuth);
+// Security Middleware 3: Security & Session Authentication Middleware (Scoped strictly to /api routes)
+app.use("/api", requireAuth);
 
 // Routes
 app.use("/api/auth", authRouter);
