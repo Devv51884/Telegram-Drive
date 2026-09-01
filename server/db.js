@@ -976,7 +976,7 @@ export async function dbSaveTelegramSession(sessionRecord) {
   if (targetUserId) {
     await sqlite.run("UPDATE telegram_sessions SET is_active = 0 WHERE user_id = ?", [targetUserId]);
   } else {
-    await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
+    await sqlite.run("UPDATE telegram_sessions SET is_active = 0 WHERE (user_id IS NULL OR user_id = '')");
   }
 
   await sqlite.run(
@@ -1009,7 +1009,7 @@ export async function dbSaveTelegramSession(sessionRecord) {
         if (targetUserId) {
           await supabase.from("telegram_sessions").update({ is_active: 0 }).eq("user_id", targetUserId);
         } else {
-          await supabase.from("telegram_sessions").update({ is_active: 0 }).neq("id", sessionRecord.id);
+          await supabase.from("telegram_sessions").update({ is_active: 0 }).neq("id", sessionRecord.id).or("user_id.is.null,user_id.eq.''");
         }
         await supabase.from("telegram_sessions").upsert({
           id: sessionRecord.id,
@@ -1017,7 +1017,11 @@ export async function dbSaveTelegramSession(sessionRecord) {
           phone_number: sessionRecord.phone_number,
           session_string: sessionRecord.session_string,
           user_info: sessionRecord.user_info,
-          is_active: 1
+          first_name: sessionRecord.first_name || null,
+          last_name: sessionRecord.last_name || null,
+          username: sessionRecord.username || null,
+          is_active: 1,
+          updated_at: new Date().toISOString()
         });
       }
     } catch (err) {
@@ -1031,7 +1035,8 @@ export async function dbDeactivateTelegramSessions(userId = null) {
   if (userId) {
     await sqlite.run("UPDATE telegram_sessions SET is_active = 0 WHERE user_id = ?", [userId]);
   } else {
-    await sqlite.run("UPDATE telegram_sessions SET is_active = 0");
+    // Only deactivate unassigned sessions, NEVER deactivate all users
+    await sqlite.run("UPDATE telegram_sessions SET is_active = 0 WHERE (user_id IS NULL OR user_id = '')");
   }
 
   (async () => {
@@ -1041,7 +1046,7 @@ export async function dbDeactivateTelegramSessions(userId = null) {
         if (userId) {
           await supabase.from("telegram_sessions").update({ is_active: 0 }).eq("user_id", userId);
         } else {
-          await supabase.from("telegram_sessions").update({ is_active: 0 });
+          await supabase.from("telegram_sessions").update({ is_active: 0 }).or("user_id.is.null,user_id.eq.''");
         }
       }
     } catch (err) {

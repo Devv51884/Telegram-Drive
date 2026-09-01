@@ -170,15 +170,11 @@ export async function getUserGramClient(userId = null) {
 
     await client.connect();
 
-    // Verify session authorization safely
+    // Verify session authorization safely without wiping valid sessions
     try {
       const isAuth = await client.checkAuthorization();
       if (!isAuth) {
-        console.warn(`Telegram session authorization returned false for user ${key}. Deactivating expired session.`);
-        userGramClients.delete(key);
-        userSessionStrings.delete(key);
-        await dbDeactivateTelegramSessions(userId);
-        return null;
+        console.warn(`Telegram session checkAuthorization returned false for user ${key}, retaining session string.`);
       }
     } catch (authCheckErr) {
       if (
@@ -191,10 +187,12 @@ export async function getUserGramClient(userId = null) {
         console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating expired session.`);
         userGramClients.delete(key);
         userSessionStrings.delete(key);
-        await dbDeactivateTelegramSessions(userId);
+        if (userId) {
+          await dbDeactivateTelegramSessions(userId);
+        }
         return null;
       }
-      console.warn(`Non-fatal Telegram auth check warning for user ${key}:`, authCheckErr.message);
+      console.warn(`Non-fatal Telegram auth check notice for user ${key}:`, authCheckErr.message);
     }
 
     userGramClients.set(key, client);
@@ -211,7 +209,9 @@ export async function getUserGramClient(userId = null) {
       console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating expired session.`);
       userGramClients.delete(key);
       userSessionStrings.delete(key);
-      await dbDeactivateTelegramSessions(userId);
+      if (userId) {
+        await dbDeactivateTelegramSessions(userId);
+      }
       return null;
     } else {
       console.warn(`User MTProto session connect glitch (user: ${key}):`, userGramErr.message);
@@ -1582,7 +1582,9 @@ export async function autoHealTelegramImportReferences() {
           itemErr.code === 401 ||
           itemErr.message?.includes("AUTH_KEY_UNREGISTERED")
         ) {
-          await dbDeactivateTelegramSessions(f.user_id);
+          if (f.user_id) {
+            await dbDeactivateTelegramSessions(f.user_id);
+          }
           userClients.delete(f.user_id || "default");
         }
       }
@@ -1592,12 +1594,6 @@ export async function autoHealTelegramImportReferences() {
       console.log(`✅ Auto-healed ${healedCount} Telegram import reference(s).`);
     }
   } catch (err) {
-    if (
-      err.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-      err.code === 401 ||
-      err.message?.includes("AUTH_KEY_UNREGISTERED")
-    ) {
-      await dbDeactivateTelegramSessions(null);
-    }
+    console.warn("Auto-heal import references notice:", err.message);
   }
 }
