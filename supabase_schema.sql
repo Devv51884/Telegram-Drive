@@ -154,7 +154,26 @@ CREATE TABLE IF NOT EXISTS public.email_otps (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 9. Enable Row Level Security (RLS)
+-- 9. Create Contact Messages Table
+CREATE TABLE IF NOT EXISTS public.contact_messages (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'unread',
+    ip_address TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 10. Create Site Settings Table (For dynamic Support, Telegram & SEO config)
+CREATE TABLE IF NOT EXISTS public.site_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 11. Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_sessions ENABLE ROW LEVEL SECURITY;
@@ -163,8 +182,10 @@ ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.item_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.share_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_otps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contact_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 
--- 10. Drop and Recreate Open Access Policies for Backend Service/Anon Key
+-- 12. Drop and Recreate Open Access Policies for Backend Service/Anon Key
 DO $$
 BEGIN
     DROP POLICY IF EXISTS "Allow all operations on users" ON public.users;
@@ -175,6 +196,8 @@ BEGIN
     DROP POLICY IF EXISTS "Allow all operations on item_permissions" ON public.item_permissions;
     DROP POLICY IF EXISTS "Allow all operations on share_requests" ON public.share_requests;
     DROP POLICY IF EXISTS "Allow all operations on email_otps" ON public.email_otps;
+    DROP POLICY IF EXISTS "Allow all operations on contact_messages" ON public.contact_messages;
+    DROP POLICY IF EXISTS "Allow all operations on site_settings" ON public.site_settings;
 END
 $$;
 
@@ -186,3 +209,5 @@ CREATE POLICY "Allow all operations on files" ON public.files FOR ALL USING (tru
 CREATE POLICY "Allow all operations on item_permissions" ON public.item_permissions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on share_requests" ON public.share_requests FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on email_otps" ON public.email_otps FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on contact_messages" ON public.contact_messages FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on site_settings" ON public.site_settings FOR ALL USING (true) WITH CHECK (true);

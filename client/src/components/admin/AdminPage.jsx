@@ -32,16 +32,17 @@ import {
   Cloud,
   Layers,
   Clock,
-  Sparkles,
-  Mail,
   Send,
   Key,
-  Loader2
+  Loader2,
+  MessageSquare,
+  Inbox,
+  Check
 } from "lucide-react";
 
 export default function AdminPage() {
   const { currentUser, setSection, showToast, refresh, setPreviewItem, setActiveModal } = useDrive();
-  const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'users', 'files', 'system', 'security'
+  const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'users', 'files', 'system', 'contact'
   const [loading, setLoading] = useState(false);
   const [overviewData, setOverviewData] = useState(null);
   const [usersList, setUsersList] = useState([]);
@@ -66,6 +67,22 @@ export default function AdminPage() {
   const [resettingUser, setResettingUser] = useState(null);
   const [newPassword, setNewPassword] = useState("");
 
+  // Contact messages & site settings state
+  const [contactMessages, setContactMessages] = useState([]);
+  const [contactTotal, setContactTotal] = useState(0);
+  const [contactStatusFilter, setContactStatusFilter] = useState("all");
+  const [contactSearch, setContactSearch] = useState("");
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const [siteSettingsInput, setSiteSettingsInput] = useState({
+    supportEmail: "support@telegram-drive.in",
+    telegramSupport: "@TeleDriveSupport",
+    telegramChannel: "https://t.me/telegram_drive_in",
+    announcementBanner: "",
+    contactHeading: "We'd love to hear from you",
+    contactSubheading: "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly."
+  });
+  const [savingSiteSettings, setSavingSiteSettings] = useState(false);
+
   const isAdmin = currentUser?.role === "admin" || currentUser?.email === "devv5412@gmail.com";
 
   useEffect(() => {
@@ -74,8 +91,91 @@ export default function AdminPage() {
       if (activeTab === "users") fetchUsers();
       if (activeTab === "files") fetchFiles();
       if (activeTab === "system") fetchEmailStatus();
+      if (activeTab === "contact") {
+        fetchContactMessages();
+        fetchSiteSettings();
+      }
     }
   }, [activeTab, isAdmin]);
+
+  const fetchContactMessages = async () => {
+    setLoading(true);
+    try {
+      const res = await DriveAPI.getAdminContactMessages({
+        status: contactStatusFilter,
+        search: contactSearch,
+        limit: 50
+      });
+      if (res.success) {
+        setContactMessages(res.messages || []);
+        setContactTotal(res.total || 0);
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to load contact messages", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSiteSettings = async () => {
+    try {
+      const res = await DriveAPI.getAdminSiteSettings();
+      if (res.success && res.settings) {
+        setSiteSettingsInput((prev) => ({
+          ...prev,
+          ...res.settings
+        }));
+      }
+    } catch (err) {
+      console.warn("Failed to load site settings:", err.message);
+    }
+  };
+
+  const handleUpdateMessageStatus = async (id, status) => {
+    try {
+      const res = await DriveAPI.updateAdminContactMessage(id, status);
+      if (res.success) {
+        showToast(`Message marked as ${status}`, "success");
+        setContactMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, status } : m))
+        );
+        if (selectedMessage?.id === id) {
+          setSelectedMessage((prev) => ({ ...prev, status }));
+        }
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to update status", "error");
+    }
+  };
+
+  const handleDeleteContactMessage = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this contact message?")) return;
+    try {
+      const res = await DriveAPI.deleteAdminContactMessage(id);
+      if (res.success) {
+        showToast("Inquiry deleted", "success");
+        setContactMessages((prev) => prev.filter((m) => m.id !== id));
+        if (selectedMessage?.id === id) setSelectedMessage(null);
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to delete message", "error");
+    }
+  };
+
+  const handleSaveSiteSettings = async (e) => {
+    e.preventDefault();
+    setSavingSiteSettings(true);
+    try {
+      const res = await DriveAPI.updateAdminSiteSettings(siteSettingsInput);
+      if (res.success) {
+        showToast("Site & Contact settings synced across SQLite and Supabase!", "success");
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to save settings", "error");
+    } finally {
+      setSavingSiteSettings(false);
+    }
+  };
 
   const fetchOverview = async () => {
     setLoading(true);
@@ -415,6 +515,18 @@ export default function AdminPage() {
           <Server className="w-3.5 h-3.5" />
           <span>System</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab("contact")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "contact"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>Contact & Settings</span>
+        </button>
       </div>
 
       {/* Main Admin Workspace Layout */}
@@ -472,6 +584,18 @@ export default function AdminPage() {
             >
               <Server className="w-4 h-4" />
               <span>System & Gateway Health</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("contact")}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-semibold transition-all ${
+                activeTab === "contact"
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c] hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Contact & Site Settings</span>
             </button>
           </div>
 
@@ -1294,6 +1418,288 @@ export default function AdminPage() {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: CONTACT INQUIRIES & LIVE SITE SETTINGS */}
+          {activeTab === "contact" && (
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-7xl mx-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-purple-600" />
+                    <span>Contact Inquiries & Dynamic Site Settings</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Manage incoming visitor messages and sync support channels & announcement banner in real-time.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    fetchContactMessages();
+                    fetchSiteSettings();
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                  <span>Refresh All</span>
+                </button>
+              </div>
+
+              {/* Top Grid: Live Site Settings Form */}
+              <div className="bg-white dark:bg-[#1e1f20] rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 flex items-center justify-center">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        Public Site & Support Information
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Changes sync instantly to SQLite and Supabase for all visitors.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveSiteSettings} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Support Email */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Official Support Email
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={siteSettingsInput.supportEmail}
+                        onChange={(e) =>
+                          setSiteSettingsInput({ ...siteSettingsInput, supportEmail: e.target.value })
+                        }
+                        placeholder="support@telegram-drive.in"
+                        className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    {/* Telegram Support Handle */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Telegram Support Handle
+                      </label>
+                      <input
+                        type="text"
+                        value={siteSettingsInput.telegramSupport}
+                        onChange={(e) =>
+                          setSiteSettingsInput({ ...siteSettingsInput, telegramSupport: e.target.value })
+                        }
+                        placeholder="@TeleDriveSupport"
+                        className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    {/* Telegram Channel Link */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Telegram Official Channel Link
+                      </label>
+                      <input
+                        type="url"
+                        value={siteSettingsInput.telegramChannel}
+                        onChange={(e) =>
+                          setSiteSettingsInput({ ...siteSettingsInput, telegramChannel: e.target.value })
+                        }
+                        placeholder="https://t.me/telegram_drive_in"
+                        className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Announcement Banner */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Top Announcement Banner (Optional - leave empty to hide)
+                    </label>
+                    <input
+                      type="text"
+                      value={siteSettingsInput.announcementBanner}
+                      onChange={(e) =>
+                        setSiteSettingsInput({ ...siteSettingsInput, announcementBanner: e.target.value })
+                      }
+                      placeholder="e.g. 🚀 TeleDrive v2.5 is live! Enjoy high-speed 4K streaming and 2GB uploads."
+                      className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={savingSiteSettings}
+                      className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-all shadow-md shadow-purple-600/20 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {savingSiteSettings ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                      <span>{savingSiteSettings ? "Saving Settings..." : "Save & Sync Site Settings"}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Bottom Section: Contact Messages Inbox Table */}
+              <div className="bg-white dark:bg-[#1e1f20] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                {/* Inbox Filters */}
+                <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Inbox className="w-4 h-4 text-purple-600" />
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Visitor Inquiries ({contactTotal})
+                    </h4>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Status Filter Chips */}
+                    <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-[#282a2c] rounded-xl text-xs">
+                      {["all", "unread", "read", "replied"].map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => {
+                            setContactStatusFilter(status);
+                          }}
+                          className={`px-3 py-1 rounded-lg font-semibold capitalize transition-all ${
+                            contactStatusFilter === status
+                              ? "bg-purple-600 text-white shadow-xs"
+                              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                          }`}
+                        >
+                          {status}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search sender, email, topic..."
+                        value={contactSearch}
+                        onChange={(e) => setContactSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && fetchContactMessages()}
+                        className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-500 w-48 sm:w-60"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Messages List */}
+                {contactMessages.length === 0 ? (
+                  <div className="p-12 text-center text-xs text-slate-400">
+                    <Inbox className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
+                    <p className="font-semibold text-slate-600 dark:text-slate-300">No contact inquiries found</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Messages submitted through the public Contact Us page will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50/50 dark:bg-[#282a2c]/50 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-100 dark:border-slate-800">
+                        <tr>
+                          <th className="p-3.5">Date & Time</th>
+                          <th className="p-3.5">Sender</th>
+                          <th className="p-3.5">Subject</th>
+                          <th className="p-3.5">Message Preview</th>
+                          <th className="p-3.5 text-center">Status</th>
+                          <th className="p-3.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-200">
+                        {contactMessages.map((msg) => (
+                          <tr
+                            key={msg.id}
+                            className={`hover:bg-slate-50/60 dark:hover:bg-[#282a2c]/40 transition-colors ${
+                              msg.status === "unread" ? "font-semibold bg-purple-50/30 dark:bg-purple-950/15" : ""
+                            }`}
+                          >
+                            <td className="p-3.5 text-slate-400 whitespace-nowrap text-[11px]">
+                              {new Date(msg.created_at).toLocaleDateString()}{" "}
+                              <span className="text-[10px] opacity-70">
+                                {new Date(msg.created_at).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit"
+                                })}
+                              </span>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <p className="font-bold text-slate-900 dark:text-white">{msg.name}</p>
+                              <a
+                                href={`mailto:${msg.email}`}
+                                className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline"
+                              >
+                                {msg.email}
+                              </a>
+                            </td>
+                            <td className="p-3.5 font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                              {msg.subject}
+                            </td>
+                            <td className="p-3.5 max-w-xs truncate text-slate-600 dark:text-slate-300">
+                              {msg.message}
+                            </td>
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  msg.status === "unread"
+                                    ? "bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
+                                    : msg.status === "replied"
+                                    ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                }`}
+                              >
+                                {msg.status}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-right whitespace-nowrap space-x-1">
+                              {msg.status === "unread" ? (
+                                <button
+                                  onClick={() => handleUpdateMessageStatus(msg.id, "read")}
+                                  className="px-2 py-1 bg-slate-100 dark:bg-[#282a2c] hover:bg-purple-100 dark:hover:bg-purple-900/40 text-slate-700 dark:text-slate-300 hover:text-purple-600 rounded-lg text-[11px] font-semibold transition-all"
+                                >
+                                  Mark Read
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleUpdateMessageStatus(msg.id, "replied")}
+                                  className="px-2 py-1 bg-slate-100 dark:bg-[#282a2c] hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-slate-700 dark:text-slate-300 hover:text-emerald-600 rounded-lg text-[11px] font-semibold transition-all"
+                                >
+                                  Mark Replied
+                                </button>
+                              )}
+                              <a
+                                href={`mailto:${msg.email}?subject=Re: ${encodeURIComponent(msg.subject)}`}
+                                className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition-all"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>Reply</span>
+                              </a>
+                              <button
+                                onClick={() => handleDeleteContactMessage(msg.id)}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                                title="Delete Inquiry"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}

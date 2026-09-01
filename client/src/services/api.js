@@ -290,7 +290,18 @@ export const DriveAPI = {
   pingTelegramSystem: () => api.post("/admin/system/ping").then((r) => r.data),
   getEmailStatus: () => api.get("/admin/email/status").then((r) => r.data),
   updateEmailSettings: (data) => api.post("/admin/email/settings", data).then((r) => r.data),
-  testEmailDelivery: (toEmail) => api.post("/admin/email/test", { toEmail }).then((r) => r.data)
+  testEmailDelivery: (toEmail) => api.post("/admin/email/test", { toEmail }).then((r) => r.data),
+
+  // Public Contact & Site Settings APIs
+  getPublicSiteSettings: () => axios.get(`${API_BASE}/contact/settings`).then((r) => r.data),
+  submitContactForm: (data) => axios.post(`${API_BASE}/contact/submit`, data).then((r) => r.data),
+
+  // Admin Contact & Site Settings APIs
+  getAdminContactMessages: (params) => api.get("/contact/admin/messages", { params }).then((r) => r.data),
+  updateAdminContactMessage: (id, status) => api.patch(`/contact/admin/messages/${id}`, { status }).then((r) => r.data),
+  deleteAdminContactMessage: (id) => api.delete(`/contact/admin/messages/${id}`).then((r) => r.data),
+  getAdminSiteSettings: () => api.get("/contact/admin/settings").then((r) => r.data),
+  updateAdminSiteSettings: (data) => api.post("/contact/admin/settings", data).then((r) => r.data)
 };
 
 export default DriveAPI;

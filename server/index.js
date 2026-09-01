@@ -20,6 +20,7 @@ import driveRouter from "./routes/drive.js";
 import settingsRouter from "./routes/settings.js";
 import adminRouter from "./routes/admin.js";
 import shareRouter from "./routes/share.js";
+import contactRouter from "./routes/contact.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,11 +47,8 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
-        mediaSrc: ["'self'", "data:", "blob:", "https:", "http:"],
-        connectSrc: ["'self'", "data:", "blob:", "https:", "http:", "ws:", "wss:"],
-        frameSrc: ["'self'", "blob:", "https:"],
-        objectSrc: ["'none'"],
-        upgradeInsecureRequests: []
+        mediaSrc: ["'self'", "blob:", "https:", "http:"],
+        connectSrc: ["'self'", "https:", "wss:", "http:", "ws:"]
       }
     },
     crossOriginEmbedderPolicy: false,
@@ -58,20 +56,26 @@ app.use(
   })
 );
 
-// Security Middleware 2: CORS Configuration
-app.use(cors());
+// Security Middleware 2: CORS Whitelist
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow all valid incoming origins, local development, and mobile/web requests
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Range", "X-Access-Token"]
+  })
+);
 
-// Body Parser with payload limits
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Security Middleware 3: Global Rate Limiting
-app.use("/api", apiLimiter);
+// Security Middleware 3: Security & Session Authentication Middleware
+app.use(requireAuth);
 
-// Security Middleware 4: Master & User Authentication Protection
-app.use("/api", requireAuth);
-
-// API Routes
+// Routes
 app.use("/api/auth", authRouter);
 app.use("/api/folders", foldersRouter);
 app.use("/api/files", filesRouter);
@@ -79,6 +83,7 @@ app.use("/api/drive", driveRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/share", shareRouter);
+app.use("/api/contact", contactRouter);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -124,26 +129,33 @@ Sitemap: https://telegram-drive.in/sitemap.xml
 });
 
 app.get("/sitemap.xml", (req, res) => {
+  const today = new Date().toISOString().split("T")[0];
   res.type("application/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://telegram-drive.in/</loc>
-    <lastmod>${new Date().toISOString().split("T")[0]}</lastmod>
+    <lastmod>${today}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://telegram-drive.in/?view=features</loc>
-    <lastmod>${new Date().toISOString().split("T")[0]}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <loc>https://telegram-drive.in/?page=privacy</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://telegram-drive.in/?view=pricing</loc>
-    <lastmod>${new Date().toISOString().split("T")[0]}</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://telegram-drive.in/?page=terms</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://telegram-drive.in/?page=contact</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
   </url>
 </urlset>`);
 });

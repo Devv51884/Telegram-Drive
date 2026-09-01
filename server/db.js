@@ -140,6 +140,23 @@ export async function getSqliteDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS contact_messages (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT DEFAULT 'unread',
+      ip_address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Run lightweight migrations
@@ -466,6 +483,36 @@ export async function syncFromSupabase() {
              VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET expires_at = excluded.expires_at`,
             [o.id, o.email?.toLowerCase(), o.otp, o.type, typeof o.metadata === "object" ? JSON.stringify(o.metadata) : o.metadata, o.expires_at, o.created_at || new Date().toISOString()]
+          );
+        }
+      }
+    } catch {}
+
+    // 9. Sync Contact Messages
+    try {
+      const { data: messages } = await supabase.from("contact_messages").select("*");
+      if (messages && messages.length > 0) {
+        for (const m of messages) {
+          await sqlite.run(
+            `INSERT INTO contact_messages (id, name, email, subject, message, status, ip_address, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET status = excluded.status`,
+            [m.id, m.name, m.email?.toLowerCase(), m.subject, m.message, m.status || 'unread', m.ip_address, m.created_at || new Date().toISOString()]
+          );
+        }
+      }
+    } catch {}
+
+    // 10. Sync Site Settings
+    try {
+      const { data: settingsList } = await supabase.from("site_settings").select("*");
+      if (settingsList && settingsList.length > 0) {
+        for (const s of settingsList) {
+          await sqlite.run(
+            `INSERT INTO site_settings (key, value, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            [s.key, s.value, s.updated_at || new Date().toISOString()]
           );
         }
       }
@@ -1780,6 +1827,178 @@ export async function dbUpdateShareRequestStatus(id, status) {
 
   return dbGetShareRequestById(id);
 }
+
+// ==========================================
+// CONTACT MESSAGES OPERATIONS
+// ==========================================
+
+export async function dbSaveContactMessage({ name, email, subject, message, ip_address = null }) {
+  const sqlite = await getSqliteDb();
+  const id = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const now = new Date().toISOString();
+
+  await sqlite.run(
+    `INSERT INTO contact_messages (id, name, email, subject, message, status, ip_address, created_at)
+     VALUES (?, ?, ?, ?, ?, 'unread', ?, ?)`,
+    [id, name, email.toLowerCase().trim(), subject, message, ip_address, now]
+  );
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("contact_messages").insert({
+          id,
+          name,
+          email: email.toLowerCase().trim(),
+          subject,
+          message,
+          status: "unread",
+          ip_address,
+          created_at: now
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase contact_messages insert warning:", err.message);
+    }
+  })();
+
+  return {
+    id,
+    name,
+    email: email.toLowerCase().trim(),
+    subject,
+    message,
+    status: "unread",
+    created_at: now
+  };
+}
+
+export async function dbGetContactMessages({ status = "all", search = "", limit = 50, offset = 0 } = {}) {
+  const sqlite = await getSqliteDb();
+  let whereClauses = [];
+  let params = [];
+
+  if (status && status !== "all") {
+    whereClauses.push("status = ?");
+    params.push(status);
+  }
+
+  if (search && search.trim()) {
+    whereClauses.push("(name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)");
+    const query = `%${search.trim()}%`;
+    params.push(query, query, query, query);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+  const countRow = await sqlite.get(
+    `SELECT COUNT(*) as count FROM contact_messages ${whereSql}`,
+    params
+  );
+  const total = countRow?.count || 0;
+
+  const messages = await sqlite.all(
+    `SELECT * FROM contact_messages ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
+  );
+
+  return { total, messages };
+}
+
+export async function dbUpdateContactMessageStatus(id, status) {
+  const sqlite = await getSqliteDb();
+  await sqlite.run("UPDATE contact_messages SET status = ? WHERE id = ?", [status, id]);
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("contact_messages").update({ status }).eq("id", id);
+      }
+    } catch {}
+  })();
+
+  return sqlite.get("SELECT * FROM contact_messages WHERE id = ?", [id]);
+}
+
+export async function dbDeleteContactMessage(id) {
+  const sqlite = await getSqliteDb();
+  await sqlite.run("DELETE FROM contact_messages WHERE id = ?", [id]);
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("contact_messages").delete().eq("id", id);
+      }
+    } catch {}
+  })();
+
+  return { success: true };
+}
+
+// ==========================================
+// DYNAMIC SITE SETTINGS OPERATIONS
+// ==========================================
+
+export async function dbGetSiteSettings() {
+  const sqlite = await getSqliteDb();
+  const rows = await sqlite.all("SELECT * FROM site_settings");
+  const settings = {
+    supportEmail: "support@telegram-drive.in",
+    telegramSupport: "@TeleDriveSupport",
+    telegramChannel: "https://t.me/telegram_drive_in",
+    announcementBanner: "",
+    enableContactForm: "true",
+    brandName: "TeleDrive",
+    contactHeading: "We'd love to hear from you",
+    contactSubheading: "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly."
+  };
+
+  rows.forEach((r) => {
+    if (r.key) {
+      settings[r.key] = r.value;
+    }
+  });
+
+  return settings;
+}
+
+export async function dbUpdateSiteSetting(key, value) {
+  const sqlite = await getSqliteDb();
+  const now = new Date().toISOString();
+  await sqlite.run(
+    `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [key, String(value), now]
+  );
+
+  (async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        await supabase.from("site_settings").upsert({
+          key,
+          value: String(value),
+          updated_at: now
+        });
+      }
+    } catch {}
+  })();
+
+  return { key, value };
+}
+
+export async function dbBulkUpdateSiteSettings(settingsObj) {
+  for (const [key, value] of Object.entries(settingsObj)) {
+    if (value !== undefined && value !== null) {
+      await dbUpdateSiteSetting(key, value);
+    }
+  }
+  return dbGetSiteSettings();
+}
+
 
 
 

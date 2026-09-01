@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { DriveProvider, useDrive } from "./context/DriveContext.jsx";
+import DriveAPI from "./services/api.js";
 import Header from "./components/layout/Header.jsx";
 import Sidebar from "./components/layout/Sidebar.jsx";
 import Breadcrumbs from "./components/layout/Breadcrumbs.jsx";
@@ -22,6 +23,10 @@ import SettingsPage from "./components/settings/SettingsPage.jsx";
 import DetailsDrawer from "./components/modals/DetailsDrawer.jsx";
 import AuthScreen from "./components/auth/AuthScreen.jsx";
 import BottomNav from "./components/layout/BottomNav.jsx";
+import LandingPage from "./components/landing/LandingPage.jsx";
+import PrivacyPolicyPage from "./components/legal/PrivacyPolicyPage.jsx";
+import TermsPage from "./components/legal/TermsPage.jsx";
+import ContactPage from "./components/contact/ContactPage.jsx";
 import { Loader2, CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 function DriveMain() {
@@ -38,6 +43,102 @@ function DriveMain() {
     shareToken
   } = useDrive();
 
+  const [siteSettings, setSiteSettings] = useState(null);
+
+  // Initialize public page state from URL query parameters
+  const [publicPage, setPublicPage] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const page = params.get("page");
+      const view = params.get("view");
+      const tab = params.get("tab");
+      if (page === "privacy" || page === "terms" || page === "contact") return page;
+      if (
+        view === "auth" ||
+        tab === "signup" ||
+        tab === "login" ||
+        params.get("verify_email") ||
+        params.get("reset_password")
+      ) {
+        return "auth";
+      }
+      return "landing";
+    } catch {
+      return "landing";
+    }
+  });
+
+  const [authTab, setAuthTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("tab") === "signup" ? "signup" : "signin";
+    } catch {
+      return "signin";
+    }
+  });
+
+  useEffect(() => {
+    DriveAPI.getPublicSiteSettings()
+      .then((res) => {
+        if (res.success && res.settings) setSiteSettings(res.settings);
+      })
+      .catch(() => {});
+
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const page = params.get("page");
+        const view = params.get("view");
+        const tab = params.get("tab");
+        if (page === "privacy" || page === "terms" || page === "contact") {
+          setPublicPage(page);
+        } else if (
+          view === "auth" ||
+          tab === "signup" ||
+          tab === "login" ||
+          params.get("verify_email") ||
+          params.get("reset_password")
+        ) {
+          setAuthTab(tab === "signup" ? "signup" : "signin");
+          setPublicPage("auth");
+        } else {
+          setPublicPage("landing");
+        }
+      } catch {}
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const handleNavigate = (target) => {
+    if (target === "landing") {
+      window.history.pushState({}, "", "/");
+      setPublicPage("landing");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (target === "privacy") {
+      window.history.pushState({}, "", "/?page=privacy");
+      setPublicPage("privacy");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (target === "terms") {
+      window.history.pushState({}, "", "/?page=terms");
+      setPublicPage("terms");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (target === "contact") {
+      window.history.pushState({}, "", "/?page=contact");
+      setPublicPage("contact");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (target === "auth_login") {
+      setAuthTab("signin");
+      window.history.pushState({}, "", "/?view=auth&tab=login");
+      setPublicPage("auth");
+    } else if (target === "auth_signup") {
+      setAuthTab("signup");
+      window.history.pushState({}, "", "/?view=auth&tab=signup");
+      setPublicPage("auth");
+    }
+  };
+
   // 1. Direct Public Share Link View (No login required for public files)
   if (shareToken) {
     return <PublicShareView shareToken={shareToken} />;
@@ -53,9 +154,21 @@ function DriveMain() {
     );
   }
 
-  // Display Login / Sign Up screen if not authenticated
+  // Display Landing Page, Legal Pages, Contact, or Auth Screen if not authenticated
   if (!isAuthenticated) {
-    return <AuthScreen />;
+    if (publicPage === "privacy") {
+      return <PrivacyPolicyPage onNavigate={handleNavigate} siteSettings={siteSettings} />;
+    }
+    if (publicPage === "terms") {
+      return <TermsPage onNavigate={handleNavigate} siteSettings={siteSettings} />;
+    }
+    if (publicPage === "contact") {
+      return <ContactPage onNavigate={handleNavigate} siteSettings={siteSettings} />;
+    }
+    if (publicPage === "auth") {
+      return <AuthScreen initialTab={authTab} onBack={() => handleNavigate("landing")} />;
+    }
+    return <LandingPage onNavigate={handleNavigate} siteSettings={siteSettings} />;
   }
 
   // Dedicated Full-Page View for Account Settings

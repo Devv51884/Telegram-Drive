@@ -24,7 +24,7 @@ import {
   ExternalLink
 } from "lucide-react";
 
-export default function AuthScreen() {
+export default function AuthScreen({ initialTab = "signin", onBack }) {
   const {
     loginUser,
     sendSignupVerificationLink,
@@ -35,7 +35,7 @@ export default function AuthScreen() {
   } = useDrive();
 
   // Active View: 'signin' | 'signup' | 'verification_sent' | 'verify_landing' | 'forgot_password' | 'forgot_sent' | 'reset_landing'
-  const [view, setView] = useState("signin");
+  const [view, setView] = useState(initialTab === "signup" ? "signup" : "signin");
 
   // Form Fields
   const [name, setName] = useState("");
@@ -303,6 +303,20 @@ export default function AuthScreen() {
       {/* Main Glassmorphic Card */}
       <div className="w-full max-w-md bg-slate-900/85 backdrop-blur-2xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
         
+        {/* Back to Landing Page link */}
+        {onBack && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Home</span>
+            </button>
+          </div>
+        )}
+
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 mb-3 animate-bounce-subtle">
