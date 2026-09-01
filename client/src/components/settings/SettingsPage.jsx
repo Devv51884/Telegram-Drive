@@ -186,13 +186,16 @@ export default function SettingsPage() {
     try {
       const res = await DriveAPI.sendTelegramCode({ phoneNumber: phoneNumber.trim() });
       if (res.success) {
+        if (res.phoneCodeHash) {
+          setPhoneCodeHash(res.phoneCodeHash);
+        }
         setStep("input_code");
-        showToast("Verification code sent to your connected device!");
+        showToast("Verification code sent to your Telegram app!");
       } else {
         setTelegramError(res.error || "Failed to send verification code");
       }
     } catch (err) {
-      setTelegramError(err.response?.data?.error || err.message || "Failed to connect to cloud node");
+      setTelegramError(err.response?.data?.error || err.message || "Failed to connect to Telegram");
     } finally {
       setAuthLoading(false);
     }
@@ -201,32 +204,39 @@ export default function SettingsPage() {
   // 5. Submit Telegram Code / 2FA
   const handleLoginTelegram = async (e) => {
     e.preventDefault();
-    if (!otpCode) return setTelegramError("Verification code is required");
+    if (!otpCode && !password2FA) return setTelegramError("Verification code is required");
     setTelegramError("");
     setAuthLoading(true);
 
     try {
       const payload = {
         phoneNumber: phoneNumber.trim(),
-        phoneCode: otpCode.trim()
+        code: otpCode.trim(),
+        phoneCodeHash: phoneCodeHash
       };
-      if (password2FA) payload.password = password2FA;
+      if (password2FA) payload.password = password2FA.trim();
 
       const res = await DriveAPI.loginTelegram(payload);
       if (res.success) {
-        showToast("Cloud node connected successfully!");
+        showToast("Telegram account connected successfully!");
         refresh();
         setStep("input_phone");
         setOtpCode("");
         setPassword2FA("");
-      } else if (res.requiresPassword) {
+      } else if (res.requires2FA || res.requiresPassword) {
         setStep("input_2fa");
-        showToast("Two-Step verification password required", "info");
+        showToast(res.message || "Telegram 2-Step Verification password required", "info");
       } else {
-        setTelegramError(res.error || "Failed to authenticate cloud node");
+        setTelegramError(res.error || "Failed to authenticate with Telegram");
       }
     } catch (err) {
-      setTelegramError(err.response?.data?.error || err.message || "Authentication failed");
+      const errorData = err.response?.data;
+      if (errorData?.requires2FA) {
+        setStep("input_2fa");
+        showToast(errorData.message || "Telegram 2-Step Verification password required", "info");
+      } else {
+        setTelegramError(errorData?.error || err.message || "Authentication failed");
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -234,16 +244,16 @@ export default function SettingsPage() {
 
   // 6. Disconnect Telegram Account
   const handleLogoutTelegram = async () => {
-    if (!window.confirm("Are you sure you want to disconnect this cloud node?")) return;
+    if (!window.confirm("Are you sure you want to disconnect this Telegram account?")) return;
     setAuthLoading(true);
     try {
       const res = await DriveAPI.logoutTelegram();
       if (res.success) {
-        showToast("Cloud node disconnected");
+        showToast("Telegram account disconnected");
         refresh();
       }
     } catch (err) {
-      showToast(err.response?.data?.error || "Failed to disconnect cloud node", "error");
+      showToast(err.response?.data?.error || "Failed to disconnect Telegram", "error");
     } finally {
       setAuthLoading(false);
     }
@@ -265,7 +275,7 @@ export default function SettingsPage() {
   const navItems = [
     { id: "profile", label: "Profile & Account", icon: User, desc: "Personal info and email" },
     { id: "security", label: "Security & 2FA", icon: Shield, desc: "Password and 2-step PIN" },
-    { id: "telegram", label: "Cloud Sync Node", icon: Cloud, desc: "Storage node connection" },
+    { id: "telegram", label: "Telegram Integration", icon: Send, desc: "Cloud MTProto connection" },
     { id: "storage", label: "Storage & Analytics", icon: HardDrive, desc: "Cloud capacity breakdown" },
     { id: "danger", label: "Danger Zone", icon: ShieldAlert, desc: "Delete account permanently" }
   ];
@@ -604,14 +614,14 @@ export default function SettingsPage() {
             )}
 
             {/* ============================================================ */}
-            {/* 3. CLOUD NODE INTEGRATION                                   */}
+            {/* 3. TELEGRAM INTEGRATION                                      */}
             {/* ============================================================ */}
             {activeTab === "telegram" && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-bold text-white">TeleDrive Cloud Core Connection</h2>
+                  <h2 className="text-lg font-bold text-white">Telegram MTProto Connection</h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Connect your personal high-speed cloud node to enable direct cloud streaming and sync channel media.
+                    Connect your personal Telegram account to stream unlimited cloud storage and sync channel media.
                   </p>
                 </div>
 
@@ -625,21 +635,21 @@ export default function SettingsPage() {
                           : "bg-slate-700 text-slate-400"
                       }`}
                     >
-                      <Cloud className="w-6 h-6" />
+                      <Send className="w-6 h-6 -rotate-12 translate-x-[-1px]" />
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                        <span>{settings?.telegramUser?.connected ? "Cloud Node Connected" : "Not Connected"}</span>
+                        <span>{settings?.telegramUser?.connected ? "Telegram Connected" : "Not Connected"}</span>
                         {settings?.telegramUser?.connected && (
                           <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
-                            Active Node Link
+                            Active MTProto
                           </span>
                         )}
                       </h4>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {settings?.telegramUser?.connected
-                          ? `Connected Node: ${settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.phoneNumber || settings.telegramUser.phone || "Cloud Node User"}`
-                          : "Connect your cloud storage node to enable direct high-speed sync."}
+                          ? `Logged in as ${settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.phoneNumber || settings.telegramUser.phone || "Telegram User"}`
+                          : "Connect your Telegram account to enable direct cloud uploads."}
                       </p>
                     </div>
                   </div>
@@ -656,10 +666,10 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* Cloud Node Login Form (If not connected) */}
+                {/* Telegram Login Form (If not connected) */}
                 {!settings?.telegramUser?.connected && (
                   <div className="p-5 rounded-2xl bg-slate-850/60 border border-slate-800 space-y-4 max-w-lg">
-                    <h3 className="text-sm font-bold text-white">Connect Cloud Storage Node</h3>
+                    <h3 className="text-sm font-bold text-white">Connect Telegram Account</h3>
 
                     {telegramError && (
                       <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2">
@@ -702,14 +712,14 @@ export default function SettingsPage() {
                       <form onSubmit={handleLoginTelegram} className="space-y-3">
                         <div>
                           <label className="block text-xs font-medium text-slate-300 mb-1">
-                            Node Verification Code
+                            Telegram Verification Code
                           </label>
                           <input
                             type="text"
                             required
                             value={otpCode}
                             onChange={(e) => setOtpCode(e.target.value)}
-                            placeholder="Enter 5-digit verification code"
+                            placeholder="Enter 5-digit code from Telegram"
                             className="w-full bg-slate-800 border border-slate-700 focus:border-sky-500 rounded-xl px-4 py-2.5 text-xs text-center font-mono tracking-widest text-white placeholder-slate-500 outline-none transition-all"
                           />
                         </div>
@@ -717,14 +727,14 @@ export default function SettingsPage() {
                         {step === "input_2fa" && (
                           <div>
                             <label className="block text-xs font-medium text-slate-300 mb-1">
-                              Two-Step Password (2FA)
+                              Telegram 2-Step Password
                             </label>
                             <input
                               type="password"
                               required
                               value={password2FA}
                               onChange={(e) => setPassword2FA(e.target.value)}
-                              placeholder="Enter your 2FA password"
+                              placeholder="Your Telegram cloud password"
                               className="w-full bg-slate-800 border border-slate-700 focus:border-sky-500 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
                             />
                           </div>
@@ -744,7 +754,7 @@ export default function SettingsPage() {
                             className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-sky-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
                           >
                             {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                            <span>Complete Node Authentication</span>
+                            <span>Complete Authentication</span>
                           </button>
                         </div>
                       </form>
