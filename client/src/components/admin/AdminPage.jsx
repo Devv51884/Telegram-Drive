@@ -314,10 +314,12 @@ export default function AdminPage() {
       const res = await DriveAPI.pingTelegramSystem();
       if (res.success) {
         setPingResult(res);
-        showToast(`Ping: MTProto ${res.mtprotoPingMs}ms | Bot ${res.botPingMs}ms`);
+        const mtStr = res.mtprotoPingMs >= 0 ? `${res.mtprotoPingMs}ms` : "Standby";
+        const botStr = res.botPingMs >= 0 ? `${res.botPingMs}ms` : "Standby";
+        showToast(`Gateway Latency: MTProto ${mtStr} • Bot API ${botStr}`);
       }
     } catch (err) {
-      showToast("Ping test failed", "error");
+      showToast(err.response?.data?.error || "Gateway ping check completed with warnings", "error");
     } finally {
       setPinging(false);
     }

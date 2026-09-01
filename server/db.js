@@ -209,6 +209,9 @@ export async function getSqliteDb() {
     await db.exec("ALTER TABLE folders ADD COLUMN share_token TEXT;");
   } catch {}
   try {
+    await db.exec("ALTER TABLE files ADD COLUMN telegram_dc_id INTEGER;");
+  } catch {}
+  try {
     // Assign legacy unassigned files & folders to the main account
     await db.exec("UPDATE files SET user_id = 'u_ed2e45a80d67df50' WHERE user_id IS NULL;");
     await db.exec("UPDATE folders SET user_id = 'u_ed2e45a80d67df50' WHERE user_id IS NULL;");
@@ -742,8 +745,8 @@ export async function dbInsertFile(fileRecord) {
       id, user_id, name, folder_id, size, mime_type, type, source_type,
       telegram_file_id, telegram_message_id, telegram_channel_id,
       telegram_post_url, telegram_channel_title, telegram_access_hash,
-      telegram_file_reference, thumbnail_url, is_starred, is_trash
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      telegram_file_reference, telegram_dc_id, thumbnail_url, is_starred, is_trash
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       folder_id = excluded.folder_id,
@@ -756,6 +759,9 @@ export async function dbInsertFile(fileRecord) {
       telegram_channel_id = excluded.telegram_channel_id,
       telegram_post_url = excluded.telegram_post_url,
       telegram_channel_title = excluded.telegram_channel_title,
+      telegram_access_hash = excluded.telegram_access_hash,
+      telegram_file_reference = excluded.telegram_file_reference,
+      telegram_dc_id = excluded.telegram_dc_id,
       is_starred = excluded.is_starred,
       is_trash = excluded.is_trash,
       updated_at = CURRENT_TIMESTAMP`,
@@ -775,6 +781,7 @@ export async function dbInsertFile(fileRecord) {
       fileRecord.telegram_channel_title || null,
       fileRecord.telegram_access_hash || null,
       fileRecord.telegram_file_reference || null,
+      fileRecord.telegram_dc_id || null,
       fileRecord.thumbnail_url || null,
       fileRecord.is_starred || 0,
       fileRecord.is_trash || 0

@@ -228,32 +228,45 @@ router.delete("/files/:id", async (req, res) => {
 
 // POST /api/admin/system/ping - Test Telegram latency
 router.post("/system/ping", async (req, res) => {
+  let mtprotoPing = -1;
+  let botPing = -1;
+
+  // 1. MTProto Gateway Ping
   try {
     const t0 = Date.now();
-    const client = await getGramClient();
-    let mtprotoPing = -1;
+    const client = await getGramClient(req.userId, false);
     if (client) {
+      if (!client.connected) {
+        await client.connect().catch(() => {});
+      }
       await client.getMe();
-      mtprotoPing = Date.now() - t0;
+      mtprotoPing = Math.max(1, Date.now() - t0);
     }
-
-    let botPing = -1;
-    const botToken = process.env.BOT_TOKEN;
-    if (botToken) {
-      const tb0 = Date.now();
-      await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 3000 });
-      botPing = Date.now() - tb0;
-    }
-
-    res.json({
-      success: true,
-      mtprotoPingMs: mtprotoPing,
-      botPingMs: botPing,
-      timestamp: new Date().toISOString()
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (mtErr) {
+    console.warn("MTProto ping diagnostic:", mtErr.message);
   }
+
+  // 2. Bot API HTTP Ping
+  try {
+    const config = await (await import("../telegram.js")).getTelegramConfig();
+    const token = config.botToken || process.env.BOT_TOKEN;
+    if (token) {
+      const tb0 = Date.now();
+      const botRes = await axios.get(`https://api.telegram.org/bot${token}/getMe`, { timeout: 6000 });
+      if (botRes.data?.ok) {
+        botPing = Math.max(1, Date.now() - tb0);
+      }
+    }
+  } catch (bErr) {
+    console.warn("Bot API ping diagnostic:", bErr.message);
+  }
+
+  res.json({
+    success: true,
+    mtprotoPingMs: mtprotoPing,
+    botPingMs: botPing,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // ==========================================

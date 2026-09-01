@@ -403,6 +403,7 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
       telegram_channel_title: mediaInfo.channelTitle,
       telegram_access_hash: mediaInfo.accessHash || null,
       telegram_file_reference: mediaInfo.fileReference || null,
+      telegram_dc_id: mediaInfo.dcId || null,
       is_starred: 0,
       is_trash: 0
     };
@@ -629,7 +630,8 @@ router.get("/:id/stream", async (req, res) => {
           file.telegram_access_hash || null,
           file.telegram_file_id || null,
           fileSize,
-          targetUserId
+          targetUserId,
+          file.telegram_dc_id || null
         );
         return;
       } catch (primaryErr) {
@@ -649,7 +651,8 @@ router.get("/:id/stream", async (req, res) => {
             file.telegram_access_hash || null,
             file.telegram_file_id || null,
             fileSize,
-            targetUserId
+            targetUserId,
+            file.telegram_dc_id || null
           );
           return;
         } catch (secondaryErr) {
@@ -733,7 +736,8 @@ router.get("/:id/download", async (req, res) => {
           file.telegram_access_hash || null,
           file.telegram_file_id || null,
           fileSize,
-          targetUserId
+          targetUserId,
+          file.telegram_dc_id || null
         );
         return;
       } catch (dlErr) {
@@ -753,7 +757,8 @@ router.get("/:id/download", async (req, res) => {
             file.telegram_access_hash || null,
             file.telegram_file_id || null,
             fileSize,
-            targetUserId
+            targetUserId,
+            file.telegram_dc_id || null
           );
           return;
         }

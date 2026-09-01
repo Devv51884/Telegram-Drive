@@ -826,50 +826,78 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
     );
   }
 
-  const client = await getGramClient(userId);
+  let client = await getUserGramClient(userId);
+  if (!client) {
+    client = await getGramClient(userId);
+  }
   if (!client) {
     throw new Error(
       "No Telegram user account is connected. Please connect your Telegram account in Settings to import channel media."
     );
   }
 
-  let peer = parsed.channelId;
+  if (!client.connected) {
+    try {
+      await client.connect();
+    } catch {}
+  }
+
+  const rawNum = parsed.rawChannelId || parsed.channelId.replace(/^-100/, "").replace(/^-/, "");
   const messageId = parsed.messageId;
 
-  // Resolve target peer entity with automatic cache warmup for private channels/groups
-  let targetPeer = peer;
-  try {
-    targetPeer = await client.getInputEntity(peer);
-  } catch (err1) {
-    // If not found in cache, fetch recent dialogs to populate GramJS entity cache
+  // Resolve target peer entity with deep dialog search for private channels/groups
+  let targetPeer = null;
+
+  // 1. If public username, try getEntity directly
+  if (!parsed.isPrivate && parsed.channelUsername) {
     try {
-      await client.getDialogs({ limit: 100 });
-      targetPeer = await client.getInputEntity(peer);
-    } catch (err2) {
-      const rawNum = parsed.rawChannelId || parsed.channelId.replace("-100", "");
+      targetPeer = await client.getInputEntity(parsed.channelUsername);
+    } catch {
       try {
-        targetPeer = await client.getInputEntity(bigInt(rawNum));
-      } catch (err3) {
-        try {
-          targetPeer = await client.getInputEntity(bigInt(`-100${rawNum}`));
-        } catch (err4) {
-          try {
-            const dialogs = await client.getDialogs({ limit: 200 });
-            const found = dialogs.find((d) => {
-              const idStr = d.id?.toString() || "";
-              return (
-                idStr === rawNum ||
-                idStr === `-100${rawNum}` ||
-                idStr === `100${rawNum}` ||
-                d.entity?.username === parsed.channelUsername
-              );
-            });
-            if (found && found.inputEntity) {
-              targetPeer = found.inputEntity;
-            }
-          } catch {}
+        targetPeer = await client.getEntity(parsed.channelUsername);
+      } catch {}
+    }
+  }
+
+  // 2. Direct bigInt lookup for channel
+  if (!targetPeer) {
+    try {
+      targetPeer = await client.getInputEntity(bigInt(`-100${rawNum}`));
+    } catch {}
+  }
+  if (!targetPeer) {
+    try {
+      targetPeer = await client.getInputEntity(bigInt(rawNum));
+    } catch {}
+  }
+
+  // 3. Deep Dialog scan to find channel with valid access_hash
+  if (!targetPeer) {
+    try {
+      const dialogs = await client.getDialogs({});
+      for (const d of dialogs) {
+        const dId = (d.id || d.entity?.id || "").toString().replace(/^-100/, "").replace(/^-/, "");
+        if (
+          dId === rawNum ||
+          d.entity?.username === parsed.channelUsername ||
+          d.entity?.id?.toString() === rawNum
+        ) {
+          targetPeer = d.inputEntity || d.entity;
+          break;
         }
       }
+    } catch (dialogErr) {
+      console.warn("Dialog scan notice:", dialogErr.message);
+    }
+  }
+
+  if (!targetPeer) {
+    if (parsed.isPrivate) {
+      throw new Error(
+        `Could not access private channel #${rawNum}. Please ensure your connected Telegram account is a member of this channel in the Telegram app, or forward the message to your 'Saved Messages' and import from there.`
+      );
+    } else {
+      targetPeer = parsed.channelId;
     }
   }
 
@@ -1027,7 +1055,8 @@ export async function streamGramMedia(
   storedAccessHash = null, // accessHash string from DB
   storedDocId = null,      // docId string from DB
   fileSize = 0,            // totalSize from DB
-  userId = null
+  userId = null,
+  storedDcId = null        // telegram_dc_id from DB
 ) {
   // Set explicit CORS and media headers on stream response
   if (res && !res.headersSent) {
@@ -1087,7 +1116,7 @@ export async function streamGramMedia(
       mediaCache = {
         totalSize: Number(fileSize) || 0,
         location,
-        dcId: null // Resolved dynamically or via first chunk migrate
+        dcId: storedDcId || null
       };
       mediaLocationCache.set(cacheKey, mediaCache);
     } catch (directLocErr) {
@@ -1238,7 +1267,7 @@ export async function streamGramMedia(
         return {
           totalSize: Number(fileSize) || 0,
           location,
-          dcId: client.session?.dcId || null
+          dcId: storedDcId || client.session?.dcId || null
         };
       }
       throw new Error(`Telegram media post #${msgId} not found in channel ${channelId}`);
@@ -1390,15 +1419,27 @@ export async function streamGramMedia(
       }
       return res?.bytes;
     } catch (err) {
-      // 1. File DC Migration (Telegram returns FileMigrateError / err.newDc)
-      if (err.newDc) {
-        console.log(`📡 MTProto File DC migrate -> DC ${err.newDc} for message #${messageId}`);
-        dcId = err.newDc;
+      // 1. File DC Migration (Telegram returns FileMigrateError / err.newDc / FILE_MIGRATE_X)
+      const migrateMatch = (err.errorMessage || err.message || "").match(/_MIGRATE_(\d+)/);
+      if (err.newDc || migrateMatch) {
+        const newDc = err.newDc || parseInt(migrateMatch[1], 10);
+        console.log(`📡 MTProto File DC migrate -> DC ${newDc} for message #${messageId}`);
+        dcId = newDc;
         if (mediaCache) {
-          mediaCache.dcId = err.newDc;
+          mediaCache.dcId = newDc;
           mediaLocationCache.set(cacheKey, mediaCache);
         }
-        if (retryCount < 3) {
+        (async () => {
+          try {
+            const { getSqliteDb } = await import("./db.js");
+            const sqlite = await getSqliteDb();
+            await sqlite.run(
+              "UPDATE files SET telegram_dc_id = ? WHERE telegram_message_id = ?",
+              [newDc, messageId.toString()]
+            );
+          } catch {}
+        })();
+        if (retryCount < 4) {
           return fetchMtprotoChunk(chunkOffset, retryCount + 1);
         }
       }
