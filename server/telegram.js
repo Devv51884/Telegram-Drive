@@ -170,29 +170,19 @@ export async function getUserGramClient(userId = null) {
 
     await client.connect();
 
-    // Verify session authorization safely without wiping valid sessions
-    try {
-      const isAuth = await client.checkAuthorization();
-      if (!isAuth) {
-        console.warn(`Telegram session checkAuthorization returned false for user ${key}, retaining session string.`);
+    // Verify session authorization
+    const isAuth = await client.checkAuthorization().catch(() => false);
+    if (!isAuth) {
+      console.warn(`Telegram session is no longer authorized for user ${key} (AUTH_KEY_UNREGISTERED / Session expired). Deactivating stale session.`);
+      try {
+        await client.disconnect();
+      } catch {}
+      userGramClients.delete(key);
+      userSessionStrings.delete(key);
+      if (userId) {
+        await dbDeactivateTelegramSessions(userId);
       }
-    } catch (authCheckErr) {
-      if (
-        authCheckErr.errorMessage === "AUTH_KEY_UNREGISTERED" ||
-        authCheckErr.errorMessage === "SESSION_REVOKED" ||
-        authCheckErr.code === 401 ||
-        authCheckErr.message?.includes("AUTH_KEY_UNREGISTERED") ||
-        authCheckErr.message?.includes("SESSION_REVOKED")
-      ) {
-        console.warn(`Telegram session permanently revoked for user ${key} (AUTH_KEY_UNREGISTERED). Deactivating expired session.`);
-        userGramClients.delete(key);
-        userSessionStrings.delete(key);
-        if (userId) {
-          await dbDeactivateTelegramSessions(userId);
-        }
-        return null;
-      }
-      console.warn(`Non-fatal Telegram auth check notice for user ${key}:`, authCheckErr.message);
+      return null;
     }
 
     userGramClients.set(key, client);
@@ -735,6 +725,12 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
 export async function getConnectedTelegramUser(userId = null) {
   const sessionRow = await dbGetActiveTelegramSession(userId);
   if (!sessionRow || !sessionRow.session_string) {
+    return { connected: false };
+  }
+
+  // Verify client is actually authorized in MTProto
+  const client = await getUserGramClient(userId);
+  if (!client) {
     return { connected: false };
   }
 
