@@ -439,15 +439,15 @@ export default function FileGrid() {
                       </div>
                     )}
 
-                    {/* Telegram Channel Source Tag Badge */}
+                    {/* Cloud Channel Source Tag Badge */}
                     {file.source_type === "telegram_post" && (
                       <div
                         className="absolute bottom-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-600/90 text-white text-[9px] font-medium backdrop-blur-md shadow-sm"
-                        title={`Imported from ${file.telegram_channel_title || "Telegram Channel"}`}
+                        title={`Linked from ${file.telegram_channel_title || "Channel Media"}`}
                       >
                         <Send className="w-2.5 h-2.5 -rotate-12" />
                         <span className="truncate max-w-[85px]">
-                          {file.telegram_channel_title || "Telegram"}
+                          {file.telegram_channel_title || "Linked Channel"}
                         </span>
                       </div>
                     )}

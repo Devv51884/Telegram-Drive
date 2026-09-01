@@ -80,7 +80,7 @@ export default function Header() {
               Cloud
             </span>
           </span>
-          <p className="hidden md:block text-[11px] text-slate-500 dark:text-slate-400">Telegram Cloud Storage</p>
+          <p className="hidden md:block text-[11px] text-slate-500 dark:text-slate-400">Enterprise Cloud Storage</p>
         </div>
       </div>
 
@@ -108,11 +108,11 @@ export default function Header() {
 
       {/* Action Controls & User Profile */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
-        {/* Telegram Account Status Indicator */}
+        {/* Cloud Sync Status Indicator */}
         <button
           onClick={() => navigateToSection("settings")}
           className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] transition-colors border border-slate-200/60 dark:border-slate-700"
-          title="Telegram Account"
+          title="Cloud Sync Status"
         >
           <span
             className={`w-2 h-2 rounded-full ${
@@ -123,7 +123,7 @@ export default function Header() {
           />
           <span className="text-slate-700 dark:text-slate-300 truncate max-w-[140px] font-semibold">
             {settings?.telegramUser?.connected
-              ? (settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.info?.firstName || settings.telegramUser.phoneNumber || "Telegram User")
+              ? (settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.info?.firstName || settings.telegramUser.phoneNumber || "Cloud Connected")
               : "Connect"}
           </span>
         </button>

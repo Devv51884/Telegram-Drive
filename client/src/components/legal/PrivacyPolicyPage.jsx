@@ -44,10 +44,10 @@ export default function PrivacyPolicyPage({ onNavigate, siteSettings }) {
               1. Overview & Commitment to Privacy
             </h2>
             <p>
-              At <strong>TeleDrive</strong> ("we", "our", or "us"), your privacy and data autonomy are fundamental principles. This Privacy Policy explains how TeleDrive handles your data when you access our cloud storage and streaming web application at <a href="https://telegram-drive.in" className="text-blue-400 hover:underline">telegram-drive.in</a>.
+              At <strong>TeleDrive</strong> ("we", "our", or "us"), your privacy and data autonomy are fundamental principles. This Privacy Policy explains how TeleDrive handles your data when you access our high-speed cloud storage and streaming web application at <a href="https://telegram-drive.in" className="text-blue-400 hover:underline">telegram-drive.in</a>.
             </p>
             <p>
-              TeleDrive operates by interfacing directly with Telegram’s official MTProto distributed infrastructure. We do not sell your personal information, nor do we monetize your uploaded content or browsing habits.
+              TeleDrive operates with distributed, encrypted high-speed cloud storage architecture. We do not sell your personal information, nor do we monetize your uploaded content or browsing habits.
             </p>
           </section>
 
@@ -62,10 +62,10 @@ export default function PrivacyPolicyPage({ onNavigate, siteSettings }) {
                 <strong>Account Credentials:</strong> When you register, we collect your Full Name, Email Address, and an argon2/bcrypt salted hash of your password. We never store raw passwords.
               </li>
               <li>
-                <strong>Telegram MTProto Session String:</strong> If you connect your Telegram account to import channel media, an encrypted MTProto session string is stored in our protected database to allow seamless streaming on your behalf.
+                <strong>Cloud Sync Session:</strong> If you connect your personal cloud node to sync media, an encrypted authorization token is stored in our protected database to allow seamless streaming on your behalf.
               </li>
               <li>
-                <strong>File Metadata:</strong> We store file references (e.g., file names, size, MIME type, folder structure, and Telegram message IDs) necessary to display your drive hierarchy.
+                <strong>File Metadata:</strong> We store file references (e.g., file names, size, MIME type, folder structure) necessary to display your drive hierarchy.
               </li>
               <li>
                 <strong>Security Logs:</strong> Minimal IP and timestamp logs to prevent denial-of-service (DoS) attacks and enforce API rate limits.
@@ -84,10 +84,10 @@ export default function PrivacyPolicyPage({ onNavigate, siteSettings }) {
             </p>
             <ul className="list-disc pl-5 space-y-2 text-slate-300">
               <li>
-                Files are streamed directly over TLS 1.3 / SSL encrypted connections to Telegram's distributed cloud data centers.
+                Files are transferred directly over TLS 1.3 / SSL encrypted connections across our distributed cloud servers.
               </li>
               <li>
-                TeleDrive does not permanently store your file binary data on private intermediate disks; our servers act as high-speed streaming conduits.
+                TeleDrive acts as a high-speed encrypted streaming conduit with instant playback capabilities.
               </li>
               <li>
                 Neither TeleDrive staff nor automated systems inspect or analyze the contents of your files for advertising or profiling.
@@ -122,13 +122,13 @@ export default function PrivacyPolicyPage({ onNavigate, siteSettings }) {
             </p>
             <ul className="list-disc pl-5 space-y-2 text-slate-300">
               <li>
-                <strong>Permanent Account Deletion:</strong> You can delete your TeleDrive account at any time from the Settings modal. Deletion instantly wipes your user record, credentials, and file references.
+                <strong>Permanent Account Deletion:</strong> You can delete your TeleDrive account at any time from Settings. Deletion instantly wipes your user record, credentials, and file references.
               </li>
               <li>
-                <strong>File Deletion:</strong> Deleting a file permanently purges its record from our database and sends a deletion request to the Telegram cloud channel.
+                <strong>File Deletion:</strong> Deleting a file permanently purges its record from our database and cloud storage records.
               </li>
               <li>
-                <strong>Disconnect Telegram Session:</strong> You can terminate your active Telegram MTProto session anytime in 1-click under Settings.
+                <strong>Disconnect Cloud Node:</strong> You can terminate your active Cloud Sync connection anytime in 1-click under Settings.
               </li>
             </ul>
           </section>

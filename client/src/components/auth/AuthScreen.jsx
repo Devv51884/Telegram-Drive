@@ -329,7 +329,7 @@ export default function AuthScreen({ initialTab = "signin", onBack }) {
             </span>
           </h1>
           <p className="text-xs text-slate-400 mt-1 max-w-xs">
-            Unlimited Telegram Cloud Storage & Streaming
+            Unlimited High-Speed Cloud Storage & Streaming
           </p>
         </div>
 

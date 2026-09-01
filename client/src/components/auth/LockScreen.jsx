@@ -81,7 +81,7 @@ export default function LockScreen() {
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 max-w-xs">
           {isSetupRequired
-            ? "Set a Master PIN or Password to protect your private Telegram files & cloud storage."
+            ? "Set a Master PIN or Password to protect your private files & cloud storage."
             : "Enter your Master PIN or Password to access your cloud files."}
         </p>
 

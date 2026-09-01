@@ -1004,6 +1004,14 @@ export async function streamGramMedia(
     throw new Error("Telegram MTProto streaming client unavailable");
   }
 
+  if (!client.connected) {
+    try {
+      await client.connect();
+    } catch (connErr) {
+      console.warn("Reconnecting GramClient notice:", connErr.message);
+    }
+  }
+
   const cacheKey = `${channelId}_${messageId}`;
   let mediaCache = mediaLocationCache.get(cacheKey);
 
@@ -1030,7 +1038,7 @@ export async function streamGramMedia(
       mediaCache = {
         totalSize: Number(fileSize) || 0,
         location,
-        dcId: null // Let it resolve dynamically or use active DC
+        dcId: null // Resolved dynamically or via first chunk migrate
       };
       mediaLocationCache.set(cacheKey, mediaCache);
     } catch (directLocErr) {
@@ -1052,24 +1060,28 @@ export async function streamGramMedia(
 
     // 1. Try resolving target entity first for reliable getMessages
     let targetEntity = null;
-    try {
-      targetEntity = await client.getInputEntity(channelId);
-    } catch {
+    if (channelId === "me" || channelId === "saved") {
+      targetEntity = "me";
+    } else {
       try {
-        targetEntity = await client.getInputEntity(bigInt(rawNum));
+        targetEntity = await client.getInputEntity(channelId);
       } catch {
         try {
-          targetEntity = await client.getInputEntity(bigInt(`-100${rawNum}`));
+          targetEntity = await client.getInputEntity(bigInt(rawNum));
         } catch {
           try {
-            targetEntity = await client.getEntity(channelId);
+            targetEntity = await client.getInputEntity(bigInt(`-100${rawNum}`));
           } catch {
             try {
-              targetEntity = await client.getEntity(bigInt(rawNum));
+              targetEntity = await client.getEntity(channelId);
             } catch {
               try {
-                targetEntity = await client.getEntity(bigInt(`-100${rawNum}`));
-              } catch {}
+                targetEntity = await client.getEntity(bigInt(rawNum));
+              } catch {
+                try {
+                  targetEntity = await client.getEntity(bigInt(`-100${rawNum}`));
+                } catch {}
+              }
             }
           }
         }
@@ -1246,7 +1258,7 @@ export async function streamGramMedia(
 
     const resolved = { totalSize, location, dcId };
     mediaLocationCache.set(cacheKey, resolved);
-    setTimeout(() => mediaLocationCache.delete(cacheKey), 20 * 60 * 1000);
+    setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
     return resolved;
   }
 
@@ -1291,21 +1303,25 @@ export async function streamGramMedia(
   const dispositionType = isDownload ? "attachment" : "inline";
   const contentDisposition = `${dispositionType}; filename="${encodeURIComponent(fileName || "media")}"`;
 
-  const CHUNK_SIZE = 128 * 1024; // 128KB MTProto compliant chunk size
+  const CHUNK_SIZE = 128 * 1024; // 128KB MTProto compliant chunk size (divisible by 4096)
 
-  async function getActiveSender(targetDc) {
+  // Dynamically obtain active and connected MTProto sender for target DC
+  async function getSenderForDc(targetDc) {
     try {
-      return await client.getSender(targetDc || dcId || client.session?.dcId);
-    } catch {
-      try {
-        return await client.getSender(client.session?.dcId);
-      } catch {
-        return null;
+      const neededDc = targetDc || dcId || client.session?.dcId;
+      if (!neededDc) return null;
+      const s = await client.getSender(neededDc);
+      if (s && !s.isConnected() && !s.isConnecting) {
+        try {
+          await s.connect();
+        } catch {}
       }
+      return s;
+    } catch (sErr) {
+      console.warn("getSenderForDc notice:", sErr.message);
+      return null;
     }
   }
-
-  let sender = await getActiveSender(dcId);
 
   async function fetchMtprotoChunk(chunkOffset, retryCount = 0) {
     const reqObj = new Api.upload.GetFile({
@@ -1316,46 +1332,68 @@ export async function streamGramMedia(
     });
 
     try {
-      if (sender) {
-        const res = await client.invokeWithSender(reqObj, sender);
-        return res?.bytes;
+      let activeSender = await getSenderForDc(dcId);
+      let res;
+      if (activeSender && activeSender.isConnected()) {
+        res = await client.invokeWithSender(reqObj, activeSender);
+      } else {
+        res = await client.invoke(reqObj);
       }
-      const res = await client.invoke(reqObj);
       return res?.bytes;
     } catch (err) {
+      // 1. File DC Migration (Telegram returns FileMigrateError / err.newDc)
       if (err.newDc) {
+        console.log(`📡 MTProto File DC migrate -> DC ${err.newDc} for message #${messageId}`);
         dcId = err.newDc;
-        sender = await getActiveSender(err.newDc);
-        if (sender) {
-          const res = await client.invokeWithSender(reqObj, sender);
-          return res?.bytes;
+        if (mediaCache) {
+          mediaCache.dcId = err.newDc;
+          mediaLocationCache.set(cacheKey, mediaCache);
+        }
+        if (retryCount < 3) {
+          return fetchMtprotoChunk(chunkOffset, retryCount + 1);
         }
       }
-      if (err.errorMessage === "TIMEOUT" && retryCount < 3) {
-        await new Promise((r) => setTimeout(r, 350 * (retryCount + 1)));
-        sender = await getActiveSender(dcId);
-        return fetchMtprotoChunk(chunkOffset, retryCount + 1);
-      }
-      // Auto-refresh file reference on expiration and retry seamlessly
-      if (
-        (err.message?.includes("FILE_REFERENCE") ||
-          err.message?.includes("FILEREF") ||
-          err.errorMessage?.includes("FILE_REFERENCE") ||
-          err.code === 400) &&
-        retryCount < 2
-      ) {
+
+      // 2. Expired File Reference (FILE_REFERENCE_EXPIRED / FILEREF_EXPIRED / 400)
+      const isFileRefErr =
+        err.message?.includes("FILE_REFERENCE") ||
+        err.message?.includes("FILEREF") ||
+        err.errorMessage?.includes("FILE_REFERENCE") ||
+        err.errorMessage?.includes("FILEREF") ||
+        (err.code === 400 && (err.errorMessage?.includes("EXPIRED") || err.errorMessage?.includes("INVALID")));
+
+      if (isFileRefErr && retryCount < 2) {
         console.log(`🔄 Auto-refreshing expired file reference for message #${messageId} in channel ${channelId}...`);
         mediaLocationCache.delete(cacheKey);
-        const refreshed = await resolveAndCacheMedia();
-        location = refreshed.location;
-        dcId = refreshed.dcId;
-        totalSize = refreshed.totalSize;
-        sender = await getActiveSender(dcId);
+        try {
+          const refreshed = await resolveAndCacheMedia();
+          location = refreshed.location;
+          dcId = refreshed.dcId;
+          totalSize = refreshed.totalSize;
+          mediaCache = refreshed;
+          return fetchMtprotoChunk(chunkOffset, retryCount + 1);
+        } catch (rErr) {
+          console.warn("Auto-refresh media location failed:", rErr.message);
+        }
+      }
+
+      // 3. Sender Disconnect / Timeout / Network Glitch
+      if (retryCount < 3) {
+        await new Promise((r) => setTimeout(r, 300 * (retryCount + 1)));
+        try {
+          if (!client.connected) {
+            await client.connect();
+          }
+        } catch {}
         return fetchMtprotoChunk(chunkOffset, retryCount + 1);
       }
+
       throw err;
     }
   }
+
+  // 2MB window per HTTP 206 progressive stream request (ensures instant seeking, no socket congestion)
+  const MAX_STREAM_WINDOW = 2 * 1024 * 1024;
 
   if (rangeHeader && totalSize > 0) {
     // Parse Range: bytes=start-end
@@ -1369,7 +1407,8 @@ export async function streamGramMedia(
       return res.end();
     }
 
-    const rawEnd = parts[1] && parts[1].trim() !== "" ? parseInt(parts[1], 10) : totalSize - 1;
+    const hasExplicitEnd = parts[1] && parts[1].trim() !== "";
+    const rawEnd = hasExplicitEnd ? parseInt(parts[1], 10) : (start + MAX_STREAM_WINDOW - 1);
     const end = Math.min(rawEnd, totalSize - 1);
     const requestedLength = Math.max(0, end - start + 1);
 
@@ -1383,10 +1422,13 @@ export async function streamGramMedia(
     });
 
     let clientDisconnected = false;
-    if (req) {
-      req.on("close", () => {
-        clientDisconnected = true;
-      });
+    const cleanup = () => {
+      clientDisconnected = true;
+    };
+    if (req) req.on("close", cleanup);
+    if (res) {
+      res.on("close", cleanup);
+      res.on("error", cleanup);
     }
 
     try {
@@ -1444,10 +1486,13 @@ export async function streamGramMedia(
     });
 
     let clientDisconnected = false;
-    if (req) {
-      req.on("close", () => {
-        clientDisconnected = true;
-      });
+    const cleanup = () => {
+      clientDisconnected = true;
+    };
+    if (req) req.on("close", cleanup);
+    if (res) {
+      res.on("close", cleanup);
+      res.on("error", cleanup);
     }
 
     try {

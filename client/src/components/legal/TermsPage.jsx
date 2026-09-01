@@ -55,7 +55,7 @@ export default function TermsPage({ onNavigate, siteSettings }) {
               2. Description of Service
             </h2>
             <p>
-              TeleDrive provides an open web management interface and streaming conduit that interacts with the Telegram MTProto protocol, enabling users to upload, stream, organize, and share digital files. Individual file uploads are currently supported up to 2GB per file.
+              TeleDrive provides an encrypted cloud management interface and high-speed streaming platform, enabling users to upload, stream, organize, and share digital files. Individual file uploads are currently supported up to 2GB per file.
             </p>
           </section>
 
@@ -93,7 +93,7 @@ export default function TermsPage({ onNavigate, siteSettings }) {
               5. Disclaimer & Limitation of Liability
             </h2>
             <p>
-              TeleDrive is provided on an "AS IS" and "AS AVAILABLE" basis. While we employ rigorous multi-DC streaming and persistent database synchronizations, we are not liable for any data loss, service interruptions, or actions resulting from changes to Telegram's external API policies.
+              TeleDrive is provided on an "AS IS" and "AS AVAILABLE" basis. While we employ high-speed multi-DC streaming architecture and persistent database synchronizations, we are not liable for any data loss, network outages, or unauthorized account access resulting from weak user credentials.
             </p>
           </section>
 

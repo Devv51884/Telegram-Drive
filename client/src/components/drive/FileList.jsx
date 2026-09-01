@@ -291,7 +291,7 @@ export default function FileList() {
                   {file.source_type === "telegram_post" ? (
                     <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400">
                       <Send className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{file.telegram_channel_title || "Telegram Channel"}</span>
+                      <span className="truncate">{file.telegram_channel_title || "Linked Channel"}</span>
                     </span>
                   ) : (
                     "Direct Upload"

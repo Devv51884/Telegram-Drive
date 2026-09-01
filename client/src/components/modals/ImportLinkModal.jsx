@@ -16,7 +16,7 @@ export default function ImportLinkModal() {
     if (!postUrl.trim()) return;
 
     if (!settings?.telegramUser?.connected) {
-      showToast("Please connect your Telegram account first in Settings so we can fetch channel posts!", "error");
+      showToast("Please connect your Cloud Sync node in Settings to enable direct stream imports!", "error");
       setActiveModal("settings");
       return;
     }
@@ -25,14 +25,14 @@ export default function ImportLinkModal() {
     try {
       const res = await DriveAPI.importLink(postUrl.trim(), currentFolderId);
       if (res.success) {
-        showToast(`Imported "${res.file.name}" from ${res.file.telegram_channel_title || "Telegram"}`);
+        showToast(`Imported "${res.file.name}" from ${res.file.telegram_channel_title || "Linked Channel"}`);
         refresh();
         setActiveModal(null);
         setPostUrl("");
         setPreviewMedia(null);
       }
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || "Failed to import Telegram post";
+      const msg = err.response?.data?.error || err.message || "Failed to import media stream link";
       showToast(msg, "error");
     } finally {
       setLoading(false);
@@ -49,10 +49,10 @@ export default function ImportLinkModal() {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800 dark:text-white">
-                Import from Telegram Post Link
+                Import via Cloud Stream Link
               </h3>
               <p className="text-xs text-slate-400">
-                Add videos, PDFs, photos from your subscribed channels/groups
+                Add high-speed videos, PDFs, and files from linked channels
               </p>
             </div>
           </div>
@@ -67,7 +67,7 @@ export default function ImportLinkModal() {
         <form onSubmit={handleImport} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
-              Telegram Message / Post Link
+              Stream / Channel Post Link
             </label>
             <div className="relative flex items-center">
               <Send className="w-4 h-4 text-sky-500 absolute left-3.5 pointer-events-none -rotate-12" />
@@ -82,7 +82,7 @@ export default function ImportLinkModal() {
               />
             </div>
             <p className="text-[11px] text-slate-400 mt-1.5">
-              ?? Tip: Right click any message in Telegram &gt; <b>Copy Link</b> and paste here.
+              💡 Tip: Copy post link from your channel or feed & paste here to link directly.
             </p>
           </div>
 

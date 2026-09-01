@@ -109,7 +109,7 @@ export default function Sidebar() {
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"
                 >
                   <Upload className="w-4 h-4 text-emerald-500" />
-                  <span>Upload Files to Telegram</span>
+                  <span>Upload Files to Cloud</span>
                 </button>
                 <button
                   onClick={() => {
@@ -120,7 +120,7 @@ export default function Sidebar() {
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#323437] transition-colors text-left"
                 >
                   <Link2 className="w-4 h-4 text-sky-500" />
-                  <span>Import via Telegram Post Link</span>
+                  <span>Import via Stream / Channel Link</span>
                 </button>
               </div>
             </>
@@ -155,7 +155,7 @@ export default function Sidebar() {
             <span>Shared with me</span>
           </div>
 
-          {/* Telegram Imports */}
+          {/* Imported Media */}
           <div
             onClick={() => handleNavClick("telegram_imports")}
             className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-colors ${
@@ -165,7 +165,7 @@ export default function Sidebar() {
             }`}
           >
             <Send className="w-4 h-4 text-sky-500" />
-            <span>Channel Imports</span>
+            <span>Imported Media</span>
           </div>
 
           {/* Starred */}
@@ -224,7 +224,7 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      {/* Storage Indicator, Telegram Account & Lock Button */}
+      {/* Storage Indicator, Cloud Account & Lock Button */}
       <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
         {/* Storage Widget */}
         <div className="bg-slate-50 dark:bg-[#282a2c] p-3 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
@@ -236,7 +236,7 @@ export default function Sidebar() {
             <span className="text-emerald-600 dark:text-emerald-400">Unlimited</span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-            {formatBytes(stats?.totalBytes)} used on Telegram Cloud
+            {formatBytes(stats?.totalBytes)} stored in TeleDrive Cloud
           </p>
 
           {/* Storage mini progress bar */}
@@ -251,7 +251,7 @@ export default function Sidebar() {
           </p>
         </div>
 
-        {/* Telegram Connection Widget & Lock button */}
+        {/* Cloud Connection Widget & Lock button */}
         <div className="flex items-center gap-2">
           <div
             onClick={() => handleNavClick("settings")}
@@ -266,13 +266,13 @@ export default function Sidebar() {
               <div className="truncate">
                 <p className="font-semibold text-slate-700 dark:text-slate-300 truncate">
                   {settings?.telegramUser?.connected
-                    ? (settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.info?.firstName || "Telegram User")
-                    : "Connect Telegram"}
+                    ? (settings.telegramUser.username || (settings.telegramUser.info?.username ? `@${settings.telegramUser.info.username.replace(/^@/, '')}` : null) || settings.telegramUser.info?.firstName || "Cloud Node")
+                    : "Connect Cloud Node"}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
                   {settings?.telegramUser?.connected
                     ? (settings.telegramUser.phoneNumber ? `Phone: ${settings.telegramUser.phoneNumber}` : "Connected")
-                    : "Click to connect account"}
+                    : "Click to connect cloud sync"}
                 </p>
               </div>
             </div>

@@ -149,7 +149,7 @@ export default function SettingsModal() {
       if (res.success) {
         setPhoneCodeHash(res.phoneCodeHash);
         setStep("input_code");
-        showToast("Verification code sent to your Telegram app!");
+        showToast("Verification code sent to your connected device!");
       }
     } catch (err) {
       showToast(err.response?.data?.error || err.message || "Failed to send code", "error");
@@ -172,9 +172,9 @@ export default function SettingsModal() {
 
       if (res.requires2FA) {
         setStep("input_2fa");
-        showToast(res.message || "2-Step Verification password is required", "info");
+        showToast(res.message || "Two-Step Verification password is required", "info");
       } else if (res.success) {
-        showToast(`Connected as ${res.user?.firstName || "Telegram User"}!`);
+        showToast(`Connected as ${res.user?.firstName || "Cloud Node"}!`);
         refresh();
         setStep("input_phone");
         setOtpCode("");
@@ -183,7 +183,7 @@ export default function SettingsModal() {
       const errorData = err.response?.data;
       if (errorData?.requires2FA) {
         setStep("input_2fa");
-        showToast(errorData.message || "2-Step Verification password is required", "info");
+        showToast(errorData.message || "Two-Step Verification password is required", "info");
       } else {
         showToast(errorData?.error || err.message || "Verification failed", "error");
       }
@@ -206,7 +206,7 @@ export default function SettingsModal() {
       });
 
       if (res.success) {
-        showToast(`Connected as ${res.user?.firstName || "Telegram User"}!`);
+        showToast(`Connected as ${res.user?.firstName || "Cloud Node"}!`);
         refresh();
         setStep("input_phone");
         setOtpCode("");
@@ -548,25 +548,25 @@ export default function SettingsModal() {
             </>
           ) : (
             <>
-              {/* TELEGRAM CONNECTION TAB */}
+              {/* CLOUD NODE CONNECTION TAB */}
               {settings?.telegramUser?.connected ? (
                 <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-md">
-                        {settings.telegramUser.info?.firstName?.[0] || "T"}
+                        {settings.telegramUser.info?.firstName?.[0] || "C"}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="font-bold text-sm text-slate-800 dark:text-white">
-                            {settings.telegramUser.info?.firstName || "Telegram User"} {settings.telegramUser.info?.lastName || ""}
+                            {settings.telegramUser.info?.firstName || "Cloud Node"} {settings.telegramUser.info?.lastName || ""}
                           </h4>
                           <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full">
                             <CheckCircle2 className="w-3 h-3" /> Connected
                           </span>
                         </div>
                         <p className="text-xs text-slate-400">
-                          @{settings.telegramUser.info?.username || "username"} • {settings.telegramUser.phoneNumber}
+                          @{settings.telegramUser.info?.username || "cloud_node"} • {settings.telegramUser.phoneNumber}
                         </p>
                       </div>
                     </div>
@@ -585,7 +585,7 @@ export default function SettingsModal() {
                   {step === "input_phone" && (
                     <form onSubmit={handleSendCode} className="space-y-3">
                       <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/40 text-xs text-slate-600 dark:text-slate-300">
-                        Connect your personal Telegram account to import media from channels and upload directly to Telegram Cloud.
+                        Connect your personal storage node to enable direct high-speed cloud streaming and channel sync.
                       </div>
 
                       <div>
@@ -630,7 +630,7 @@ export default function SettingsModal() {
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                          Enter 5-digit Telegram Code
+                          Enter 5-digit Verification Code
                         </label>
                         <input
                           type="text"
@@ -648,7 +648,7 @@ export default function SettingsModal() {
                         className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {authLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                        <span>Verify & Connect</span>
+                        <span>Verify & Connect Node</span>
                       </button>
                     </form>
                   )}
@@ -657,13 +657,13 @@ export default function SettingsModal() {
                     <form onSubmit={handleVerify2FA} className="space-y-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                          Telegram 2-Step Verification Password
+                          Two-Step Verification Password (2FA)
                         </label>
                         <input
                           type="password"
                           value={password2FA}
                           onChange={(e) => setPassword2FA(e.target.value)}
-                          placeholder="Enter your Telegram 2FA password"
+                          placeholder="Enter your 2FA password"
                           className="w-full bg-slate-50 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                         />
                       </div>

@@ -139,9 +139,9 @@ export default function UploadModal() {
             phaseText = "Assembling Chunks on Server...";
           } else if (browserProgress.stage === "telegram_cloud") {
             const tgPct = browserProgress.telegramPercent !== undefined ? browserProgress.telegramPercent : Math.max(0, rawPercent - 90) * 10;
-            phaseText = rawPercent >= 99 ? "Finalizing Cloud Storage..." : `Syncing with Telegram Cloud (${tgPct}%)`;
+            phaseText = rawPercent >= 99 ? "Finalizing Cloud Storage..." : `Syncing to TeleDrive Cloud (${tgPct}%)`;
           } else if (browserProgress.stage === "done" || rawPercent >= 100) {
-            phaseText = "Saved to Telegram Cloud!";
+            phaseText = "Saved to Cloud Storage!";
           }
 
           updateItem(item.id, {
@@ -325,7 +325,7 @@ export default function UploadModal() {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800 dark:text-white">
-                Upload Files to Telegram Cloud
+                Upload Files to High-Speed Cloud
               </h3>
               <p className="text-xs text-slate-400">
                 100% Real-time byte sync, speed & remaining time
@@ -376,7 +376,7 @@ export default function UploadModal() {
             Drag & drop multiple files here, or <span className="text-blue-500 font-bold">browse</span>
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Supports videos, photos, PDFs, audio, documents (up to 2GB per file on Telegram Cloud)
+            Supports videos, photos, PDFs, audio, documents (up to 2GB per file on TeleDrive Cloud)
           </p>
         </div>
 
