@@ -87,11 +87,16 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (isAdmin) {
-      fetchOverview();
-      if (activeTab === "users") fetchUsers();
-      if (activeTab === "files") fetchFiles();
-      if (activeTab === "system") fetchEmailStatus();
-      if (activeTab === "contact") {
+      if (activeTab === "overview") {
+        fetchOverview();
+      } else if (activeTab === "users") {
+        fetchUsers();
+      } else if (activeTab === "files") {
+        fetchFiles();
+      } else if (activeTab === "system") {
+        fetchEmailStatus();
+        if (!overviewData) fetchOverview();
+      } else if (activeTab === "contact") {
         fetchContactMessages();
         fetchSiteSettings();
       }
@@ -106,7 +111,7 @@ export default function AdminPage() {
         search: contactSearch,
         limit: 50
       });
-      if (res.success) {
+      if (res && res.success) {
         setContactMessages(res.messages || []);
         setContactTotal(res.total || 0);
       }
@@ -120,10 +125,14 @@ export default function AdminPage() {
   const fetchSiteSettings = async () => {
     try {
       const res = await DriveAPI.getAdminSiteSettings();
-      if (res.success && res.settings) {
+      if (res && res.success && res.settings) {
         setSiteSettingsInput((prev) => ({
-          ...prev,
-          ...res.settings
+          supportEmail: res.settings.supportEmail || prev.supportEmail || "support@telegram-drive.in",
+          telegramSupport: res.settings.telegramSupport || prev.telegramSupport || "@TeleDriveSupport",
+          telegramChannel: res.settings.telegramChannel || prev.telegramChannel || "https://t.me/telegram_drive_in",
+          announcementBanner: res.settings.announcementBanner || "",
+          contactHeading: res.settings.contactHeading || prev.contactHeading || "We'd love to hear from you",
+          contactSubheading: res.settings.contactSubheading || prev.contactSubheading || "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly."
         }));
       }
     } catch (err) {
@@ -1475,7 +1484,7 @@ export default function AdminPage() {
                       <input
                         type="email"
                         required
-                        value={siteSettingsInput.supportEmail}
+                        value={siteSettingsInput.supportEmail || ""}
                         onChange={(e) =>
                           setSiteSettingsInput({ ...siteSettingsInput, supportEmail: e.target.value })
                         }
@@ -1491,7 +1500,7 @@ export default function AdminPage() {
                       </label>
                       <input
                         type="text"
-                        value={siteSettingsInput.telegramSupport}
+                        value={siteSettingsInput.telegramSupport || ""}
                         onChange={(e) =>
                           setSiteSettingsInput({ ...siteSettingsInput, telegramSupport: e.target.value })
                         }
@@ -1507,7 +1516,7 @@ export default function AdminPage() {
                       </label>
                       <input
                         type="url"
-                        value={siteSettingsInput.telegramChannel}
+                        value={siteSettingsInput.telegramChannel || ""}
                         onChange={(e) =>
                           setSiteSettingsInput({ ...siteSettingsInput, telegramChannel: e.target.value })
                         }
@@ -1524,7 +1533,7 @@ export default function AdminPage() {
                     </label>
                     <input
                       type="text"
-                      value={siteSettingsInput.announcementBanner}
+                      value={siteSettingsInput.announcementBanner || ""}
                       onChange={(e) =>
                         setSiteSettingsInput({ ...siteSettingsInput, announcementBanner: e.target.value })
                       }

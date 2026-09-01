@@ -536,6 +536,12 @@ export async function deleteTelegramMessage(messageId, chatId) {
 // Temporary in-memory storage for active MTProto login flows
 const activeAuthClients = new Map();
 
+function normalizePhoneNumber(phoneNumber) {
+  if (!phoneNumber) return "";
+  const digits = phoneNumber.toString().replace(/\D/g, "");
+  return digits ? `+${digits}` : "";
+}
+
 // Step 1: Send Telegram Phone Verification Code
 export async function sendTelegramPhoneCode(phoneNumber) {
   const config = await getTelegramConfig();
@@ -543,15 +549,26 @@ export async function sendTelegramPhoneCode(phoneNumber) {
     throw new Error("API_ID and API_HASH are missing in the server .env configuration");
   }
 
-  const session = new StringSession("");
-  const client = new TelegramClient(session, config.apiId, config.apiHash, {
-    connectionRetries: 5,
-    useWSS: false
-  });
+  const cleanPhone = normalizePhoneNumber(phoneNumber);
+  if (!cleanPhone) {
+    throw new Error("Valid phone number with country code is required");
+  }
 
-  await client.connect();
+  // Reuse existing active auth client if one exists for this phone
+  let client = activeAuthClients.get(cleanPhone)?.client;
+  if (!client) {
+    const session = new StringSession("");
+    client = new TelegramClient(session, config.apiId, config.apiHash, {
+      connectionRetries: 5,
+      useWSS: false
+    });
+    await client.connect();
+  } else if (!client.connected) {
+    try {
+      await client.connect();
+    } catch {}
+  }
 
-  const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, "");
   const { phoneCodeHash, isCodeViaApp } = await client.sendCode(
     {
       apiId: config.apiId,
@@ -560,11 +577,21 @@ export async function sendTelegramPhoneCode(phoneNumber) {
     cleanPhone
   );
 
+  const authSessionString = client.session.save();
+
   activeAuthClients.set(cleanPhone, {
     client,
+    sessionString: authSessionString,
     phoneCodeHash,
     createdAt: Date.now()
   });
+
+  // Also persist temporary auth session to database as fallback across worker restarts
+  try {
+    const { dbSetSetting } = await import("./db.js");
+    await dbSetSetting(`AUTH_SESS_${cleanPhone}`, authSessionString);
+    await dbSetSetting(`AUTH_HASH_${cleanPhone}`, phoneCodeHash);
+  } catch {}
 
   return {
     success: true,
@@ -576,14 +603,31 @@ export async function sendTelegramPhoneCode(phoneNumber) {
 // Step 2: Complete Telegram Login with OTP (and 2FA if enabled)
 export async function completeTelegramLogin(userId, phoneNumber, phoneCode, password2FA = "", phoneCodeHash = "") {
   const config = await getTelegramConfig();
-  const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, "");
+  const cleanPhone = normalizePhoneNumber(phoneNumber);
 
   let authState = activeAuthClients.get(cleanPhone);
-  let client;
+  let client = authState?.client;
+  let savedSessionString = authState?.sessionString;
+  let targetHash = phoneCodeHash || authState?.phoneCodeHash;
 
-  if (authState && authState.client) {
-    client = authState.client;
-    if (!client.connected) await client.connect();
+  // Fallback to database if memory state was recycled
+  if (!savedSessionString || !targetHash) {
+    try {
+      const { dbGetSetting } = await import("./db.js");
+      if (!savedSessionString) savedSessionString = await dbGetSetting(`AUTH_SESS_${cleanPhone}`);
+      if (!targetHash) targetHash = await dbGetSetting(`AUTH_HASH_${cleanPhone}`);
+    } catch {}
+  }
+
+  if (client && client.connected) {
+    // client is ready
+  } else if (savedSessionString) {
+    const session = new StringSession(savedSessionString);
+    client = new TelegramClient(session, config.apiId, config.apiHash, {
+      connectionRetries: 5,
+      useWSS: false
+    });
+    await client.connect();
   } else {
     const session = new StringSession("");
     client = new TelegramClient(session, config.apiId, config.apiHash, {
@@ -593,7 +637,6 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
     await client.connect();
   }
 
-  const targetHash = phoneCodeHash || authState?.phoneCodeHash;
   if (!targetHash) {
     throw new Error("Phone code hash is missing. Please request a new verification code.");
   }
@@ -669,6 +712,12 @@ export async function completeTelegramLogin(userId, phoneNumber, phoneCode, pass
   userGramClients.set(key, client);
   userSessionStrings.set(key, sessionString);
   activeAuthClients.delete(cleanPhone);
+
+  try {
+    const { dbSetSetting } = await import("./db.js");
+    await dbSetSetting(`AUTH_SESS_${cleanPhone}`, "");
+    await dbSetSetting(`AUTH_HASH_${cleanPhone}`, "");
+  } catch {}
 
   return {
     success: true,

@@ -74,7 +74,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
   const faqs = [
     {
       q: "Is TeleDrive really 100% free and unlimited?",
-      a: "Yes! TeleDrive connects directly to Telegram's official MTProto cloud infrastructure. Telegram allows users to store files and documents in personal cloud channels with zero storage caps. TeleDrive organizes this into a modern Google Drive-like interface with zero storage limits."
+      a: "Yes! TeleDrive leverages high-speed distributed cloud architecture with zero storage quotas. You can store your files, media, and documents with no monthly subscription fees."
     },
     {
       q: "What is the maximum file upload size?",
@@ -86,15 +86,15 @@ export default function LandingPage({ onNavigate, siteSettings }) {
     },
     {
       q: "How does TeleDrive keep my files secure and private?",
-      a: "All file transfers are protected with TLS/SSL encryption and stored on Telegram's encrypted distributed cloud servers. Your files are accessible only to you via signed JWT tokens, and shared files can be password-protected with custom expiration limits."
+      a: "All file transfers are protected with end-to-end TLS/SSL encryption and stored on secure distributed cloud servers. Your files are accessible only to you via signed tokens, and shared files can be password-protected with custom expiration limits."
     },
     {
-      q: "Can I import files from my Telegram channels or groups?",
-      a: "Yes! With our Telegram Post Link Importer, you can paste any public or private channel post link (e.g. https://t.me/channel/123) and stream or manage that file directly inside your TeleDrive workspace."
+      q: "Can I import files from external cloud links?",
+      a: "Yes! With our Fast Link Importer, you can paste any public or shared link and stream or manage that file directly inside your TeleDrive workspace."
     },
     {
       q: "Do I need to install any app to use TeleDrive?",
-      a: "No installation is required. TeleDrive runs seamlessly in any web browser on Android, iOS, Windows, macOS, and Linux."
+      a: "No installation is required. TeleDrive runs seamlessly in any modern web browser on Android, iOS, Windows, macOS, and Linux."
     }
   ];
 
@@ -130,7 +130,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   Cloud
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 hidden sm:block">Unlimited Telegram Cloud Storage</p>
+              <p className="text-[10px] text-slate-400 hidden sm:block">Unlimited Distributed Cloud Storage</p>
             </div>
           </div>
 
@@ -254,7 +254,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
           </span>
-          <span>Powered by Telegram MTProto Cloud • 2GB File Limits • 100% Free Forever</span>
+          <span>High-Speed Distributed Cloud • 2GB File Limits • 100% Free Forever</span>
         </div>
 
         {/* Main Hero Heading */}
@@ -262,13 +262,13 @@ export default function LandingPage({ onNavigate, siteSettings }) {
           Unlimited Cloud Storage,
           <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-sky-300 to-teal-300">
-            Powered by Telegram.
+            Engineered for Freedom.
           </span>
         </h1>
 
         {/* Subtitle */}
         <p className="text-sm sm:text-base lg:text-xl text-slate-300 max-w-3xl mx-auto mb-8 sm:mb-10 leading-relaxed font-normal">
-          Turn your Telegram account into a lightning-fast, unlimited Google Drive-style cloud. Upload up to 2GB per file, stream 4K videos instantly without downloading, organize folders, and share securely.
+          Experience lightning-fast, unlimited encrypted cloud storage. Upload up to 2GB per file, stream 4K videos instantly without downloading, organize folders, and share securely with zero storage caps.
         </p>
 
         {/* Hero CTA Buttons */}
@@ -377,7 +377,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                     </div>
                     <div>
                       <p className="text-sm font-bold text-white">Interstellar.IMAX.2160p.HDR.x265.mkv</p>
-                      <p className="text-xs text-slate-400">1.94 GB • 4K UHD Matroska • Telegram MTProto Byte-Range Stream</p>
+                      <p className="text-xs text-slate-400">1.94 GB • 4K UHD Matroska • Multi-DC Byte-Range Stream</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -416,7 +416,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span>Multi-DC Range Streaming (Zero buffering seeking)</span>
-                      <span className="text-emerald-400 font-bold font-mono">18.2 MB/s Telegram CDN</span>
+                      <span className="text-emerald-400 font-bold font-mono">18.2 MB/s High-Speed CDN</span>
                     </div>
                   </div>
                 </div>
@@ -452,7 +452,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
                     <span className="flex items-center gap-1.5 text-slate-300">
                       <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-                      Status: Syncing with Telegram MTProto Storage
+                      Status: Syncing with High-Speed Cloud Storage
                     </span>
                     <span className="font-mono text-cyan-300 font-semibold">Speed: 24.8 MB/s • ETA: 2s</span>
                   </div>
@@ -469,7 +469,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
                     <p className="text-slate-400 text-[11px] font-semibold">Destination</p>
-                    <p className="font-bold text-cyan-400 mt-1">Encrypted Telegram DCs</p>
+                    <p className="font-bold text-cyan-400 mt-1">Encrypted Distributed DCs</p>
                   </div>
                 </div>
               </div>
@@ -492,7 +492,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   </div>
 
                   <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs font-mono text-cyan-300">
-                    <span className="truncate">https://telegram-drive.in/?share=tok_984f1a09bc2</span>
+                    <span className="truncate">https://teledrive.cloud/?share=tok_984f1a09bc2</span>
                     <span className="px-3 py-1 rounded-xl bg-cyan-500/20 text-cyan-300 text-[11px] font-bold border border-cyan-500/30">
                       Copy Link
                     </span>
@@ -529,8 +529,8 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                       <Send className="w-6 h-6 -rotate-12" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-white">Import from Any Telegram Channel</p>
-                      <p className="text-xs text-slate-400">Paste any public or private channel post link to import instantly</p>
+                      <p className="text-sm font-bold text-white">Fast Link & Media Importer</p>
+                      <p className="text-xs text-slate-400">Paste any public or shared link to import media directly</p>
                     </div>
                   </div>
 
@@ -538,7 +538,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                     <input
                       type="text"
                       readOnly
-                      value="https://t.me/tech_courses_library/8412"
+                      value="https://teledrive.cloud/import/tech_courses_library/8412"
                       className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 font-mono outline-none"
                     />
                     <button className="px-5 py-2.5 rounded-xl bg-sky-600 text-white font-bold text-xs shadow-md shadow-sky-600/30">
@@ -580,7 +580,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center mb-5 group-hover:scale-110 group-hover:bg-blue-500 group-hover:text-white transition-all">
               <HardDrive className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold text-white mb-2">Unlimited MTProto Cloud</h3>
+            <h3 className="text-lg font-bold text-white mb-2">Unlimited Distributed Cloud</h3>
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
               Store terabytes of movies, documents, raw photos, and software backups with zero storage caps and zero subscription bills.
             </p>
@@ -635,9 +635,9 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center mb-5 group-hover:scale-110 group-hover:bg-amber-500 group-hover:text-white transition-all">
               <Send className="w-6 h-6 -rotate-12" />
             </div>
-            <h3 className="text-lg font-bold text-white mb-2">Telegram Channel Importer</h3>
+            <h3 className="text-lg font-bold text-white mb-2">Fast Cloud Link Importer</h3>
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Stream and manage files from public or private Telegram channels in seconds without consuming local internet bandwidth.
+              Stream and manage files from public links and media channels in seconds without consuming local internet bandwidth.
             </p>
           </div>
         </div>
@@ -700,7 +700,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   <td className="p-4 sm:p-5 text-center text-slate-400">Download required</td>
                 </tr>
                 <tr>
-                  <td className="p-4 sm:p-5 font-semibold text-white">Telegram Channel Importer</td>
+                  <td className="p-4 sm:p-5 font-semibold text-white">Fast Cloud Link Importer</td>
                   <td className="p-4 sm:p-5 text-center font-bold text-emerald-400 bg-blue-500/5 border-l border-r border-blue-500/20">
                     <Check className="w-5 h-5 text-emerald-400 mx-auto" />
                   </td>
@@ -751,7 +751,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </div>
             <h3 className="text-base font-bold text-white mb-2">Upload Files or Import Links</h3>
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Drag & drop files up to 2GB each into your drive, or paste Telegram channel links to import media directly.
+              Drag & drop files up to 2GB each into your drive, or paste shared links to import media directly.
             </p>
           </div>
 
@@ -842,7 +842,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
               <span className="font-extrabold text-lg text-white">TeleDrive Cloud</span>
             </div>
             <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
-              Unlimited Telegram cloud storage platform. Up to 2GB per file, high-speed 4K streaming, and secure link sharing powered by MTProto.
+              Unlimited high-speed distributed cloud storage platform. Up to 2GB per file, high-speed 4K streaming, and secure link sharing.
             </p>
           </div>
 
@@ -890,7 +890,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
               {telegramChannel && (
                 <li>
                   <a href={telegramChannel} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400 transition-colors flex items-center gap-1">
-                    <span>Telegram Channel</span>
+                    <span>Community Channel</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </li>
@@ -900,7 +900,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
         </div>
 
         <div className="max-w-7xl mx-auto pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-          <p>© {new Date().getFullYear()} TeleDrive. All rights reserved. Powered by Telegram MTProto API.</p>
+          <p>© {new Date().getFullYear()} TeleDrive Cloud. All rights reserved. High-Speed Distributed Storage.</p>
           <div className="flex items-center gap-4">
             <button onClick={() => onNavigate("privacy")} className="hover:text-slate-400">Privacy</button>
             <button onClick={() => onNavigate("terms")} className="hover:text-slate-400">Terms</button>
