@@ -1042,44 +1042,64 @@ export async function streamGramMedia(
     const msgId = parseInt(messageId, 10);
     let msg = null;
 
-    // 1. Try direct getMessages
-    try {
-      const messages = await client.getMessages(channelId, { ids: [msgId] });
-      if (messages && messages[0] && messages[0].media) {
-        msg = messages[0];
-      }
-    } catch (e1) {}
-
-    // 2. Try entity resolution (only fetch dialogs on user client, bots cannot call getDialogs)
-    if (!msg || !msg.media) {
+    if (!client.connected) {
       try {
-        let targetEntity = null;
-        try {
-          targetEntity = await client.getInputEntity(channelId);
-        } catch {
-          // If not bot, try dialogs cache
-          if (!activeBotToken || client !== activeBotGramClient) {
-            try {
-              await client.getDialogs({ limit: 100 });
-              targetEntity = await client.getInputEntity(channelId);
-            } catch {}
-          }
-        }
+        await client.connect();
+      } catch {}
+    }
 
-        if (!targetEntity) {
-          const rawNum = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+    const rawNum = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+
+    // 1. Try resolving target entity first for reliable getMessages
+    let targetEntity = null;
+    try {
+      targetEntity = await client.getInputEntity(channelId);
+    } catch {
+      try {
+        targetEntity = await client.getInputEntity(bigInt(rawNum));
+      } catch {
+        try {
+          targetEntity = await client.getInputEntity(bigInt(`-100${rawNum}`));
+        } catch {
           try {
-            targetEntity = await client.getInputEntity(bigInt(rawNum));
+            targetEntity = await client.getEntity(channelId);
           } catch {
             try {
-              targetEntity = await client.getInputEntity(bigInt(`-100${rawNum}`));
-            } catch {}
+              targetEntity = await client.getEntity(bigInt(rawNum));
+            } catch {
+              try {
+                targetEntity = await client.getEntity(bigInt(`-100${rawNum}`));
+              } catch {}
+            }
           }
         }
+      }
+    }
 
-        if (!targetEntity && (!activeBotToken || client !== activeBotGramClient)) {
-          const dialogs = await client.getDialogs({ limit: 200 });
-          const rawNum = channelId.toString().replace(/^-100/, "").replace(/^-/, "");
+    if (targetEntity) {
+      try {
+        const messages = await client.getMessages(targetEntity, { ids: [msgId] });
+        if (messages && messages[0] && messages[0].media) {
+          msg = messages[0];
+        }
+      } catch (eEntity) {}
+    }
+
+    // 2. Direct getMessages fallback
+    if (!msg || !msg.media) {
+      try {
+        const messages = await client.getMessages(channelId, { ids: [msgId] });
+        if (messages && messages[0] && messages[0].media) {
+          msg = messages[0];
+        }
+      } catch (e1) {}
+    }
+
+    // 3. Try Dialogs cache search (on user account client)
+    if (!msg || !msg.media) {
+      if (!activeBotToken || client !== activeBotGramClient) {
+        try {
+          const dialogs = await client.getDialogs({ limit: 100 });
           const found = dialogs.find((d) => {
             const idStr = d.id?.toString() || "";
             return (
@@ -1091,23 +1111,23 @@ export async function streamGramMedia(
           });
           if (found) {
             targetEntity = found.inputEntity || found.entity;
+            const messages = await client.getMessages(targetEntity, { ids: [msgId] });
+            if (messages && messages[0] && messages[0].media) {
+              msg = messages[0];
+            }
           }
-        }
-
-        if (targetEntity) {
-          const messages = await client.getMessages(targetEntity, { ids: [msgId] });
-          if (messages && messages[0] && messages[0].media) {
-            msg = messages[0];
-          }
-        }
-      } catch (e2) {}
+        } catch (eDialog) {}
+      }
     }
 
-    // 3. Try alternate client fallback (User <-> Storage Bot)
+    // 4. Try alternate client fallback (User <-> Storage Bot)
     if (!msg || !msg.media) {
       try {
         const altClient = await getGramClient(userId, !useStorageBot);
         if (altClient && altClient !== client) {
+          if (!altClient.connected) {
+            await altClient.connect().catch(() => {});
+          }
           try {
             const messages = await altClient.getMessages(channelId, { ids: [msgId] });
             if (messages && messages[0] && messages[0].media) {
@@ -1115,16 +1135,17 @@ export async function streamGramMedia(
               client = altClient;
             }
           } catch {}
+
           if (!msg || !msg.media) {
-            if (!activeBotToken || altClient !== activeBotGramClient) {
-              try {
-                await altClient.getDialogs({ limit: 100 });
-              } catch {}
-            }
             try {
-              const entity = await altClient.getEntity(channelId);
-              if (entity) {
-                const messages = await altClient.getMessages(entity, { ids: [msgId] });
+              let altEntity = null;
+              try {
+                altEntity = await altClient.getInputEntity(bigInt(rawNum));
+              } catch {
+                altEntity = await altClient.getEntity(channelId);
+              }
+              if (altEntity) {
+                const messages = await altClient.getMessages(altEntity, { ids: [msgId] });
                 if (messages && messages[0] && messages[0].media) {
                   msg = messages[0];
                   client = altClient;
@@ -1137,7 +1158,7 @@ export async function streamGramMedia(
     }
 
     if (!msg || !msg.media) {
-      // If message is not resolvable but we have storedAccessHash & storedDocId, construct location
+      // If message is not resolvable live but we have stored references, use fallback
       if (storedDocId && storedAccessHash && storedFileRef) {
         const isPhoto = mimeType?.startsWith("image/") || (fileName && fileName.match(/\.(png|jpg|jpeg|webp)$/i));
         const location = !isPhoto
@@ -1156,7 +1177,7 @@ export async function streamGramMedia(
         return {
           totalSize: Number(fileSize) || 0,
           location,
-          dcId: client.session.dcId
+          dcId: client.session?.dcId || null
         };
       }
       throw new Error(`Telegram media post #${msgId} not found in channel ${channelId}`);
@@ -1202,8 +1223,8 @@ export async function streamGramMedia(
       throw new Error("Unsupported media type for MTProto streaming");
     }
 
-    // Auto-backfill to SQLite and Supabase if file was previously unhashed or ref changed
-    if (foundHash) {
+    // Auto-backfill fresh live file reference to SQLite and Supabase
+    if (foundHash && foundRef) {
       (async () => {
         try {
           const { getSqliteDb, getSupabaseClient } = await import("./db.js");
@@ -1225,7 +1246,7 @@ export async function streamGramMedia(
 
     const resolved = { totalSize, location, dcId };
     mediaLocationCache.set(cacheKey, resolved);
-    setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
+    setTimeout(() => mediaLocationCache.delete(cacheKey), 20 * 60 * 1000);
     return resolved;
   }
 
@@ -1274,10 +1295,10 @@ export async function streamGramMedia(
 
   async function getActiveSender(targetDc) {
     try {
-      return await client.getSender(targetDc || dcId || client.session.dcId);
+      return await client.getSender(targetDc || dcId || client.session?.dcId);
     } catch {
       try {
-        return await client.getSender(client.session.dcId);
+        return await client.getSender(client.session?.dcId);
       } catch {
         return null;
       }
@@ -1310,17 +1331,20 @@ export async function streamGramMedia(
           return res?.bytes;
         }
       }
-      if (err.errorMessage === "TIMEOUT" && retryCount < 2) {
-        await new Promise((r) => setTimeout(r, 400));
+      if (err.errorMessage === "TIMEOUT" && retryCount < 3) {
+        await new Promise((r) => setTimeout(r, 350 * (retryCount + 1)));
+        sender = await getActiveSender(dcId);
         return fetchMtprotoChunk(chunkOffset, retryCount + 1);
       }
-      // Auto-refresh file reference on expiration and retry
+      // Auto-refresh file reference on expiration and retry seamlessly
       if (
         (err.message?.includes("FILE_REFERENCE") ||
           err.message?.includes("FILEREF") ||
-          err.errorMessage?.includes("FILE_REFERENCE")) &&
+          err.errorMessage?.includes("FILE_REFERENCE") ||
+          err.code === 400) &&
         retryCount < 2
       ) {
+        console.log(`🔄 Auto-refreshing expired file reference for message #${messageId} in channel ${channelId}...`);
         mediaLocationCache.delete(cacheKey);
         const refreshed = await resolveAndCacheMedia();
         location = refreshed.location;
