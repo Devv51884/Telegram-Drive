@@ -9,7 +9,7 @@ import {
   dbBulkUpdateSiteSettings
 } from "../db.js";
 import { requireAdmin } from "../security.js";
-import { sendEmailSafely } from "../email.js";
+import { sendUnifiedEmail } from "../email.js";
 
 const router = express.Router();
 
@@ -83,7 +83,7 @@ router.post("/submit", contactSubmitLimiter, async (req, res) => {
     (async () => {
       try {
         const siteSettings = await dbGetSiteSettings();
-        await sendEmailSafely({
+        await sendUnifiedEmail({
           to: email.trim(),
           subject: `Thank you for contacting ${siteSettings.brandName || "TeleDrive"} [${saved.id}]`,
           html: `
