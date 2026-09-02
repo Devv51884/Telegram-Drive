@@ -781,31 +781,35 @@ export async function logoutTelegramUser(userId = null) {
 // Parse Telegram Post Link (supports private channel, public channel, and forum topics)
 export function parseTelegramPostUrl(url) {
   if (!url || typeof url !== "string") return null;
-  const trimmed = url.trim();
+  const cleanUrl = url.trim().split("?")[0].split("#")[0].replace(/\/+$/, "");
 
   // 1. Private channel / supergroup / forum topic: t.me/c/2643917389/1036/1039 or t.me/c/2643917389/1039
-  const privateMatch = trimmed.match(/t\.me\/c\/(\d+)(?:\/(\d+))?\/(\d+)/i);
+  const privateMatch = cleanUrl.match(/t\.me\/c\/(\d+)(?:\/(\d+))?\/(\d+)$/i);
   if (privateMatch) {
     const rawChannelId = privateMatch[1];
-    const messageId = parseInt(privateMatch[3], 10);
+    const messageId = parseInt(privateMatch[3] || privateMatch[2], 10);
+    const topicId = privateMatch[3] ? parseInt(privateMatch[2], 10) : null;
     const fullChannelId = rawChannelId.startsWith("-100") ? rawChannelId : `-100${rawChannelId}`;
     return {
       isPrivate: true,
       channelId: fullChannelId,
       rawChannelId,
+      topicId,
       messageId
     };
   }
 
   // 2. Public channel / group / forum topic: t.me/channel_name/1036/1039 or t.me/channel_name/1039
-  const publicMatch = trimmed.match(/t\.me\/([a-zA-Z0-9_]+)(?:\/(\d+))?\/(\d+)/i);
+  const publicMatch = cleanUrl.match(/t\.me\/([a-zA-Z0-9_]+)(?:\/(\d+))?\/(\d+)$/i);
   if (publicMatch && publicMatch[1] !== "c") {
     const channelUsername = publicMatch[1];
-    const messageId = parseInt(publicMatch[3], 10);
+    const messageId = parseInt(publicMatch[3] || publicMatch[2], 10);
+    const topicId = publicMatch[3] ? parseInt(publicMatch[2], 10) : null;
     return {
       isPrivate: false,
       channelUsername,
       channelId: channelUsername,
+      topicId,
       messageId
     };
   }
@@ -838,6 +842,7 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
     } catch {}
   }
 
+  const peer = parsed.channelId;
   const rawNum = parsed.rawChannelId || parsed.channelId.replace(/^-100/, "").replace(/^-/, "");
   const messageId = parsed.messageId;
 
@@ -973,8 +978,8 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
 
     let channelTitle = "Telegram Channel";
     try {
-      const chat = await client.getEntity(peer);
-      channelTitle = chat.title || chat.username || "Telegram Channel";
+      const chat = await client.getEntity(targetPeer || peer);
+      channelTitle = chat?.title || chat?.username || "Telegram Channel";
     } catch {}
 
     // Pre-populate mediaLocationCache so immediate stream request is instant 0ms
