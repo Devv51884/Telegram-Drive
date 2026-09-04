@@ -136,7 +136,8 @@ export default function UploadModal() {
 
           let phaseText = `Uploading to Server (${Math.min(85, rawPercent)}%)`;
           if (browserProgress.stage === "assembling") {
-            phaseText = "Assembling Chunks on Server...";
+            const asmPct = browserProgress.assemblePercent !== undefined ? browserProgress.assemblePercent : 0;
+            phaseText = asmPct > 0 ? `Assembling on Server (${asmPct}%)` : "Assembling Chunks on Server...";
           } else if (browserProgress.stage === "telegram_cloud") {
             const tgPct = browserProgress.telegramPercent !== undefined ? browserProgress.telegramPercent : Math.max(0, rawPercent - 90) * 10;
             phaseText = rawPercent >= 99 ? "Finalizing Cloud Storage..." : `Syncing to TeleDrive Cloud (${tgPct}%)`;

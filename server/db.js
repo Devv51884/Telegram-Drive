@@ -491,35 +491,104 @@ export async function syncFromSupabase() {
       }
     } catch {}
 
-    // 9. Sync Contact Messages
+    // 9. Sync Contact Messages (Dual-Layer: table + settings cloud fallback)
     try {
-      const { data: messages } = await supabase.from("contact_messages").select("*");
-      if (messages && messages.length > 0) {
-        for (const m of messages) {
-          await sqlite.run(
-            `INSERT INTO contact_messages (id, name, email, subject, message, status, ip_address, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET status = excluded.status`,
-            [m.id, m.name, m.email?.toLowerCase(), m.subject, m.message, m.status || 'unread', m.ip_address, m.created_at || new Date().toISOString()]
-          );
+      let syncedMessages = false;
+      try {
+        const { data: messages, error: msgErr } = await supabase.from("contact_messages").select("*");
+        if (!msgErr && messages && messages.length > 0) {
+          for (const m of messages) {
+            await sqlite.run(
+              `INSERT INTO contact_messages (id, name, email, subject, message, status, ip_address, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET status = excluded.status`,
+              [m.id, m.name, m.email?.toLowerCase(), m.subject, m.message, m.status || "unread", m.ip_address, m.created_at || new Date().toISOString()]
+            );
+          }
+          syncedMessages = true;
         }
-      }
-    } catch {}
+      } catch {}
 
-    // 10. Sync Site Settings
-    try {
-      const { data: settingsList } = await supabase.from("site_settings").select("*");
-      if (settingsList && settingsList.length > 0) {
-        for (const s of settingsList) {
-          await sqlite.run(
-            `INSERT INTO site_settings (key, value, updated_at)
-             VALUES (?, ?, ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-            [s.key, s.value, s.updated_at || new Date().toISOString()]
-          );
+      if (!syncedMessages) {
+        const { data: msgSetting } = await supabase.from("settings").select("value").eq("key", "CONTACT_MESSAGES_DATA").maybeSingle();
+        if (msgSetting && msgSetting.value) {
+          try {
+            const list = JSON.parse(msgSetting.value);
+            if (Array.isArray(list)) {
+              for (const m of list) {
+                await sqlite.run(
+                  `INSERT INTO contact_messages (id, name, email, subject, message, status, ip_address, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET status = excluded.status`,
+                  [m.id, m.name, m.email?.toLowerCase(), m.subject, m.message, m.status || "unread", m.ip_address, m.created_at || new Date().toISOString()]
+                );
+              }
+            }
+          } catch (parseErr) {
+            console.warn("Error parsing CONTACT_MESSAGES_DATA from Supabase:", parseErr.message);
+          }
         }
       }
-    } catch {}
+    } catch (e) {
+      console.warn("Contact messages bootstrap sync warning:", e.message);
+    }
+
+    // 10. Sync Site Settings (Dual-Layer: table + settings cloud fallback)
+    try {
+      let syncedSiteSettings = false;
+      try {
+        const { data: settingsList, error: siteSetErr } = await supabase.from("site_settings").select("*");
+        if (!siteSetErr && settingsList && settingsList.length > 0) {
+          for (const s of settingsList) {
+            await sqlite.run(
+              `INSERT INTO site_settings (key, value, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+              [s.key, s.value, s.updated_at || new Date().toISOString()]
+            );
+          }
+          syncedSiteSettings = true;
+        }
+      } catch {}
+
+      if (!syncedSiteSettings) {
+        // Read full settings JSON object from settings table
+        const { data: siteObjRow } = await supabase.from("settings").select("value, updated_at").eq("key", "SITE_SETTINGS").maybeSingle();
+        if (siteObjRow && siteObjRow.value) {
+          try {
+            const parsed = JSON.parse(siteObjRow.value);
+            for (const [k, v] of Object.entries(parsed)) {
+              if (v !== undefined && v !== null) {
+                await sqlite.run(
+                  `INSERT INTO site_settings (key, value, updated_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+                  [k, String(v), siteObjRow.updated_at || new Date().toISOString()]
+                );
+              }
+            }
+          } catch (e) {
+            console.warn("Error parsing SITE_SETTINGS JSON:", e.message);
+          }
+        }
+
+        // Also sync any individual SITE_SETTING_ keys
+        const { data: indRows } = await supabase.from("settings").select("key, value, updated_at").like("key", "SITE_SETTING_%");
+        if (indRows && indRows.length > 0) {
+          for (const row of indRows) {
+            const cleanKey = row.key.replace(/^SITE_SETTING_/, "");
+            await sqlite.run(
+              `INSERT INTO site_settings (key, value, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+              [cleanKey, row.value, row.updated_at || new Date().toISOString()]
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Site settings bootstrap sync warning:", e.message);
+    }
   } catch (err) {
     console.error("❌ Supabase bootstrap sync error:", err.message);
   }
@@ -811,16 +880,15 @@ export async function dbUpdateFile(id, updateFields) {
     await sqlite.run(`UPDATE files SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [...values, id]);
   }
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("files").update(updateFields).eq("id", id);
-      }
-    } catch (err) {
-      console.warn("Supabase background update file:", err.message);
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.from("files").update(updateFields).eq("id", id);
+      if (error) console.warn("Supabase update file error:", error.message);
     }
-  })();
+  } catch (err) {
+    console.warn("Supabase update file exception:", err.message);
+  }
 
   return dbGetFileById(id);
 }
@@ -829,16 +897,15 @@ export async function dbDeleteFile(id) {
   const sqlite = await getSqliteDb();
   await sqlite.run("DELETE FROM files WHERE id = ?", [id]);
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("files").delete().eq("id", id);
-      }
-    } catch (err) {
-      console.warn("Supabase background delete file:", err.message);
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.from("files").delete().eq("id", id);
+      if (error) console.warn("Supabase delete file error:", error.message);
     }
-  })();
+  } catch (err) {
+    console.warn("Supabase delete file exception:", err.message);
+  }
 }
 
 // ==========================================
@@ -877,16 +944,15 @@ export async function dbInsertFolder(folderRecord) {
     [record.id, record.user_id, record.name, record.color, record.parent_id, record.is_starred, record.is_trash]
   );
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("folders").upsert(record);
-      }
-    } catch (err) {
-      console.warn("Supabase background folder sync:", err.message);
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.from("folders").upsert(record);
+      if (error) console.warn("Supabase insert folder error:", error.message);
     }
-  })();
+  } catch (err) {
+    console.warn("Supabase background folder sync:", err.message);
+  }
 
   return dbGetFolderById(record.id);
 }
@@ -900,16 +966,15 @@ export async function dbUpdateFolder(id, updateFields) {
     await sqlite.run(`UPDATE folders SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [...values, id]);
   }
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("folders").update(updateFields).eq("id", id);
-      }
-    } catch (err) {
-      console.warn("Supabase background update folder:", err.message);
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.from("folders").update(updateFields).eq("id", id);
+      if (error) console.warn("Supabase update folder error:", error.message);
     }
-  })();
+  } catch (err) {
+    console.warn("Supabase update folder exception:", err.message);
+  }
 
   return dbGetFolderById(id);
 }
@@ -918,16 +983,15 @@ export async function dbDeleteFolder(id) {
   const sqlite = await getSqliteDb();
   await sqlite.run("DELETE FROM folders WHERE id = ?", [id]);
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("folders").delete().eq("id", id);
-      }
-    } catch (err) {
-      console.warn("Supabase background delete folder:", err.message);
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.from("folders").delete().eq("id", id);
+      if (error) console.warn("Supabase delete folder error:", error.message);
     }
-  })();
+  } catch (err) {
+    console.warn("Supabase delete folder exception:", err.message);
+  }
 }
 
 // TELEGRAM SESSIONS
@@ -1850,35 +1914,49 @@ export async function dbSaveContactMessage({ name, email, subject, message, ip_a
     [id, name, email.toLowerCase().trim(), subject, message, ip_address, now]
   );
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("contact_messages").insert({
-          id,
-          name,
-          email: email.toLowerCase().trim(),
-          subject,
-          message,
-          status: "unread",
-          ip_address,
-          created_at: now
-        });
-      }
-    } catch (err) {
-      console.warn("Supabase contact_messages insert warning:", err.message);
-    }
-  })();
-
-  return {
+  const messageRecord = {
     id,
     name,
     email: email.toLowerCase().trim(),
     subject,
     message,
     status: "unread",
+    ip_address,
     created_at: now
   };
+
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      // 1. Try insert into contact_messages table if exists
+      try {
+        await supabase.from("contact_messages").insert(messageRecord);
+      } catch {}
+      // 2. Guaranteed cloud backup in Supabase settings table
+      await syncContactMessagesToSupabase(sqlite);
+    }
+  } catch (err) {
+    console.warn("Supabase contact_messages cloud sync warning:", err.message);
+  }
+
+  return messageRecord;
+}
+
+// Helper to reliably sync contact inquiries array to Supabase settings table
+async function syncContactMessagesToSupabase(sqlite) {
+  try {
+    const supabase = await getSupabaseClient();
+    if (!supabase) return;
+    const allMessages = await sqlite.all("SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 500");
+    const { error } = await supabase.from("settings").upsert({
+      key: "CONTACT_MESSAGES_DATA",
+      value: JSON.stringify(allMessages),
+      updated_at: new Date().toISOString()
+    });
+    if (error) console.warn("Supabase sync contact messages to settings error:", error.message);
+  } catch (err) {
+    console.warn("Supabase contact messages cloud sync error:", err.message);
+  }
 }
 
 export async function dbGetContactMessages({ status = "all", search = "", limit = 50, offset = 0 } = {}) {
@@ -1917,14 +1995,17 @@ export async function dbUpdateContactMessageStatus(id, status) {
   const sqlite = await getSqliteDb();
   await sqlite.run("UPDATE contact_messages SET status = ? WHERE id = ?", [status, id]);
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      try {
         await supabase.from("contact_messages").update({ status }).eq("id", id);
-      }
-    } catch {}
-  })();
+      } catch {}
+      await syncContactMessagesToSupabase(sqlite);
+    }
+  } catch (err) {
+    console.warn("Supabase update message status warning:", err.message);
+  }
 
   return sqlite.get("SELECT * FROM contact_messages WHERE id = ?", [id]);
 }
@@ -1933,14 +2014,17 @@ export async function dbDeleteContactMessage(id) {
   const sqlite = await getSqliteDb();
   await sqlite.run("DELETE FROM contact_messages WHERE id = ?", [id]);
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      try {
         await supabase.from("contact_messages").delete().eq("id", id);
-      }
-    } catch {}
-  })();
+      } catch {}
+      await syncContactMessagesToSupabase(sqlite);
+    }
+  } catch (err) {
+    console.warn("Supabase delete message warning:", err.message);
+  }
 
   return { success: true };
 }
@@ -1963,13 +2047,79 @@ export async function dbGetSiteSettings() {
     contactSubheading: "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly."
   };
 
-  rows.forEach((r) => {
-    if (r.key) {
-      settings[r.key] = r.value;
+  if (rows && rows.length > 0) {
+    rows.forEach((r) => {
+      if (r.key) {
+        settings[r.key] = r.value;
+      }
+    });
+    return settings;
+  }
+
+  // Cloud Fallback: If SQLite table is empty, fetch from Supabase settings table
+  try {
+    const supabase = await getSupabaseClient();
+    if (supabase) {
+      const { data: row } = await supabase.from("settings").select("value").eq("key", "SITE_SETTINGS").maybeSingle();
+      if (row && row.value) {
+        const parsed = JSON.parse(row.value);
+        Object.assign(settings, parsed);
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v !== undefined && v !== null) {
+            await sqlite.run(
+              `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+              [k, String(v), new Date().toISOString()]
+            );
+          }
+        }
+      }
     }
-  });
+  } catch (err) {
+    console.warn("Supabase site settings fallback error:", err.message);
+  }
 
   return settings;
+}
+
+// Helper to reliably sync all site settings to Supabase
+async function syncSiteSettingsToSupabase(settingsObj, now = new Date().toISOString()) {
+  try {
+    const supabase = await getSupabaseClient();
+    if (!supabase) return;
+
+    // 1. Upsert full settings JSON object under 'SITE_SETTINGS' in settings table
+    const { error: supaErr } = await supabase.from("settings").upsert({
+      key: "SITE_SETTINGS",
+      value: JSON.stringify(settingsObj),
+      updated_at: now
+    });
+    if (supaErr) console.warn("Supabase SITE_SETTINGS upsert error:", supaErr.message);
+
+    // 2. Also upsert individual keys for convenience
+    for (const [key, value] of Object.entries(settingsObj)) {
+      if (value !== undefined && value !== null) {
+        try {
+          await supabase.from("settings").upsert({
+            key: `SITE_SETTING_${key}`,
+            value: String(value),
+            updated_at: now
+          });
+        } catch {}
+
+        // 3. Try site_settings table as well if created
+        try {
+          await supabase.from("site_settings").upsert({
+            key,
+            value: String(value),
+            updated_at: now
+          });
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn("Supabase site settings cloud sync error:", err.message);
+  }
 }
 
 export async function dbUpdateSiteSetting(key, value) {
@@ -1981,29 +2131,30 @@ export async function dbUpdateSiteSetting(key, value) {
     [key, String(value), now]
   );
 
-  (async () => {
-    try {
-      const supabase = await getSupabaseClient();
-      if (supabase) {
-        await supabase.from("site_settings").upsert({
-          key,
-          value: String(value),
-          updated_at: now
-        });
-      }
-    } catch {}
-  })();
+  const fullSettings = await dbGetSiteSettings();
+  await syncSiteSettingsToSupabase(fullSettings, now);
 
   return { key, value };
 }
 
 export async function dbBulkUpdateSiteSettings(settingsObj) {
+  const sqlite = await getSqliteDb();
+  const now = new Date().toISOString();
+
   for (const [key, value] of Object.entries(settingsObj)) {
     if (value !== undefined && value !== null) {
-      await dbUpdateSiteSetting(key, value);
+      await sqlite.run(
+        `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        [key, String(value), now]
+      );
     }
   }
-  return dbGetSiteSettings();
+
+  const fullSettings = await dbGetSiteSettings();
+  await syncSiteSettingsToSupabase(fullSettings, now);
+
+  return fullSettings;
 }
 
 

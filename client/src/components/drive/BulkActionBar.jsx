@@ -38,8 +38,8 @@ export default function BulkActionBar() {
   };
 
   return (
-    <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[95vw] sm:max-w-max animate-in fade-in slide-in-from-bottom-5 duration-200">
-      <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-900/95 dark:bg-[#1e1f20]/95 backdrop-blur-xl border border-slate-700/70 shadow-2xl px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-white overflow-x-auto max-w-full">
+    <div className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[95vw] sm:max-w-max animate-in fade-in slide-in-from-bottom-5 duration-200">
+      <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-900/95 dark:bg-[#1e1f20]/95 backdrop-blur-xl border border-slate-700/70 shadow-2xl px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-white overflow-x-auto no-scrollbar max-w-full">
         {/* Count chip */}
         <div className="flex items-center gap-2 pr-2 border-r border-slate-700/80">
           <div className="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-xs">

@@ -55,9 +55,11 @@ export default function Sidebar() {
         {isMobile && (
           <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-                <Send className="w-4 h-4 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
-              </div>
+              <img
+                src="/logo.png"
+                alt="TeleDrive"
+                className="w-8 h-8 rounded-xl object-contain shadow-md shadow-blue-500/20"
+              />
               <span className="font-bold text-base text-slate-800 dark:text-white">TeleDrive</span>
             </div>
             <button

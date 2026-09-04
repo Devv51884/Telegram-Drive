@@ -329,7 +329,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Nav Tab Buttons */}
-            <div className="flex md:flex-col gap-1 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+            <div className="flex md:flex-col gap-1 overflow-x-auto no-scrollbar pb-1 md:pb-0">
               {navItems.map((item) => {
                 const isActive = activeTab === item.id;
                 return (

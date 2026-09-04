@@ -116,11 +116,11 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             onClick={() => onNavigate("landing")}
             className="flex items-center gap-3 cursor-pointer group"
           >
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-sky-500 to-cyan-400 p-0.5 shadow-lg shadow-blue-500/25 group-hover:scale-105 group-hover:shadow-blue-500/40 transition-all">
-              <div className="w-full h-full bg-[#0b0f17] rounded-[14px] flex items-center justify-center">
-                <Cloud className="w-5 h-5 text-blue-400" />
-              </div>
-            </div>
+            <img
+              src="/logo.png"
+              alt="TeleDrive"
+              className="w-10 h-10 rounded-2xl object-contain shadow-lg shadow-blue-500/25 group-hover:scale-105 group-hover:shadow-blue-500/40 transition-all"
+            />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-lg sm:text-xl tracking-tight text-white">
@@ -834,11 +834,11 @@ export default function LandingPage({ onNavigate, siteSettings }) {
           {/* Brand Info */}
           <div className="space-y-3 md:col-span-2">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 p-0.5">
-                <div className="w-full h-full bg-[#0f172a] rounded-[10px] flex items-center justify-center">
-                  <Cloud className="w-4 h-4 text-blue-400" />
-                </div>
-              </div>
+              <img
+                src="/logo.png"
+                alt="TeleDrive"
+                className="w-8 h-8 rounded-xl object-contain shadow-md"
+              />
               <span className="font-extrabold text-lg text-white">TeleDrive Cloud</span>
             </div>
             <p className="text-xs text-slate-400 max-w-sm leading-relaxed">

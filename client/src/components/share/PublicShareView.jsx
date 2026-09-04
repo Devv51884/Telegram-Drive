@@ -386,8 +386,8 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white gap-4 p-4 font-sans selection:bg-blue-600 selection:text-white">
         <div className="relative">
-          <div className="w-16 h-16 rounded-3xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center animate-pulse">
-            <Send className="w-7 h-7 text-blue-400 -rotate-12" />
+          <div className="w-16 h-16 rounded-3xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center animate-pulse p-2">
+            <img src="/logo.png" alt="TeleDrive" className="w-12 h-12 rounded-2xl object-contain" />
           </div>
           <Loader2 className="w-6 h-6 text-blue-400 animate-spin absolute -bottom-1 -right-1" />
         </div>
@@ -572,9 +572,11 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
       <header className="h-16 px-4 sm:px-8 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between flex-shrink-0 z-20 sticky top-0">
         <div className="flex items-center gap-3 truncate max-w-[65vw]">
           <a href={window.location.origin} className="flex items-center gap-2 font-bold text-sm tracking-tight text-white flex-shrink-0 hover:opacity-90 transition-opacity">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-600/30">
-              <Send className="w-4 h-4 text-white -rotate-12 translate-x-[-1px]" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="TeleDrive"
+              className="w-8 h-8 rounded-xl object-contain shadow-md shadow-blue-600/30"
+            />
             <span className="hidden sm:inline font-black tracking-tight">TeleDrive Cloud</span>
           </a>
 

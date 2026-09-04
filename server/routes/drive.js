@@ -279,15 +279,15 @@ router.post("/bulk-trash", async (req, res) => {
       await sqlite.run(`UPDATE folders SET is_trash = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, folderIds);
     }
 
-    (async () => {
-      try {
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          if (fileIds.length > 0) await supabase.from("files").update({ is_trash: 1 }).in("id", fileIds);
-          if (folderIds.length > 0) await supabase.from("folders").update({ is_trash: 1 }).in("id", folderIds);
-        }
-      } catch {}
-    })();
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        if (fileIds.length > 0) await supabase.from("files").update({ is_trash: 1 }).in("id", fileIds);
+        if (folderIds.length > 0) await supabase.from("folders").update({ is_trash: 1 }).in("id", folderIds);
+      }
+    } catch (supaErr) {
+      console.warn("Supabase bulk-trash sync warning:", supaErr.message);
+    }
 
     res.json({ success: true, message: `Moved ${fileIds.length + folderIds.length} items to Trash` });
   } catch (err) {
@@ -311,15 +311,15 @@ router.post("/bulk-restore", async (req, res) => {
       await sqlite.run(`UPDATE folders SET is_trash = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`, folderIds);
     }
 
-    (async () => {
-      try {
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          if (fileIds.length > 0) await supabase.from("files").update({ is_trash: 0 }).in("id", fileIds);
-          if (folderIds.length > 0) await supabase.from("folders").update({ is_trash: 0 }).in("id", folderIds);
-        }
-      } catch {}
-    })();
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        if (fileIds.length > 0) await supabase.from("files").update({ is_trash: 0 }).in("id", fileIds);
+        if (folderIds.length > 0) await supabase.from("folders").update({ is_trash: 0 }).in("id", folderIds);
+      }
+    } catch (supaErr) {
+      console.warn("Supabase bulk-restore sync warning:", supaErr.message);
+    }
 
     res.json({ success: true, message: `Restored ${fileIds.length + folderIds.length} items from Trash` });
   } catch (err) {
@@ -350,15 +350,15 @@ router.post("/bulk-move", async (req, res) => {
       );
     }
 
-    (async () => {
-      try {
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          if (fileIds.length > 0) await supabase.from("files").update({ folder_id: destination }).in("id", fileIds);
-          if (folderIds.length > 0) await supabase.from("folders").update({ parent_id: destination }).in("id", folderIds);
-        }
-      } catch {}
-    })();
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        if (fileIds.length > 0) await supabase.from("files").update({ folder_id: destination }).in("id", fileIds);
+        if (folderIds.length > 0) await supabase.from("folders").update({ parent_id: destination }).in("id", folderIds);
+      }
+    } catch (supaErr) {
+      console.warn("Supabase bulk-move sync warning:", supaErr.message);
+    }
 
     res.json({ success: true, message: `Moved ${fileIds.length + folderIds.length} items successfully` });
   } catch (err) {
@@ -389,15 +389,15 @@ router.post("/bulk-star", async (req, res) => {
       );
     }
 
-    (async () => {
-      try {
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          if (fileIds.length > 0) await supabase.from("files").update({ is_starred: starVal }).in("id", fileIds);
-          if (folderIds.length > 0) await supabase.from("folders").update({ is_starred: starVal }).in("id", folderIds);
-        }
-      } catch {}
-    })();
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        if (fileIds.length > 0) await supabase.from("files").update({ is_starred: starVal }).in("id", fileIds);
+        if (folderIds.length > 0) await supabase.from("folders").update({ is_starred: starVal }).in("id", folderIds);
+      }
+    } catch (supaErr) {
+      console.warn("Supabase bulk-star sync warning:", supaErr.message);
+    }
 
     res.json({ success: true, message: `Updated star status on ${fileIds.length + folderIds.length} items` });
   } catch (err) {
@@ -427,15 +427,15 @@ router.post("/bulk-delete", async (req, res) => {
       await sqlite.run(`DELETE FROM folders WHERE id IN (${placeholders})`, folderIds);
     }
 
-    (async () => {
-      try {
-        const supabase = await getSupabaseClient();
-        if (supabase) {
-          if (fileIds.length > 0) await supabase.from("files").delete().in("id", fileIds);
-          if (folderIds.length > 0) await supabase.from("folders").delete().in("id", folderIds);
-        }
-      } catch {}
-    })();
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        if (fileIds.length > 0) await supabase.from("files").delete().in("id", fileIds);
+        if (folderIds.length > 0) await supabase.from("folders").delete().in("id", folderIds);
+      }
+    } catch (supaErr) {
+      console.warn("Supabase bulk-delete sync warning:", supaErr.message);
+    }
 
     res.json({ success: true, message: `Deleted ${fileIds.length + folderIds.length} items permanently` });
   } catch (err) {
@@ -460,15 +460,35 @@ router.post("/empty-trash", async (req, res) => {
     const trashFiles = await sqlite.all(trashFilesQuery, params);
     const trashFolders = await sqlite.all(trashFoldersQuery, params);
 
+    const fileIds = trashFiles.map((f) => f.id);
+    const folderIds = trashFolders.map((f) => f.id);
+
     for (const file of trashFiles) {
       if (file.telegram_message_id && file.telegram_channel_id && file.source_type === "upload") {
-        await deleteTelegramMessage(file.telegram_message_id, file.telegram_channel_id);
+        deleteTelegramMessage(file.telegram_message_id, file.telegram_channel_id).catch(() => {});
       }
       await sqlite.run("DELETE FROM files WHERE id = ?", [file.id]);
     }
 
     for (const folder of trashFolders) {
       await sqlite.run("DELETE FROM folders WHERE id = ?", [folder.id]);
+    }
+
+    // Reliably delete files and folders from Supabase Cloud Database
+    try {
+      const supabase = await getSupabaseClient();
+      if (supabase) {
+        if (fileIds.length > 0) {
+          const { error: supaFileErr } = await supabase.from("files").delete().in("id", fileIds);
+          if (supaFileErr) console.warn("Supabase empty-trash files error:", supaFileErr.message);
+        }
+        if (folderIds.length > 0) {
+          const { error: supaFolderErr } = await supabase.from("folders").delete().in("id", folderIds);
+          if (supaFolderErr) console.warn("Supabase empty-trash folders error:", supaFolderErr.message);
+        }
+      }
+    } catch (supaErr) {
+      console.warn("Supabase empty-trash sync warning:", supaErr.message);
     }
 
     res.json({

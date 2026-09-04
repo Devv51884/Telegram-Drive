@@ -5,7 +5,6 @@ import {
   LayoutGrid,
   List,
   RefreshCw,
-  Send,
   User,
   LogOut,
   Settings,
@@ -70,9 +69,11 @@ export default function Header() {
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 flex-shrink-0">
-          <Send className="w-4 h-4 sm:w-5 sm:h-5 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
-        </div>
+        <img
+          src="/logo.png"
+          alt="TeleDrive Logo"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain shadow-md shadow-blue-500/20 flex-shrink-0"
+        />
         <div className="hidden xs:block sm:block">
           <span className="font-bold text-base sm:text-lg text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
             TeleDrive

@@ -319,9 +319,11 @@ export default function AuthScreen({ initialTab = "signin", onBack }) {
 
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 mb-3 animate-bounce-subtle">
-            <Send className="w-6 h-6 -rotate-12 translate-x-[-1px] translate-y-[1px]" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="TeleDrive Logo"
+            className="w-14 h-14 rounded-2xl object-contain shadow-lg shadow-blue-500/30 mb-3"
+          />
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
             <span>TeleDrive</span>
             <span className="text-xs uppercase font-bold tracking-wider bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full">

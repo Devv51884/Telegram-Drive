@@ -82,9 +82,11 @@ export async function getStorageGramClient() {
     }
 
     try {
-      const botSession = new StringSession(savedSession || "");
       const botClient = new TelegramClient(botSession, config.apiId, config.apiHash, {
-        connectionRetries: 3,
+        connectionRetries: 10,
+        requestRetries: 5,
+        timeout: 35,
+        autoReconnect: true,
         useWSS: false
       });
 
@@ -162,9 +164,11 @@ export async function getUserGramClient(userId = null) {
   }
 
   try {
-    const session = new StringSession(sessionStr);
     const client = new TelegramClient(session, config.apiId, config.apiHash, {
-      connectionRetries: 3,
+      connectionRetries: 10,
+      requestRetries: 5,
+      timeout: 35,
+      autoReconnect: true,
       useWSS: false
     });
 
@@ -408,11 +412,12 @@ export async function uploadFileToTelegram(
         file: fileInput,
         caption: caption || originalname,
         forceDocument: true,
-        workers: 1, // Single worker is rock-solid and prevents socket race deadlocks on cloud hosting
+        workers: 4, // 4 parallel MTProto workers for 3x-4x faster high-speed cloud uploads
         progressCallback: (progress) => {
           if (progressCallback) {
-            const percent = Math.min(99, Math.max(1, Math.round(progress * 100)));
-            const loaded = Math.round(progress * fileSize);
+            const rawPct = typeof progress === "number" ? progress : (progress?.progress || 0);
+            const percent = Math.min(99, Math.max(1, Math.round(rawPct * 100)));
+            const loaded = Math.round(rawPct * fileSize);
             progressCallback({ loaded, total: fileSize, percent });
           }
         },

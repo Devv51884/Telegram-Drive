@@ -145,7 +145,7 @@ router.post("/upload-chunk/complete", async (req, res) => {
   (async () => {
     const assembledFilePath = path.join(uploadDir, `${Date.now()}_${crypto.randomBytes(6).toString("hex")}_${cleanName}`);
     try {
-      // 1. Verify and assemble all chunks sequentially
+      // 1. Verify and assemble all chunks sequentially via zero-memory stream piping with backpressure
       const writeStream = fs.createWriteStream(assembledFilePath);
 
       for (let i = 0; i < numChunks; i++) {
@@ -162,9 +162,29 @@ router.post("/upload-chunk/complete", async (req, res) => {
           return;
         }
 
-        const chunkBuffer = fs.readFileSync(chunkPath);
-        writeStream.write(chunkBuffer);
-        try { fs.unlinkSync(chunkPath); } catch {}
+        // Stream chunk file directly into assembled writeStream with backpressure handling (never loads into V8 heap)
+        await new Promise((resolve, reject) => {
+          const readStream = fs.createReadStream(chunkPath);
+          readStream.on("error", (err) => {
+            writeStream.destroy();
+            reject(err);
+          });
+          readStream.on("end", () => {
+            try { fs.unlinkSync(chunkPath); } catch {}
+            resolve();
+          });
+          readStream.pipe(writeStream, { end: false });
+        });
+
+        // Update real-time chunk assembly progress (0% -> 100%)
+        const assemblePercent = Math.min(99, Math.max(1, Math.round(((i + 1) / numChunks) * 100)));
+        activeUploadProgress.set(uploadId, {
+          loaded: i + 1,
+          total: numChunks,
+          percent: assemblePercent,
+          status: "assembling",
+          updatedAt: Date.now()
+        });
       }
 
       await new Promise((resolve, reject) => {
@@ -236,8 +256,8 @@ router.post("/upload-chunk/complete", async (req, res) => {
 
       console.log(`🚀 [ASYNC UPLOAD COMPLETED] File "${cleanName}" (${(finalSize / (1024 * 1024)).toFixed(1)} MB) saved to Telegram Cloud.`);
 
-      // Clear from memory after 10 minutes
-      setTimeout(() => activeUploadProgress.delete(uploadId), 10 * 60 * 1000);
+      // Retain finished status in memory for 60 minutes for reliable client polling & recovery
+      setTimeout(() => activeUploadProgress.delete(uploadId), 60 * 60 * 1000);
     } catch (err) {
       console.error("Async chunk complete error:", err.message);
       try { if (fs.existsSync(assembledFilePath)) fs.unlinkSync(assembledFilePath); } catch {}
@@ -247,7 +267,7 @@ router.post("/upload-chunk/complete", async (req, res) => {
         percent: 0,
         updatedAt: Date.now()
       });
-      setTimeout(() => activeUploadProgress.delete(uploadId), 5 * 60 * 1000);
+      setTimeout(() => activeUploadProgress.delete(uploadId), 15 * 60 * 1000);
     }
   })();
 });

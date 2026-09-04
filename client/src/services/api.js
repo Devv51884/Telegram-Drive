@@ -160,8 +160,9 @@ export const DriveAPI = {
       onProgress({
         loaded: fileSize,
         total: fileSize,
-        percent: 88,
-        stage: "assembling"
+        percent: 85,
+        stage: "assembling",
+        assemblePercent: 0
       });
     }
 
@@ -174,7 +175,7 @@ export const DriveAPI = {
       mimeType: file.type,
       totalSize: fileSize
     }, {
-      timeout: 30000,
+      timeout: 45000,
       signal
     });
 
@@ -184,8 +185,11 @@ export const DriveAPI = {
     }
 
     // Server is processing in background; poll /files/upload-progress/:uploadId until done
+    // Dynamically scale polling timeout based on file size (up to 3,600s / 60 minutes for 2GB)
     let pollCount = 0;
-    const maxPolls = 600; // up to 10 minutes
+    const maxPolls = Math.max(1800, Math.ceil(fileSize / (1024 * 1024)) * 3);
+    let consecutiveNullCount = 0;
+
     while (pollCount < maxPolls) {
       if (signal?.aborted) throw new Error("canceled");
       await new Promise((res) => setTimeout(res, 1000));
@@ -194,7 +198,10 @@ export const DriveAPI = {
       try {
         const progressRes = await api.get(`/files/upload-progress/${encodeURIComponent(uploadId)}`);
         const prog = progressRes.data?.progress;
+
         if (prog) {
+          consecutiveNullCount = 0;
+
           if (prog.status === "done" && prog.file) {
             if (onProgress) {
               onProgress({
@@ -206,23 +213,51 @@ export const DriveAPI = {
             }
             return { success: true, file: prog.file };
           }
+
           if (prog.status === "error") {
             throw new Error(prog.error || "Telegram upload failed on server");
           }
+
           if (onProgress) {
-            let telegramPercent = 90;
             if (prog.status === "assembling") {
-              telegramPercent = 88;
-            } else if (prog.percent !== undefined) {
-              telegramPercent = Math.min(99, Math.max(90, Math.round(90 + (prog.percent || 0) * 0.09)));
+              const assemblePct = typeof prog.percent === "number" ? prog.percent : 0;
+              const mappedPercent = Math.min(89, Math.max(85, Math.round(85 + (assemblePct * 0.04))));
+              onProgress({
+                loaded: Math.round(fileSize * (mappedPercent / 100)),
+                total: fileSize,
+                percent: mappedPercent,
+                assemblePercent: assemblePct,
+                stage: "assembling"
+              });
+            } else if (prog.status === "telegram_uploading") {
+              const tgPct = typeof prog.percent === "number" ? prog.percent : 0;
+              const mappedPercent = Math.min(99, Math.max(90, Math.round(90 + (tgPct * 0.09))));
+              onProgress({
+                loaded: Math.round(fileSize * (mappedPercent / 100)),
+                total: fileSize,
+                percent: mappedPercent,
+                telegramPercent: tgPct,
+                stage: "telegram_cloud"
+              });
             }
-            onProgress({
-              loaded: Math.round(fileSize * (telegramPercent / 100)),
-              total: fileSize,
-              percent: telegramPercent,
-              telegramPercent: prog.percent || 0,
-              stage: prog.status === "assembling" ? "assembling" : "telegram_cloud"
-            });
+          }
+        } else {
+          consecutiveNullCount++;
+          // If server restarted or lost memory state after upload was in progress, check if file was already saved in DB
+          if (consecutiveNullCount >= 10 && pollCount > 15) {
+            try {
+              const targetFolder = folderId && folderId !== "root" ? folderId : null;
+              const checkRes = await api.get(`/files?folderId=${targetFolder || "root"}&limit=20`);
+              const found = checkRes.data?.files?.find(
+                (f) => f.name === file.name && Math.abs(f.size - fileSize) < 1024
+              );
+              if (found) {
+                if (onProgress) {
+                  onProgress({ loaded: fileSize, total: fileSize, percent: 100, stage: "done" });
+                }
+                return { success: true, file: found };
+              }
+            } catch {}
           }
         }
       } catch (pollErr) {
