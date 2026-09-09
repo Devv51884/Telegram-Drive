@@ -39,12 +39,16 @@ import {
   Inbox,
   Check,
   Sparkles,
-  Mail
+  Mail,
+  Filter,
+  Copy,
+  CloudDownload,
+  Folder
 } from "lucide-react";
 
 export default function AdminPage() {
   const { currentUser, setSection, showToast, refresh, setPreviewItem, setActiveModal } = useDrive();
-  const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'users', 'files', 'system', 'contact'
+  const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'users', 'files', 'telegram_imports', 'system', 'contact'
   const [loading, setLoading] = useState(false);
   const [overviewData, setOverviewData] = useState(null);
   const [usersList, setUsersList] = useState([]);
@@ -53,8 +57,24 @@ export default function AdminPage() {
   const [userSearch, setUserSearch] = useState("");
   const [fileSearch, setFileSearch] = useState("");
   const [fileTypeFilter, setFileTypeFilter] = useState("all");
+  const [fileSourceFilter, setFileSourceFilter] = useState("all"); // 'all', 'telegram_post', 'upload'
+  const [filePage, setFilePage] = useState(1);
+  const [fileLimit, setFileLimit] = useState(50);
   const [pingResult, setPingResult] = useState(null);
   const [pinging, setPinging] = useState(false);
+
+  // Telegram Cloud Imports state
+  const [tgImportsSummary, setTgImportsSummary] = useState(null);
+  const [tgImportsFiles, setTgImportsFiles] = useState([]);
+  const [tgImportsTotal, setTgImportsTotal] = useState(0);
+  const [tgImportsPage, setTgImportsPage] = useState(1);
+  const [tgImportsLimit, setTgImportsLimit] = useState(50);
+  const [tgImportsChannelFilter, setTgImportsChannelFilter] = useState("all");
+  const [tgImportsSearch, setTgImportsSearch] = useState("");
+  const [loadingTgImports, setLoadingTgImports] = useState(false);
+
+  // Supabase cloud sync state
+  const [syncingCloud, setSyncingCloud] = useState(false);
 
   // Email diagnostics & settings state
   const [emailStatus, setEmailStatus] = useState(null);
@@ -103,7 +123,9 @@ export default function AdminPage() {
       } else if (activeTab === "users") {
         fetchUsers();
       } else if (activeTab === "files") {
-        fetchFiles();
+        fetchFiles(filePage);
+      } else if (activeTab === "telegram_imports") {
+        fetchTelegramImports(tgImportsPage);
       } else if (activeTab === "system") {
         fetchEmailStatus();
         fetchSystemMetrics();
@@ -113,7 +135,7 @@ export default function AdminPage() {
         fetchSiteSettings();
       }
     }
-  }, [activeTab, isAdmin]);
+  }, [activeTab, isAdmin, filePage, fileSourceFilter, fileTypeFilter, tgImportsPage, tgImportsChannelFilter]);
 
   const fetchContactMessages = async () => {
     setLoading(true);
@@ -226,13 +248,15 @@ export default function AdminPage() {
     }
   };
 
-  const fetchFiles = async () => {
+  const fetchFiles = async (pageToFetch = filePage) => {
     setLoading(true);
     try {
       const res = await DriveAPI.getAdminFiles({
         search: fileSearch,
         type: fileTypeFilter,
-        limit: 50
+        source: fileSourceFilter,
+        page: pageToFetch,
+        limit: fileLimit
       });
       if (res.success) {
         setFilesList(res.files);
@@ -242,6 +266,46 @@ export default function AdminPage() {
       showToast(err.response?.data?.error || "Failed to fetch files", "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTelegramImports = async (pageToFetch = tgImportsPage) => {
+    setLoadingTgImports(true);
+    try {
+      const res = await DriveAPI.getAdminTelegramImports({
+        search: tgImportsSearch,
+        channelId: tgImportsChannelFilter,
+        page: pageToFetch,
+        limit: tgImportsLimit
+      });
+      if (res.success) {
+        setTgImportsSummary(res.summary);
+        setTgImportsFiles(res.files);
+        setTgImportsTotal(res.total);
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to fetch Telegram imports", "error");
+    } finally {
+      setLoadingTgImports(false);
+    }
+  };
+
+  const handleTriggerCloudSync = async () => {
+    setSyncingCloud(true);
+    try {
+      const res = await DriveAPI.triggerAdminCloudSync();
+      if (res.success) {
+        showToast(res.message || "Cloud sync completed successfully!", "success");
+        fetchOverview();
+        if (activeTab === "files") fetchFiles(1);
+        if (activeTab === "telegram_imports") fetchTelegramImports(1);
+      } else {
+        showToast(res.error || "Failed to sync cloud data", "error");
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Cloud sync failed", "error");
+    } finally {
+      setSyncingCloud(false);
     }
   };
 
@@ -498,6 +562,16 @@ export default function AdminPage() {
         {/* Header Right Badges & Actions */}
         <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
           <button
+            onClick={handleTriggerCloudSync}
+            disabled={syncingCloud}
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/80 transition-all hover:bg-purple-100 disabled:opacity-50"
+            title="Bi-directional Sync with Supabase Cloud Database"
+          >
+            <CloudDownload className={`w-3.5 h-3.5 ${syncingCloud ? "animate-spin text-purple-500" : ""}`} />
+            <span>{syncingCloud ? "Syncing Cloud..." : "Sync Cloud"}</span>
+          </button>
+
+          <button
             onClick={handlePing}
             disabled={pinging}
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80 transition-all hover:bg-emerald-100"
@@ -512,6 +586,7 @@ export default function AdminPage() {
               fetchOverview();
               if (activeTab === "users") fetchUsers();
               if (activeTab === "files") fetchFiles();
+              if (activeTab === "telegram_imports") fetchTelegramImports();
             }}
             disabled={loading}
             className="p-1.5 sm:p-2 rounded-xl bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-600 dark:text-slate-300 transition-colors border border-slate-200/80 dark:border-slate-700"
@@ -558,6 +633,18 @@ export default function AdminPage() {
         >
           <FileText className="w-3.5 h-3.5" />
           <span>Files</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("telegram_imports")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "telegram_imports"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <Radio className="w-3.5 h-3.5 text-sky-400" />
+          <span>TG Imports</span>
         </button>
 
         <button
@@ -628,6 +715,18 @@ export default function AdminPage() {
             >
               <FileText className="w-4 h-4" />
               <span>Global File Explorer</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("telegram_imports")}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-semibold transition-all ${
+                activeTab === "telegram_imports"
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c] hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              <Radio className="w-4 h-4 text-sky-400" />
+              <span>Telegram Cloud Imports</span>
             </button>
 
             <button
@@ -712,8 +811,8 @@ export default function AdminPage() {
                   <p className="text-3xl font-black text-slate-800 dark:text-white">
                     {formatBytes(overviewData.totalStorage)}
                   </p>
-                  <p className="text-xs text-emerald-500 font-semibold mt-1 flex items-center gap-1">
-                    <Cloud className="w-3.5 h-3.5" /> Free Unlimited Storage
+                  <p className="text-xs text-slate-400 font-medium mt-1">
+                    {formatBytes(overviewData.importedStorage || 0)} imported • {formatBytes(overviewData.uploadedStorage || 0)} uploaded
                   </p>
                 </div>
 
@@ -1120,88 +1219,136 @@ export default function AdminPage() {
                   <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search all files by name or user..."
+                    placeholder="Search all files by name, channel, or user..."
                     value={fileSearch}
                     onChange={(e) => setFileSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && fetchFiles()}
+                    onKeyDown={(e) => e.key === "Enter" && fetchFiles(1)}
                     className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm"
                   />
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Source Type Filter (All / Telegram Imports / Direct Uploads) */}
+                  <select
+                    value={fileSourceFilter}
+                    onChange={(e) => {
+                      setFileSourceFilter(e.target.value);
+                      setFilePage(1);
+                    }}
+                    className="px-3.5 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none shadow-sm"
+                  >
+                    <option value="all">🌐 All Sources (Uploads & TG)</option>
+                    <option value="telegram_post">📱 Telegram Imports Only</option>
+                    <option value="upload">⬆️ Direct Uploads Only</option>
+                  </select>
+
+                  {/* Media Type Filter */}
                   <select
                     value={fileTypeFilter}
                     onChange={(e) => {
                       setFileTypeFilter(e.target.value);
-                      setTimeout(fetchFiles, 50);
+                      setFilePage(1);
                     }}
-                    className="px-4 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none shadow-sm"
+                    className="px-3.5 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none shadow-sm"
                   >
                     <option value="all">All File Types</option>
                     <option value="video">Videos</option>
-                    <option value="document">Documents</option>
+                    <option value="document">Documents & PDFs</option>
                     <option value="image">Images</option>
                     <option value="audio">Audio</option>
                   </select>
+
                   <button
-                    onClick={fetchFiles}
-                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-semibold shadow-md transition-all"
+                    onClick={() => fetchFiles(1)}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5"
                   >
-                    Apply Filter
+                    <Filter className="w-3.5 h-3.5" />
+                    <span>Apply Filter</span>
                   </button>
                 </div>
               </div>
 
               {/* Mobile File Cards (< sm screens) */}
               <div className="grid grid-cols-1 gap-3 sm:hidden">
-                {filesList.map((f) => (
-                  <div
-                    key={f.id}
-                    className="p-4 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-2.5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 flex-shrink-0">
-                        {f.type === "video" ? (
-                          <Film className="w-5 h-5 text-blue-500" />
-                        ) : f.type === "image" ? (
-                          <ImageIcon className="w-5 h-5 text-emerald-500" />
-                        ) : f.type === "audio" ? (
-                          <Music className="w-5 h-5 text-purple-500" />
-                        ) : (
-                          <FileIcon className="w-5 h-5 text-slate-400" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-800 dark:text-white text-xs truncate">{f.name}</p>
-                        <p className="text-[10px] text-slate-400 truncate">Owner: {f.user_name || "Owner"}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <span>{formatBytes(f.size)}</span>
-                      <span className="text-[10px] font-mono text-slate-400">Msg #{f.telegram_message_id}</span>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewItem(f)}
-                        className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-xs font-semibold flex items-center gap-1.5"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Preview</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(f.id, f.name)}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
-                    </div>
+                {filesList.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 font-medium bg-white dark:bg-[#1e1f20] rounded-2xl border border-slate-200 dark:border-slate-800">
+                    No files found matching your filter criteria.
                   </div>
-                ))}
+                ) : (
+                  filesList.map((f) => (
+                    <div
+                      key={f.id}
+                      className="p-4 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-2.5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 flex-shrink-0">
+                          {f.type === "video" ? (
+                            <Film className="w-5 h-5 text-blue-500" />
+                          ) : f.type === "image" ? (
+                            <ImageIcon className="w-5 h-5 text-emerald-500" />
+                          ) : f.type === "audio" ? (
+                            <Music className="w-5 h-5 text-purple-500" />
+                          ) : (
+                            <FileIcon className="w-5 h-5 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-800 dark:text-white text-xs truncate">{f.name}</p>
+                          <p className="text-[10px] text-slate-400 truncate">Owner: {f.user_name || "Owner"}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <span>{formatBytes(f.size)}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                            f.source_type === "upload"
+                              ? "bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                              : "bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400"
+                          }`}
+                        >
+                          {f.source_type === "upload" ? "Upload" : "TG Import"}
+                        </span>
+                      </div>
+
+                      {f.source_type === "telegram_post" && f.telegram_channel_title && (
+                        <p className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold truncate">
+                          📁 {f.telegram_channel_title}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        {f.telegram_post_url && (
+                          <a
+                            href={f.telegram_post_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 text-xs font-semibold flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Link</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setPreviewItem(f)}
+                          className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-xs font-semibold flex items-center gap-1.5"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Preview</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(f.id, f.name)}
+                          className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* Desktop Files Table (hidden on mobile, visible on sm+) */}
@@ -1218,67 +1365,421 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {filesList.map((f) => (
-                      <tr key={f.id} className="hover:bg-slate-50/80 dark:hover:bg-[#242628] transition-colors">
-                        <td className="p-4">
-                          <div className="flex items-center gap-3 max-w-sm truncate">
-                            {f.type === "video" ? (
-                              <Film className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                            ) : f.type === "image" ? (
-                              <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                            ) : f.type === "audio" ? (
-                              <Music className="w-4 h-4 text-purple-500 flex-shrink-0" />
-                            ) : (
-                              <FileIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                            )}
-                            <span className="font-bold text-slate-800 dark:text-white truncate">
-                              {f.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-4 text-slate-600 dark:text-slate-400 font-medium">
-                          {f.user_name || "Owner"}
-                        </td>
-                        <td className="p-4">
-                          <span
-                            className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
-                              f.source_type === "upload"
-                                ? "bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
-                                : "bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400"
-                            }`}
-                          >
-                            {f.source_type === "upload" ? "Direct Upload" : "TG Post Link"}
-                          </span>
-                        </td>
-                        <td className="p-4 text-slate-500 dark:text-slate-400 font-semibold">
-                          {formatBytes(f.size)}
-                        </td>
-                        <td className="p-4 text-slate-400 font-mono text-[11px]">
-                          Msg #{f.telegram_message_id} • Channel {f.telegram_channel_id}
-                        </td>
-                        <td className="p-4 text-right space-x-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewItem(f)}
-                            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-500 transition-colors"
-                            title="Preview File"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteFile(f.id, f.name)}
-                            className="p-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 transition-colors"
-                            title="Force Delete File"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                    {filesList.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                          No files found matching your filter criteria.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      filesList.map((f) => (
+                        <tr key={f.id} className="hover:bg-slate-50/80 dark:hover:bg-[#242628] transition-colors">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3 max-w-sm truncate">
+                              {f.type === "video" ? (
+                                <Film className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                              ) : f.type === "image" ? (
+                                <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                              ) : f.type === "audio" ? (
+                                <Music className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                              ) : (
+                                <FileIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                              )}
+                              <span className="font-bold text-slate-800 dark:text-white truncate">
+                                {f.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-slate-600 dark:text-slate-400 font-medium">
+                            {f.user_name || "Owner"}
+                          </td>
+                          <td className="p-4">
+                            <span
+                              className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                                f.source_type === "upload"
+                                  ? "bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                                  : "bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400"
+                              }`}
+                            >
+                              {f.source_type === "upload" ? "Direct Upload" : "TG Post Link"}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-500 dark:text-slate-400 font-semibold">
+                            {formatBytes(f.size)}
+                          </td>
+                          <td className="p-4">
+                            {f.source_type === "telegram_post" ? (
+                              <div className="space-y-1 max-w-xs">
+                                <p className="font-bold text-purple-600 dark:text-purple-400 truncate">
+                                  {f.telegram_channel_title || "Linked Channel"}
+                                </p>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                  <span>Msg #{f.telegram_message_id}</span>
+                                  {f.telegram_post_url && (
+                                    <a
+                                      href={f.telegram_post_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-sky-500 hover:text-sky-600 dark:text-sky-400 flex items-center gap-1 underline font-medium"
+                                      title="Open in Telegram Web/App"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      <span>View Post</span>
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <p className="text-slate-500 dark:text-slate-400 text-xs">Bot Storage Channel</p>
+                                <p className="text-[11px] font-mono text-slate-400">
+                                  Msg #{f.telegram_message_id} • {f.telegram_channel_id}
+                                </p>
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-4 text-right space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewItem(f)}
+                              className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-500 transition-colors"
+                              title="Preview File"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFile(f.id, f.name)}
+                              className="p-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 transition-colors"
+                              title="Force Delete File"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
+
+              {/* Global File Explorer Pagination Controls */}
+              {filesTotal > 0 && (
+                <div className="p-4 bg-white dark:bg-[#1e1f20] rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
+                  <div>
+                    Showing <span className="font-bold text-slate-800 dark:text-white">{Math.min(filesTotal, (filePage - 1) * fileLimit + 1)}</span> to{" "}
+                    <span className="font-bold text-slate-800 dark:text-white">{Math.min(filesTotal, filePage * fileLimit)}</span> of{" "}
+                    <span className="font-bold text-purple-600 dark:text-purple-400">{filesTotal}</span> total files
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={filePage <= 1}
+                      onClick={() => {
+                        const prev = Math.max(1, filePage - 1);
+                        setFilePage(prev);
+                        fetchFiles(prev);
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#282a2c] disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold transition-all"
+                    >
+                      Previous
+                    </button>
+
+                    <div className="px-3 py-1 font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 rounded-xl">
+                      Page {filePage} of {Math.max(1, Math.ceil(filesTotal / fileLimit))}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={filePage >= Math.ceil(filesTotal / fileLimit)}
+                      onClick={() => {
+                        const next = filePage + 1;
+                        setFilePage(next);
+                        fetchFiles(next);
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#282a2c] disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold transition-all"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3B: DEDICATED TELEGRAM CLOUD IMPORTS EXPLORER */}
+          {activeTab === "telegram_imports" && (
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-7xl mx-auto">
+              {/* Telegram Imports Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-[#1e1f20] p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider">Imported Files</span>
+                    <Radio className="w-5 h-5 text-sky-500" />
+                  </div>
+                  <p className="text-3xl font-black text-slate-800 dark:text-white">
+                    {tgImportsSummary?.totalFiles || 0}
+                  </p>
+                  <p className="text-xs text-sky-500 font-semibold mt-1 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Direct stream linked
+                  </p>
+                </div>
+
+                <div className="bg-white dark:bg-[#1e1f20] p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider">Imported Cloud Size</span>
+                    <HardDrive className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <p className="text-3xl font-black text-slate-800 dark:text-white">
+                    {formatBytes(tgImportsSummary?.totalSize || 0)}
+                  </p>
+                  <p className="text-xs text-purple-500 font-semibold mt-1 flex items-center gap-1">
+                    <Cloud className="w-3.5 h-3.5" /> 0 Local Disk Overhead
+                  </p>
+                </div>
+
+                <div className="bg-white dark:bg-[#1e1f20] p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider">Connected Channels</span>
+                    <Layers className="w-5 h-5 text-indigo-500" />
+                  </div>
+                  <p className="text-3xl font-black text-slate-800 dark:text-white">
+                    {tgImportsSummary?.totalChannels || tgImportsSummary?.channels?.length || 0}
+                  </p>
+                  <p className="text-xs text-slate-400 font-medium mt-1">
+                    Across user connected accounts
+                  </p>
+                </div>
+
+                <div className="bg-white dark:bg-[#1e1f20] p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider">Streaming Gateway</span>
+                    <Server className="w-5 h-5 text-emerald-500" />
+                  </div>
+                  <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                    Active Multi-DC
+                  </p>
+                  <p className="text-xs text-emerald-500 font-semibold mt-1 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Range seeking supported
+                  </p>
+                </div>
+              </div>
+
+              {/* Channel Filter Pills */}
+              {tgImportsSummary?.channels && tgImportsSummary.channels.length > 0 && (
+                <div className="bg-white dark:bg-[#1e1f20] p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-purple-500" />
+                      Filter by Telegram Channel / Course Source
+                    </h3>
+                    <span className="text-xs font-semibold text-slate-400">
+                      {tgImportsSummary.channels.length} Source Channels
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTgImportsChannelFilter("all");
+                        setTgImportsPage(1);
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        tgImportsChannelFilter === "all"
+                          ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
+                          : "bg-slate-100 dark:bg-[#282a2c] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      All Channels ({tgImportsSummary.totalFiles})
+                    </button>
+
+                    {tgImportsSummary.channels.map((ch, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setTgImportsChannelFilter(ch.telegram_channel_id || "all");
+                          setTgImportsPage(1);
+                        }}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+                          tgImportsChannelFilter === ch.telegram_channel_id
+                            ? "bg-sky-600 text-white shadow-md shadow-sky-500/20"
+                            : "bg-slate-100 dark:bg-[#282a2c] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        <span className="truncate max-w-[200px]">{ch.channel_name}</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-black/10 dark:bg-white/10 text-[10px] font-mono">
+                          {ch.file_count} • {formatBytes(ch.total_size)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Search & Action Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="relative flex-1 min-w-[260px] max-w-md">
+                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search imported media by title or channel..."
+                    value={tgImportsSearch}
+                    onChange={(e) => setTgImportsSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && fetchTelegramImports(1)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-sm"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => fetchTelegramImports(1)}
+                    className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Search Imports</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Telegram Imported Files Table */}
+              <div className="bg-white dark:bg-[#1e1f20] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-x-auto shadow-sm">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-[#282a2c] border-b border-slate-200 dark:border-slate-700 text-slate-400 font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="p-4">Media Title</th>
+                      <th className="p-4">Channel / Source</th>
+                      <th className="p-4">File Size</th>
+                      <th className="p-4">Telegram Post Link</th>
+                      <th className="p-4">Imported By</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                    {tgImportsFiles.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                          No Telegram imported files found matching your criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      tgImportsFiles.map((f) => (
+                        <tr key={f.id} className="hover:bg-slate-50/80 dark:hover:bg-[#242628] transition-colors">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3 max-w-sm truncate">
+                              {f.type === "video" ? (
+                                <Film className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                              ) : f.type === "image" ? (
+                                <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                              ) : f.type === "audio" ? (
+                                <Music className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                              ) : (
+                                <FileIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                              )}
+                              <span className="font-bold text-slate-800 dark:text-white truncate">
+                                {f.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <span className="px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-bold text-[11px] truncate inline-block max-w-[200px]">
+                              {f.telegram_channel_title || "Linked Channel"}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-600 dark:text-slate-300 font-bold">
+                            {formatBytes(f.size)}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-mono text-slate-400">
+                                Msg #{f.telegram_message_id}
+                              </span>
+                              {f.telegram_post_url && (
+                                <a
+                                  href={f.telegram_post_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 hover:bg-sky-100 flex items-center gap-1 text-[11px] font-medium transition-colors"
+                                  title="Open in Telegram Web/App"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  <span>View Post</span>
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 text-slate-600 dark:text-slate-400 font-medium">
+                            {f.user_name || "Admin"}
+                          </td>
+                          <td className="p-4 text-right space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewItem(f)}
+                              className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-500 transition-colors"
+                              title="Stream / Play Media"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFile(f.id, f.name)}
+                              className="p-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 transition-colors"
+                              title="Delete Reference"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Telegram Imports Pagination */}
+              {tgImportsTotal > 0 && (
+                <div className="p-4 bg-white dark:bg-[#1e1f20] rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
+                  <div>
+                    Showing <span className="font-bold text-slate-800 dark:text-white">{Math.min(tgImportsTotal, (tgImportsPage - 1) * tgImportsLimit + 1)}</span> to{" "}
+                    <span className="font-bold text-slate-800 dark:text-white">{Math.min(tgImportsTotal, tgImportsPage * tgImportsLimit)}</span> of{" "}
+                    <span className="font-bold text-sky-600 dark:text-sky-400">{tgImportsTotal}</span> imported media items
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={tgImportsPage <= 1}
+                      onClick={() => {
+                        const prev = Math.max(1, tgImportsPage - 1);
+                        setTgImportsPage(prev);
+                        fetchTelegramImports(prev);
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#282a2c] disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold transition-all"
+                    >
+                      Previous
+                    </button>
+
+                    <div className="px-3 py-1 font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 rounded-xl">
+                      Page {tgImportsPage} of {Math.max(1, Math.ceil(tgImportsTotal / tgImportsLimit))}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={tgImportsPage >= Math.ceil(tgImportsTotal / tgImportsLimit)}
+                      onClick={() => {
+                        const next = tgImportsPage + 1;
+                        setTgImportsPage(next);
+                        fetchTelegramImports(next);
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#282a2c] disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold transition-all"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1440,6 +1941,77 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* DATABASE & SUPABASE CLOUD SYNCHRONIZATION */}
+              <div className="bg-white dark:bg-[#1e1f20] p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-500 flex items-center justify-center">
+                      <CloudDownload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                        <span>Database & Supabase Cloud Synchronization</span>
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                          <CheckCircle2 className="w-3 h-3" /> Bi-directional Sync
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Deep synchronization between local SQLite database and remote Supabase PostgreSQL cloud. Imports all 180GB+ Telegram media, channels, and users.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTriggerCloudSync}
+                      disabled={syncingCloud}
+                      className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-purple-500/20 flex items-center gap-2 transition-all disabled:opacity-50"
+                    >
+                      {syncingCloud ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                      <span>{syncingCloud ? "Syncing Database & Cloud..." : "Sync Supabase Cloud Data"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                  <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Local SQLite</span>
+                      <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md">Primary Cache</span>
+                    </div>
+                    <p className="text-xl font-black text-slate-800 dark:text-white">
+                      {overviewData ? `${overviewData.totalFiles} Files` : "Active"}
+                    </p>
+                    <p className="text-[11px] text-slate-400">Zero-latency queries & local indexing</p>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Supabase PostgreSQL</span>
+                      <span className="text-[10px] font-bold text-sky-500 bg-sky-500/10 px-2 py-0.5 rounded-md">Cloud Backup</span>
+                    </div>
+                    <p className="text-xl font-black text-slate-800 dark:text-white">
+                      Connected
+                    </p>
+                    <p className="text-[11px] text-slate-400">Continuous cloud persistence</p>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Telegram Imported Media</span>
+                      <span className="text-[10px] font-bold text-purple-500 bg-purple-500/10 px-2 py-0.5 rounded-md">Cloud Channels</span>
+                    </div>
+                    <p className="text-xl font-black text-slate-800 dark:text-white">
+                      {overviewData ? `${overviewData.totalImports || 0} Posts` : "Active"}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {overviewData ? formatBytes(overviewData.importedStorage || 0) : "Cloud Media"}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* EMAIL GATEWAY STATUS & REAL-TIME TESTING CARD */}

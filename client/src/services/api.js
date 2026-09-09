@@ -322,6 +322,8 @@ export const DriveAPI = {
   deleteAdminUser: (id) => api.delete(`/admin/users/${id}`).then((r) => r.data),
   getAdminFiles: (params) => api.get("/admin/files", { params }).then((r) => r.data),
   deleteAdminFile: (id) => api.delete(`/admin/files/${id}`).then((r) => r.data),
+  getAdminTelegramImports: (params) => api.get("/admin/telegram-imports", { params }).then((r) => r.data),
+  triggerAdminCloudSync: () => api.post("/admin/system/sync-cloud").then((r) => r.data),
   pingTelegramSystem: () => api.post("/admin/system/ping").then((r) => r.data),
   getSystemMetrics: () => api.get("/admin/system/metrics").then((r) => r.data),
   runSystemCleanup: () => api.post("/admin/system/cleanup").then((r) => r.data),

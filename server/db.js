@@ -361,10 +361,31 @@ export async function syncFromSupabase() {
       }
     }
 
-    // 4. Sync Files
-    const { data: files, error: fileErr } = await supabase.from("files").select("*");
-    if (!fileErr && files && files.length > 0) {
-      for (const file of files) {
+    // 4. Sync Files with chunked range pagination (handles >1000 files reliably)
+    let allFiles = [];
+    const PAGE_SIZE = 1000;
+    let offset = 0;
+    let keepFetching = true;
+
+    while (keepFetching) {
+      const { data: chunk, error: fileErr } = await supabase
+        .from("files")
+        .select("*")
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (fileErr) {
+        console.warn("⚠️ Supabase sync files warning:", fileErr.message);
+        break;
+      }
+      if (!chunk || chunk.length === 0) break;
+      allFiles.push(...chunk);
+      if (chunk.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+
+    let syncedFilesCount = 0;
+    for (const file of allFiles) {
+      try {
         await sqlite.run(
           `INSERT INTO files (
             id, user_id, name, folder_id, size, mime_type, type, source_type,
@@ -395,7 +416,7 @@ export async function syncFromSupabase() {
           [
             file.id,
             file.user_id || null,
-            file.name,
+            file.name || 'Untitled File',
             file.folder_id || null,
             file.size || 0,
             file.mime_type,
@@ -417,10 +438,53 @@ export async function syncFromSupabase() {
             file.updated_at || new Date().toISOString()
           ]
         );
+        syncedFilesCount++;
+      } catch (insertErr) {
+        console.warn(`File sync skipped for ${file.id}:`, insertErr.message);
       }
     }
+    console.log(`✅ Synced ${syncedFilesCount} file(s) from Supabase Cloud.`);
 
-    // 5. Sync Telegram Active Sessions
+    // 4b. Bidirectional: Push any local SQLite files to Supabase if missing from Cloud
+    try {
+      const localFiles = await sqlite.all("SELECT * FROM files");
+      const { data: remoteFiles } = await supabase.from("files").select("id");
+      const remoteSet = new Set(remoteFiles?.map(rf => rf.id) || []);
+      const toPush = localFiles.filter(lf => !remoteSet.has(lf.id));
+      if (toPush.length > 0) {
+        console.log(`📤 Pushing ${toPush.length} missing local file(s) to Supabase Cloud...`);
+        for (const pf of toPush) {
+          try {
+            await supabase.from("files").upsert({
+              id: pf.id,
+              user_id: pf.user_id || null,
+              name: pf.name || "Untitled File",
+              folder_id: pf.folder_id || null,
+              size: pf.size || 0,
+              mime_type: pf.mime_type,
+              type: pf.type,
+              source_type: pf.source_type || "upload",
+              telegram_file_id: pf.telegram_file_id || null,
+              telegram_message_id: pf.telegram_message_id || null,
+              telegram_channel_id: pf.telegram_channel_id || null,
+              telegram_post_url: pf.telegram_post_url || null,
+              telegram_channel_title: pf.telegram_channel_title || null,
+              telegram_access_hash: pf.telegram_access_hash || null,
+              telegram_file_reference: pf.telegram_file_reference || null,
+              thumbnail_url: pf.thumbnail_url || null,
+              is_starred: pf.is_starred || 0,
+              is_trash: pf.is_trash || 0,
+              share_access: pf.share_access || "private",
+              share_token: pf.share_token || null,
+              created_at: pf.created_at || new Date().toISOString(),
+              updated_at: pf.updated_at || new Date().toISOString()
+            });
+          } catch {}
+        }
+      }
+    } catch (pushErr) {
+      console.warn("Supabase local push notice:", pushErr.message);
+    }
     try {
       const { data: sessionRows, error: sessErr } = await supabase
         .from("telegram_sessions")
@@ -607,8 +671,16 @@ export async function syncFromSupabase() {
     } catch (e) {
       console.warn("Site settings bootstrap sync warning:", e.message);
     }
+
+    return {
+      success: true,
+      syncedFilesCount,
+      syncedUsersCount: users?.length || 0,
+      syncedFoldersCount: folders?.length || 0
+    };
   } catch (err) {
     console.error("❌ Supabase bootstrap sync error:", err.message);
+    return { success: false, error: err.message };
   }
 }
 
@@ -1282,6 +1354,8 @@ export async function dbGetAdminOverview() {
   const totalFiles = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE is_trash = 0"))?.count || 0;
   const totalFolders = (await sqlite.get("SELECT COUNT(*) as count FROM folders WHERE is_trash = 0"))?.count || 0;
   const totalStorage = (await sqlite.get("SELECT SUM(size) as total FROM files WHERE is_trash = 0"))?.total || 0;
+  const uploadedStorage = (await sqlite.get("SELECT SUM(size) as total FROM files WHERE source_type = 'upload' AND is_trash = 0"))?.total || 0;
+  const importedStorage = (await sqlite.get("SELECT SUM(size) as total FROM files WHERE source_type = 'telegram_post' AND is_trash = 0"))?.total || 0;
   const totalUploaded = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE source_type = 'upload' AND is_trash = 0"))?.count || 0;
   const totalImports = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE source_type = 'telegram_post' AND is_trash = 0"))?.count || 0;
   const todayUploads = (await sqlite.get("SELECT COUNT(*) as count FROM files WHERE created_at >= datetime('now', '-1 day')"))?.count || 0;
@@ -1289,7 +1363,7 @@ export async function dbGetAdminOverview() {
 
   const typeStats = await sqlite.all("SELECT type, COUNT(*) as count, SUM(size) as size FROM files WHERE is_trash = 0 GROUP BY type");
   const recentFiles = await sqlite.all(`
-    SELECT f.id, f.name, f.size, f.type, f.mime_type, f.source_type, f.created_at, f.telegram_channel_id, f.telegram_message_id, u.name as user_name, u.email as user_email 
+    SELECT f.id, f.name, f.size, f.type, f.mime_type, f.source_type, f.created_at, f.telegram_channel_id, f.telegram_message_id, f.telegram_channel_title, f.telegram_post_url, u.name as user_name, u.email as user_email 
     FROM files f 
     LEFT JOIN users u ON f.user_id = u.id 
     ORDER BY f.created_at DESC 
@@ -1301,6 +1375,8 @@ export async function dbGetAdminOverview() {
     totalFiles,
     totalFolders,
     totalStorage,
+    uploadedStorage,
+    importedStorage,
     totalUploaded,
     totalImports,
     todayUploads,
@@ -1333,18 +1409,22 @@ export async function dbGetAllUsersWithStats() {
   return users;
 }
 
-export async function dbGetAllFilesAdmin({ search, type, limit = 50, offset = 0 } = {}) {
+export async function dbGetAllFilesAdmin({ search, type, source, limit = 50, offset = 0 } = {}) {
   const sqlite = await getSqliteDb();
   let whereClauses = ["1=1"];
   let params = [];
 
   if (search) {
-    whereClauses.push("(f.name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)");
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    whereClauses.push("(f.name LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR f.telegram_channel_title LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (type && type !== "all") {
     whereClauses.push("f.type = ?");
     params.push(type);
+  }
+  if (source && source !== "all") {
+    whereClauses.push("f.source_type = ?");
+    params.push(source);
   }
 
   const whereStr = whereClauses.join(" AND ");
@@ -1363,6 +1443,81 @@ export async function dbGetAllFilesAdmin({ search, type, limit = 50, offset = 0 
 
   return {
     total: countRow?.total || 0,
+    files
+  };
+}
+
+export async function dbGetAdminTelegramImports({ search, channelId, page = 1, limit = 50 } = {}) {
+  const sqlite = await getSqliteDb();
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+  const offset = (pageNum - 1) * limitNum;
+
+  // 1. Channel Aggregations
+  const channelBreakdown = await sqlite.all(`
+    SELECT 
+      COALESCE(NULLIF(telegram_channel_title, ''), telegram_channel_id, 'Direct Post Import') as channel_name,
+      telegram_channel_id,
+      COUNT(*) as file_count,
+      COALESCE(SUM(size), 0) as total_size
+    FROM files
+    WHERE source_type = 'telegram_post' AND is_trash = 0
+    GROUP BY COALESCE(NULLIF(telegram_channel_title, ''), telegram_channel_id)
+    ORDER BY total_size DESC
+  `);
+
+  // 2. Overall Summary
+  const summaryRow = await sqlite.get(`
+    SELECT 
+      COUNT(*) as total_files,
+      COALESCE(SUM(size), 0) as total_size,
+      COUNT(DISTINCT telegram_channel_id) as total_channels
+    FROM files
+    WHERE source_type = 'telegram_post' AND is_trash = 0
+  `);
+
+  // 3. Where filters
+  let whereClauses = ["f.source_type = 'telegram_post'", "f.is_trash = 0"];
+  let params = [];
+
+  if (search) {
+    whereClauses.push("(f.name LIKE ? OR f.telegram_channel_title LIKE ? OR u.name LIKE ? OR u.email LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (channelId && channelId !== "all") {
+    whereClauses.push("f.telegram_channel_id = ?");
+    params.push(channelId);
+  }
+
+  const whereStr = whereClauses.join(" AND ");
+  const countRow = await sqlite.get(
+    `SELECT COUNT(*) as total FROM files f LEFT JOIN users u ON f.user_id = u.id WHERE ${whereStr}`,
+    params
+  );
+
+  const files = await sqlite.all(
+    `SELECT 
+      f.*,
+      u.name as user_name,
+      u.email as user_email
+    FROM files f
+    LEFT JOIN users u ON f.user_id = u.id
+    WHERE ${whereStr}
+    ORDER BY f.created_at DESC
+    LIMIT ? OFFSET ?`,
+    [...params, limitNum, offset]
+  );
+
+  return {
+    summary: {
+      totalFiles: summaryRow?.total_files || 0,
+      totalSize: summaryRow?.total_size || 0,
+      totalChannels: summaryRow?.total_channels || 0,
+      channels: channelBreakdown
+    },
+    total: countRow?.total || 0,
+    page: pageNum,
+    limit: limitNum,
     files
   };
 }

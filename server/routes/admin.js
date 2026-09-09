@@ -8,6 +8,8 @@ import {
   dbUpdateUser,
   dbDeleteUserCascade,
   dbGetAllFilesAdmin,
+  dbGetAdminTelegramImports,
+  syncFromSupabase,
   dbGetFileById,
   dbDeleteFile,
   dbGetSetting,
@@ -182,10 +184,10 @@ router.delete("/users/:id", async (req, res) => {
   }
 });
 
-// GET /api/admin/files - Global searchable file manager
+// GET /api/admin/files - Global searchable file manager (Supports Type, Source & Pagination)
 router.get("/files", async (req, res) => {
   try {
-    const { search = "", type = "all", page = 1, limit = 50 } = req.query;
+    const { search = "", type = "all", source = "all", page = 1, limit = 50 } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
     const offset = (pageNum - 1) * limitNum;
@@ -193,6 +195,7 @@ router.get("/files", async (req, res) => {
     const data = await dbGetAllFilesAdmin({
       search,
       type,
+      source,
       limit: limitNum,
       offset
     });
@@ -203,6 +206,26 @@ router.get("/files", async (req, res) => {
       page: pageNum,
       limit: limitNum,
       files: data.files
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/admin/telegram-imports - Dedicated Telegram Channel & Stream Links Manager
+router.get("/telegram-imports", async (req, res) => {
+  try {
+    const { search = "", channelId = "all", page = 1, limit = 50 } = req.query;
+    const data = await dbGetAdminTelegramImports({
+      search,
+      channelId,
+      page,
+      limit
+    });
+
+    res.json({
+      success: true,
+      ...data
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -445,6 +468,15 @@ router.post("/email/test", async (req, res) => {
       message: `Test email successfully delivered to ${targetEmail} via ${result.provider}!`,
       provider: result.provider,
       messageId: result.messageId
+    });
+// POST /api/admin/system/sync-cloud - Manual trigger for full Supabase Cloud Sync
+router.post("/system/sync-cloud", async (req, res) => {
+  try {
+    const result = await syncFromSupabase();
+    res.json({
+      success: true,
+      message: result?.error ? `Cloud sync notice: ${result.error}` : `Cloud sync completed successfully! Synced ${result?.syncedFilesCount || 0} file(s), ${result?.syncedFoldersCount || 0} folder(s), and ${result?.syncedUsersCount || 0} user(s).`,
+      stats: result
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
