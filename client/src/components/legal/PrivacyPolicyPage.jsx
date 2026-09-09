@@ -44,7 +44,7 @@ export default function PrivacyPolicyPage({ onNavigate, siteSettings }) {
               1. Overview & Commitment to Privacy
             </h2>
             <p>
-              At <strong>TeleDrive</strong> ("we", "our", or "us"), your privacy and data autonomy are fundamental principles. This Privacy Policy explains how TeleDrive handles your data when you access our high-speed cloud storage and streaming web application at <a href="https://telegram-drive.in" className="text-blue-400 hover:underline">telegram-drive.in</a>.
+              At <strong>TeleDrive</strong> ("we", "our", or "us"), your privacy and data autonomy are fundamental principles. This Privacy Policy explains how TeleDrive handles your data when you access our high-speed cloud storage and streaming web application at <a href={typeof window !== "undefined" ? window.location.origin : "#"} className="text-blue-400 hover:underline">{typeof window !== "undefined" ? window.location.host : "TeleDrive"}</a>.
             </p>
             <p>
               TeleDrive operates with distributed, encrypted high-speed cloud storage architecture. We do not sell your personal information, nor do we monetize your uploaded content or browsing habits.

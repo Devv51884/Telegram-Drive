@@ -92,6 +92,9 @@ app.get("/api/health", (req, res) => {
 
 // SEO & Search Engine Crawlers Endpoints
 app.get("/robots.txt", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.get("host") || "localhost";
+  const baseUrl = `${protocol}://${host}`;
   res.type("text/plain");
   res.send(`User-agent: *
 Allow: /
@@ -124,35 +127,38 @@ Allow: /
 User-agent: anthropic-ai
 Allow: /
 
-Sitemap: https://telegram-drive.in/sitemap.xml
+Sitemap: ${baseUrl}/sitemap.xml
 `);
 });
 
 app.get("/sitemap.xml", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.get("host") || "localhost";
+  const baseUrl = `${protocol}://${host}`;
   const today = new Date().toISOString().split("T")[0];
   res.type("application/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://telegram-drive.in/</loc>
+    <loc>${baseUrl}/</loc>
     <lastmod>${today}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://telegram-drive.in/?page=privacy</loc>
+    <loc>${baseUrl}/?page=privacy</loc>
     <lastmod>${today}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://telegram-drive.in/?page=terms</loc>
+    <loc>${baseUrl}/?page=terms</loc>
     <lastmod>${today}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://telegram-drive.in/?page=contact</loc>
+    <loc>${baseUrl}/?page=contact</loc>
     <lastmod>${today}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>

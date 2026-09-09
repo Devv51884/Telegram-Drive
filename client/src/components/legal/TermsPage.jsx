@@ -44,7 +44,7 @@ export default function TermsPage({ onNavigate, siteSettings }) {
               1. Acceptance of Terms
             </h2>
             <p>
-              By accessing or using TeleDrive (<a href="https://telegram-drive.in" className="text-cyan-400 hover:underline">telegram-drive.in</a>), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the service.
+              By accessing or using TeleDrive (<a href={typeof window !== "undefined" ? window.location.origin : "#"} className="text-cyan-400 hover:underline">{typeof window !== "undefined" ? window.location.host : "TeleDrive"}</a>), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the service.
             </p>
           </section>
 
