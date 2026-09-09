@@ -101,13 +101,13 @@ if [ ! -f "$APP_DIR/.env" ]; then
   echo -e "${YELLOW}⚠️  .env file created from .env.example.${NC}"
   echo -e "${CYAN}Please enter your credentials below (press Enter to skip if already set or configure later):${NC}"
 
-  read -p "Enter Telegram BOT_TOKEN: " input_bot_token
-  read -p "Enter Telegram STORAGE_CHAT_ID (e.g. -100xxxxxxx): " input_chat_id
-  read -p "Enter Telegram API_ID: " input_api_id
-  read -p "Enter Telegram API_HASH: " input_api_hash
-  read -p "Enter Supabase URL (optional): " input_supabase_url
-  read -p "Enter Supabase ANON_KEY (optional): " input_supabase_key
-  read -p "Enter Brevo API Key for signup emails (optional): " input_brevo_key
+  read -p "Enter Telegram BOT_TOKEN: " input_bot_token </dev/tty
+  read -p "Enter Telegram STORAGE_CHAT_ID (e.g. -100xxxxxxx): " input_chat_id </dev/tty
+  read -p "Enter Telegram API_ID: " input_api_id </dev/tty
+  read -p "Enter Telegram API_HASH: " input_api_hash </dev/tty
+  read -p "Enter Supabase URL (optional): " input_supabase_url </dev/tty
+  read -p "Enter Supabase ANON_KEY (optional): " input_supabase_key </dev/tty
+  read -p "Enter Brevo API Key for signup emails (optional): " input_brevo_key </dev/tty
 
   [ -n "$input_bot_token" ] && sed -i "s|^BOT_TOKEN=.*|BOT_TOKEN=$input_bot_token|" "$APP_DIR/.env"
   [ -n "$input_chat_id" ] && sed -i "s|^STORAGE_CHAT_ID=.*|STORAGE_CHAT_ID=$input_chat_id|" "$APP_DIR/.env"
@@ -139,7 +139,7 @@ echo -e "${GREEN}✓ TeleDrive backend process running with PM2.${NC}"
 # 7. Domain & Nginx Reverse Proxy Setup
 echo -e "\n${BLUE}==> [7/7] Nginx Reverse Proxy & Custom Domain Setup...${NC}"
 echo -e "${CYAN}Enter your custom domain name (e.g. drive.yourdomain.com or yourdomain.com):${NC}"
-read -p "Domain Name: " DOMAIN_NAME
+read -p "Domain Name: " DOMAIN_NAME </dev/tty
 
 if [ -z "$DOMAIN_NAME" ]; then
   DOMAIN_NAME="_"
@@ -211,10 +211,10 @@ if [ "$DOMAIN_NAME" != "_" ]; then
   echo "🔒 SSL / HTTPS Setup via Let's Encrypt (Certbot)"
   echo "==========================================================${NC}"
   echo -e "Make sure your domain (${BOLD}$DOMAIN_NAME${NC}) DNS 'A' record is pointing to this VPS IP."
-  read -p "Do you want to generate a free SSL certificate right now? (y/n): " setup_ssl
+  read -p "Do you want to generate a free SSL certificate right now? (y/n): " setup_ssl </dev/tty
 
   if [[ "$setup_ssl" =~ ^[Yy]$ ]]; then
-    read -p "Enter your email address for SSL renewal notices: " SSL_EMAIL
+    read -p "Enter your email address for SSL renewal notices: " SSL_EMAIL </dev/tty
     if [ -n "$SSL_EMAIL" ]; then
       certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos -m "$SSL_EMAIL" --redirect
     else
