@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import DriveAPI from "../../services/api.js";
 import { FileText, Loader2 } from "lucide-react";
 

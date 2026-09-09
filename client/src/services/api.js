@@ -323,6 +323,8 @@ export const DriveAPI = {
   getAdminFiles: (params) => api.get("/admin/files", { params }).then((r) => r.data),
   deleteAdminFile: (id) => api.delete(`/admin/files/${id}`).then((r) => r.data),
   pingTelegramSystem: () => api.post("/admin/system/ping").then((r) => r.data),
+  getSystemMetrics: () => api.get("/admin/system/metrics").then((r) => r.data),
+  runSystemCleanup: () => api.post("/admin/system/cleanup").then((r) => r.data),
   getEmailStatus: () => api.get("/admin/email/status").then((r) => r.data),
   updateEmailSettings: (data) => api.post("/admin/email/settings", data).then((r) => r.data),
   testEmailDelivery: (toEmail) => api.post("/admin/email/test", { toEmail }).then((r) => r.data),

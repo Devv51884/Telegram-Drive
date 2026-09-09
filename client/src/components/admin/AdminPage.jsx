@@ -65,6 +65,15 @@ export default function AdminPage() {
   const [resendKeyInput, setResendKeyInput] = useState("");
   const [showEmailConfig, setShowEmailConfig] = useState(false);
 
+  // Live VPS telemetry & maintenance state
+  const [systemMetrics, setSystemMetrics] = useState(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [cleaningSystem, setCleaningSystem] = useState(false);
+
+  // User list filters
+  const [userRoleFilter, setUserRoleFilter] = useState("all");
+  const [userStatusFilter, setUserStatusFilter] = useState("all");
+
   // Password reset modal state
   const [resettingUser, setResettingUser] = useState(null);
   const [newPassword, setNewPassword] = useState("");
@@ -97,6 +106,7 @@ export default function AdminPage() {
         fetchFiles();
       } else if (activeTab === "system") {
         fetchEmailStatus();
+        fetchSystemMetrics();
         if (!overviewData) fetchOverview();
       } else if (activeTab === "contact") {
         fetchContactMessages();
@@ -376,6 +386,36 @@ export default function AdminPage() {
     }
   };
 
+  const fetchSystemMetrics = async () => {
+    setLoadingMetrics(true);
+    try {
+      const res = await DriveAPI.getSystemMetrics();
+      if (res && res.success) {
+        setSystemMetrics(res.metrics);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch system metrics:", err.message);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  };
+
+  const handleRunCleanup = async () => {
+    if (!window.confirm("Run system maintenance & database vacuum? This cleans temporary cache and optimizes performance.")) return;
+    setCleaningSystem(true);
+    try {
+      const res = await DriveAPI.runSystemCleanup();
+      if (res && res.success) {
+        showToast(res.message || "System maintenance executed successfully!", "success");
+        fetchSystemMetrics();
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "System maintenance failed", "error");
+    } finally {
+      setCleaningSystem(false);
+    }
+  };
+
   const formatBytes = (bytes) => {
     const num = Number(bytes);
     if (!num || num <= 0 || isNaN(num) || !isFinite(num)) return "0 B";
@@ -385,11 +425,14 @@ export default function AdminPage() {
     return parseFloat((num / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  const filteredUsers = usersList.filter(
-    (u) =>
+  const filteredUsers = usersList.filter((u) => {
+    const matchesSearch =
       u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.email?.toLowerCase().includes(userSearch.toLowerCase())
-  );
+      u.email?.toLowerCase().includes(userSearch.toLowerCase());
+    const matchesRole = userRoleFilter === "all" || u.role === userRoleFilter;
+    const matchesStatus = userStatusFilter === "all" || u.status === userStatusFilter;
+    return matchesSearch && matchesRole && matchesStatus;
+  });
 
   // If user is not admin, show 403 Forbidden Access Screen
   if (!isAdmin) {
@@ -819,20 +862,45 @@ export default function AdminPage() {
           {/* TAB 2: USER MANAGEMENT */}
           {activeTab === "users" && (
             <div className="space-y-6 animate-in fade-in duration-150 max-w-7xl mx-auto">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="relative flex-1 max-w-md w-full">
-                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search users by name or email..."
-                    value={userSearch}
-                    onChange={(e) => setUserSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm"
-                  />
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3 flex-1 w-full max-w-2xl">
+                  <div className="relative flex-1 min-w-[240px]">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search users by name or email..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm"
+                    />
+                  </div>
+
+                  {/* Role Filter */}
+                  <select
+                    value={userRoleFilter}
+                    onChange={(e) => setUserRoleFilter(e.target.value)}
+                    className="px-3.5 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none shadow-sm"
+                  >
+                    <option value="all">All Roles</option>
+                    <option value="admin">Admins Only</option>
+                    <option value="user">Users Only</option>
+                  </select>
+
+                  {/* Status Filter */}
+                  <select
+                    value={userStatusFilter}
+                    onChange={(e) => setUserStatusFilter(e.target.value)}
+                    className="px-3.5 py-2.5 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none shadow-sm"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="active">Active Accounts</option>
+                    <option value="disabled">Disabled Accounts</option>
+                  </select>
                 </div>
+
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-400">
-                    {filteredUsers.length} Total Users Registered
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#282a2c] px-3.5 py-2 rounded-xl">
+                    Showing {filteredUsers.length} of {usersList.length} Users
                   </span>
                 </div>
               </div>
@@ -1217,6 +1285,118 @@ export default function AdminPage() {
           {/* TAB 4: SYSTEM & GATEWAY HEALTH */}
           {activeTab === "system" && (
             <div className="space-y-6 animate-in fade-in duration-150 max-w-5xl mx-auto">
+              {/* LIVE VPS & HOST SYSTEM METRICS */}
+              <div className="bg-white dark:bg-[#1e1f20] p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center">
+                      <Server className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                        <span>Live VPS & Server Telemetry</span>
+                        <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Online
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Real-time hardware resource consumption, RAM heap, CPU load and uptime
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRunCleanup}
+                      disabled={cleaningSystem}
+                      className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 transition-all flex items-center gap-1.5"
+                      title="Vacuum database and auto-heal media references"
+                    >
+                      {cleaningSystem ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      <span>{cleaningSystem ? "Optimizing..." : "System Maintenance & Vacuum"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fetchSystemMetrics}
+                      disabled={loadingMetrics}
+                      className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title="Refresh Hardware Telemetry"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingMetrics ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {systemMetrics ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* RAM / Memory Health */}
+                    <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">System RAM</span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                          systemMetrics.memory.systemUsedPercent > 85 ? 'bg-rose-500/10 text-rose-500' :
+                          systemMetrics.memory.systemUsedPercent > 65 ? 'bg-amber-500/10 text-amber-500' :
+                          'bg-emerald-500/10 text-emerald-500'
+                        }`}>
+                          {systemMetrics.memory.systemUsedPercent}% Used
+                        </span>
+                      </div>
+                      <div className="text-xl font-black text-slate-800 dark:text-white">
+                        {systemMetrics.memory.systemTotalMb - systemMetrics.memory.systemFreeMb} <span className="text-xs text-slate-400 font-normal">/ {systemMetrics.memory.systemTotalMb} MB</span>
+                      </div>
+                      {/* Progress Bar */}
+                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            systemMetrics.memory.systemUsedPercent > 85 ? 'bg-rose-500' :
+                            systemMetrics.memory.systemUsedPercent > 65 ? 'bg-amber-500' :
+                            'bg-emerald-500'
+                          }`}
+                          style={{ width: `${Math.min(100, systemMetrics.memory.systemUsedPercent)}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-400">Node RSS: {systemMetrics.memory.rssMb} MB | Heap: {systemMetrics.memory.heapUsedMb} MB</p>
+                    </div>
+
+                    {/* Server Uptime */}
+                    <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Server Uptime</span>
+                      <div className="text-xl font-black text-slate-800 dark:text-white">
+                        {Math.floor(systemMetrics.serverUptimeSeconds / 86400)}d{" "}
+                        {Math.floor((systemMetrics.serverUptimeSeconds % 86400) / 3600)}h{" "}
+                        {Math.floor((systemMetrics.serverUptimeSeconds % 3600) / 60)}m
+                      </div>
+                      <p className="text-[11px] text-slate-400">Host Uptime: {Math.floor(systemMetrics.systemUptimeSeconds / 86400)} days</p>
+                    </div>
+
+                    {/* CPU & Architecture */}
+                    <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">CPU Cores & Arch</span>
+                      <div className="text-xl font-black text-slate-800 dark:text-white truncate" title={systemMetrics.cpuModel}>
+                        {systemMetrics.cpuCores} Core{systemMetrics.cpuCores > 1 ? "s" : ""}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">{systemMetrics.cpuModel}</p>
+                    </div>
+
+                    {/* Host OS & Environment */}
+                    <div className="bg-slate-50 dark:bg-[#282a2c] p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Runtime & OS</span>
+                      <div className="text-xl font-black text-slate-800 dark:text-white">
+                        Node {systemMetrics.nodeVersion}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate" title={systemMetrics.platform}>{systemMetrics.platform}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-6 flex items-center justify-center text-xs text-slate-400 gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+                    <span>Loading live VPS hardware telemetry...</span>
+                  </div>
+                )}
+              </div>
+
               <div className="bg-white dark:bg-[#1e1f20] p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
                   <div>

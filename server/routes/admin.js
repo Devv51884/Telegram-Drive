@@ -1,5 +1,7 @@
 import express from "express";
+import os from "os";
 import {
+  getSqliteDb,
   dbGetAdminOverview,
   dbGetAllUsersWithStats,
   dbFindUserById,
@@ -267,6 +269,67 @@ router.post("/system/ping", async (req, res) => {
     botPingMs: botPing,
     timestamp: new Date().toISOString()
   });
+});
+
+// GET /api/admin/system/metrics - Real-time VPS & Server telemetry
+router.get("/system/metrics", async (req, res) => {
+  try {
+    const mem = process.memoryUsage();
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+
+    res.json({
+      success: true,
+      metrics: {
+        serverUptimeSeconds: Math.floor(process.uptime()),
+        systemUptimeSeconds: Math.floor(os.uptime()),
+        nodeVersion: process.version,
+        platform: `${os.type()} ${os.arch()} (${os.release()})`,
+        hostname: os.hostname(),
+        cpuCores: os.cpus().length,
+        cpuModel: os.cpus()[0]?.model || "Standard Virtual CPU",
+        memory: {
+          rssMb: Math.round(mem.rss / (1024 * 1024)),
+          heapUsedMb: Math.round(mem.heapUsed / (1024 * 1024)),
+          heapTotalMb: Math.round(mem.heapTotal / (1024 * 1024)),
+          systemTotalMb: Math.round(totalMem / (1024 * 1024)),
+          systemFreeMb: Math.round(freeMem / (1024 * 1024)),
+          systemUsedPercent: Math.round((usedMem / totalMem) * 100)
+        },
+        loadAverage: os.loadavg ? os.loadavg().map((l) => Number(l.toFixed(2))) : [0, 0, 0]
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/admin/system/cleanup - Database optimization & Cache Vacuum
+router.post("/system/cleanup", async (req, res) => {
+  try {
+    const db = await getSqliteDb();
+    
+    // 1. Vacuum & optimize SQLite
+    await db.exec("PRAGMA optimize;");
+    await db.exec("VACUUM;");
+
+    // 2. Auto-heal any broken Telegram import references
+    let healedCount = 0;
+    try {
+      const { autoHealTelegramImportReferences } = await import("../telegram.js");
+      healedCount = (await autoHealTelegramImportReferences()) || 0;
+    } catch {}
+
+    res.json({
+      success: true,
+      message: "System maintenance executed successfully. Database vacuumed and optimized.",
+      healedReferences: healedCount,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ==========================================
