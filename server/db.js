@@ -221,6 +221,21 @@ export async function getSqliteDb() {
   return sqliteDbInstance;
 }
 
+// Polyfill WebSocket for Node.js 20 & below to satisfy @supabase/supabase-js realtime
+class NodeCompatibleWebSocket {
+  constructor() {
+    this.readyState = 3; // CLOSED
+  }
+  addEventListener() {}
+  removeEventListener() {}
+  send() {}
+  close() {}
+}
+
+if (typeof globalThis.WebSocket === "undefined") {
+  globalThis.WebSocket = NodeCompatibleWebSocket;
+}
+
 // Global Supabase Client
 let supabaseInstance = null;
 let cachedSupabaseConfig = null;
@@ -242,7 +257,10 @@ export async function getSupabaseClient() {
 
   try {
     supabaseInstance = createClient(url.trim(), key.trim(), {
-      auth: { persistSession: false }
+      auth: { persistSession: false },
+      realtime: {
+        transport: typeof globalThis.WebSocket !== "undefined" ? globalThis.WebSocket : NodeCompatibleWebSocket
+      }
     });
     cachedSupabaseConfig = `${url}:${key}`;
     return supabaseInstance;

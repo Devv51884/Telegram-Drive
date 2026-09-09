@@ -13,6 +13,21 @@ if (typeof dns.setDefaultResultOrder === "function") {
   dns.setDefaultResultOrder("ipv4first");
 }
 
+// Polyfill WebSocket for Node.js 20 & below to satisfy @supabase/supabase-js realtime
+class NodeCompatibleWebSocket {
+  constructor() {
+    this.readyState = 3; // CLOSED
+  }
+  addEventListener() {}
+  removeEventListener() {}
+  send() {}
+  close() {}
+}
+
+if (typeof globalThis.WebSocket === "undefined") {
+  globalThis.WebSocket = NodeCompatibleWebSocket;
+}
+
 import authRouter from "./routes/auth.js";
 import foldersRouter from "./routes/folders.js";
 import filesRouter from "./routes/files.js";
