@@ -15,7 +15,7 @@ npm --prefix client install
 echo "⚡ Building client..."
 npm --prefix client run build
 
-echo "🚀 Restarting PM2 process..."
-pm2 restart teledrive
+echo "🚀 Restarting PM2 process with updated environment..."
+pm2 restart teledrive --update-env
 
 echo "✅ TeleDrive updated and restarted successfully!"
