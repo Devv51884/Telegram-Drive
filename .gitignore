@@ -17,9 +17,8 @@ server/data/
 *.db
 
 # Build Artifacts
-client/dist/
-dist/
-build/
+/dist/
+/build/
 
 # Logs
 *.log

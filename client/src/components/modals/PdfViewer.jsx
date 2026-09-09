@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import * as pdfjsLib from "pdfjs-dist";
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,14 +16,16 @@ import {
   Sparkles
 } from "lucide-react";
 
-// Configure PDF.js worker using same-origin public asset
-if (typeof window !== "undefined") {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "/pdf.worker.min.mjs";
-  } catch (e) {
-    console.warn("PDF worker assignment warning:", e);
+let pdfjsLibInstance = null;
+async function getPdfJs() {
+  if (!pdfjsLibInstance) {
+    const mod = await import("pdfjs-dist");
+    if (typeof window !== "undefined") {
+      mod.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    }
+    pdfjsLibInstance = mod;
   }
+  return pdfjsLibInstance;
 }
 
 export default function PdfViewer({ url, fileName, downloadUrl }) {
@@ -47,18 +48,22 @@ export default function PdfViewer({ url, fileName, downloadUrl }) {
     if (viewMode !== "canvas") return;
 
     let isCancelled = false;
+    let currentLoadingTask = null;
     setLoading(true);
     setError(null);
     setCurrentPage(1);
 
-    const loadingTask = pdfjsLib.getDocument({
-      url,
-      withCredentials: false
-    });
-
-    loadingTask.promise
+    getPdfJs()
+      .then((pdfjsLib) => {
+        if (isCancelled || !pdfjsLib) return null;
+        currentLoadingTask = pdfjsLib.getDocument({
+          url,
+          withCredentials: false
+        });
+        return currentLoadingTask.promise;
+      })
       .then((pdf) => {
-        if (isCancelled) return;
+        if (isCancelled || !pdf) return;
         setPdfDoc(pdf);
         setNumPages(pdf.numPages);
         setLoading(false);
@@ -75,10 +80,10 @@ export default function PdfViewer({ url, fileName, downloadUrl }) {
     return () => {
       isCancelled = true;
       try {
-        loadingTask.destroy();
+        if (currentLoadingTask) currentLoadingTask.destroy();
       } catch {}
     };
-  }, [url, viewMode]);
+  }, [viewMode, url]);
 
   // Render current page onto canvas when in Canvas Mode
   useEffect(() => {

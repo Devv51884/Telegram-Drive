@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
-import * as pdfjsLib from "pdfjs-dist";
 import DriveAPI from "../../services/api.js";
 import { FileText, Loader2 } from "lucide-react";
 
-// Configure PDF.js worker using same-origin public asset with CDN fallback
-if (typeof window !== "undefined") {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "/pdf.worker.min.mjs";
-  } catch (e) {
-    console.warn("PDF worker assignment warning:", e);
+let pdfjsLibInstance = null;
+async function getPdfJs() {
+  if (!pdfjsLibInstance) {
+    const mod = await import("pdfjs-dist");
+    if (typeof window !== "undefined") {
+      mod.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    }
+    pdfjsLibInstance = mod;
   }
+  return pdfjsLibInstance;
 }
 
 // In-memory session cache for rendered PDF thumbnails
@@ -72,6 +73,7 @@ export default function PdfThumbnail({ file, className = "" }) {
     async function generatePdfThumb() {
       try {
         const streamUrl = DriveAPI.getStreamUrl(file.id);
+        const pdfjsLib = await getPdfJs();
         const loadingTask = pdfjsLib.getDocument({
           url: streamUrl,
           withCredentials: false
