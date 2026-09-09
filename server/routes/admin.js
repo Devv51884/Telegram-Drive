@@ -469,6 +469,11 @@ router.post("/email/test", async (req, res) => {
       provider: result.provider,
       messageId: result.messageId
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST /api/admin/system/sync-cloud - Manual trigger for full Supabase Cloud Sync
 router.post("/system/sync-cloud", async (req, res) => {
   try {
