@@ -82,7 +82,8 @@ export async function getStorageGramClient() {
     }
 
     try {
-      const botClient = new TelegramClient(botSession, config.apiId, config.apiHash, {
+      const botSession = new StringSession(savedSession || "");
+      const botClient = new TelegramClient(botSession, parseInt(config.apiId, 10), config.apiHash, {
         connectionRetries: 10,
         requestRetries: 5,
         timeout: 35,
@@ -164,7 +165,8 @@ export async function getUserGramClient(userId = null) {
   }
 
   try {
-    const client = new TelegramClient(session, config.apiId, config.apiHash, {
+    const session = new StringSession(sessionStr);
+    const client = new TelegramClient(session, parseInt(config.apiId, 10), config.apiHash, {
       connectionRetries: 10,
       requestRetries: 5,
       timeout: 35,

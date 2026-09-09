@@ -233,10 +233,10 @@ router.post("/system/ping", async (req, res) => {
   let mtprotoPing = -1;
   let botPing = -1;
 
-  // 1. MTProto Gateway Ping
+  // 1. MTProto Gateway Ping (Tests User session or Storage Bot GramJS connection)
   try {
     const t0 = Date.now();
-    const client = await getGramClient(req.userId, false);
+    const client = await getGramClient(req.userId, true);
     if (client) {
       if (!client.connected) {
         await client.connect().catch(() => {});
@@ -248,13 +248,18 @@ router.post("/system/ping", async (req, res) => {
     console.warn("MTProto ping diagnostic:", mtErr.message);
   }
 
-  // 2. Bot API HTTP Ping
+  // 2. Bot API HTTP Ping (Forced IPv4 to prevent 5-second VPS IPv6 timeout)
   try {
     const config = await (await import("../telegram.js")).getTelegramConfig();
     const token = config.botToken || process.env.BOT_TOKEN;
     if (token) {
       const tb0 = Date.now();
-      const botRes = await axios.get(`https://api.telegram.org/bot${token}/getMe`, { timeout: 6000 });
+      const https = await import("https");
+      const agent = new https.Agent({ family: 4, keepAlive: true });
+      const botRes = await axios.get(`https://api.telegram.org/bot${token}/getMe`, {
+        httpsAgent: agent,
+        timeout: 10000
+      });
       if (botRes.data?.ok) {
         botPing = Math.max(1, Date.now() - tb0);
       }
