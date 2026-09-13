@@ -37,6 +37,12 @@ export default function AuthScreen({ initialTab = "signin", onBack }) {
   // Active View: 'signin' | 'signup' | 'verification_sent' | 'verify_landing' | 'forgot_password' | 'forgot_sent' | 'reset_landing'
   const [view, setView] = useState(initialTab === "signup" ? "signup" : "signin");
 
+  useEffect(() => {
+    if (initialTab === "signup" || initialTab === "signin") {
+      setView(initialTab);
+    }
+  }, [initialTab]);
+
   // Form Fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

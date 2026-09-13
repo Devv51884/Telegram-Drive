@@ -111,7 +111,7 @@ function DriveMain() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  const handleNavigate = (target) => {
+  const handleNavigate = (target, tab) => {
     if (target === "landing") {
       window.history.pushState({}, "", "/");
       setPublicPage("landing");
@@ -128,14 +128,21 @@ function DriveMain() {
       window.history.pushState({}, "", "/?page=contact");
       setPublicPage("contact");
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } else if (target === "auth_login") {
-      setAuthTab("signin");
-      window.history.pushState({}, "", "/?view=auth&tab=login");
+    } else if (
+      target === "auth" ||
+      target === "auth_login" ||
+      target === "auth_signup" ||
+      target === "signin" ||
+      target === "signup"
+    ) {
+      const selectedTab =
+        tab === "signup" || target === "auth_signup" || target === "signup"
+          ? "signup"
+          : "signin";
+      setAuthTab(selectedTab);
+      window.history.pushState({}, "", `/?view=auth&tab=${selectedTab === "signup" ? "signup" : "login"}`);
       setPublicPage("auth");
-    } else if (target === "auth_signup") {
-      setAuthTab("signup");
-      window.history.pushState({}, "", "/?view=auth&tab=signup");
-      setPublicPage("auth");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
@@ -166,7 +173,7 @@ function DriveMain() {
       return <ContactPage onNavigate={handleNavigate} siteSettings={siteSettings} />;
     }
     if (publicPage === "auth") {
-      return <AuthScreen initialTab={authTab} onBack={() => handleNavigate("landing")} />;
+      return <AuthScreen key={authTab} initialTab={authTab} onBack={() => handleNavigate("landing")} />;
     }
     return <LandingPage onNavigate={handleNavigate} siteSettings={siteSettings} />;
   }

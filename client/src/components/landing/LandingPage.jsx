@@ -45,7 +45,9 @@ import {
   List,
   Users,
   Upload,
-  MoreVertical
+  MoreVertical,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 /**
@@ -153,78 +155,63 @@ export default function LandingPage({ onNavigate, siteSettings }) {
   const productScreenshots = [
     {
       id: "grid",
-      title: "Visual File Grid & Rich Previews",
-      subtitle: "Instant Document & Media Previews with Custom Folders",
-      description: "Experience thumbnail-rich browsing for Excel formulas, PDF documents, full stack illustrations, and 4K videos alongside color-coded custom folders.",
+      num: "01",
       badge: "Visual Workspace",
+      tabTitle: "01 Grid View",
+      title: "Interactive File Grid",
+      shortDesc: "Browse directories with instant visual previews for Excel, PDF, and 4K footage.",
       image: "/landing/grid-view.png",
-      tagColor: "indigo",
-      features: [
-        "Live PDF & Spreadsheet thumbnails",
-        "Color-coded folder organization",
-        "Real-time unlimited storage meter",
-        "Instant search and category filters"
-      ]
+      tag: "Live Previews",
+      chips: ["Instant Thumbnails", "Folder Hierarchies", "Multi-Select"],
+      accentGlow: "rgba(99, 102, 241, 0.25)"
     },
     {
       id: "table",
-      title: "Structured Metadata Table",
-      subtitle: "High-Density Productivity View for Power Users",
-      description: "Switch to a clean, high-efficiency list view. View file type icons, source paths, modification timestamps, and byte-precise file sizes at a single glance.",
-      badge: "Power Metadata",
+      num: "02",
+      badge: "Power Explorer",
+      tabTitle: "02 Table View",
+      title: "Detailed List View",
+      shortDesc: "Sort, filter, and inspect files with byte-level accuracy and instant search.",
       image: "/landing/table-view.png",
-      tagColor: "cyan",
-      features: [
-        "Instant multi-column sorting",
-        "Source & channel path tracing",
-        "Exact byte-level file sizes",
-        "Batch selection & bulk management"
-      ]
+      tag: "Byte Precision",
+      chips: ["Fast Sizing", "Date Stamping", "Format Filters"],
+      accentGlow: "rgba(6, 182, 212, 0.25)"
     },
     {
       id: "share",
-      title: "Granular Sharing & Team Permissions",
-      subtitle: "Google Drive-Grade Collaboration & Security",
-      description: "Manage who sees and edits your files. Invite colleagues via email with Viewer/Editor roles, process pending access requests, or generate password-protected public links.",
-      badge: "Enterprise Security",
+      num: "03",
+      badge: "Collaborative Drive",
+      tabTitle: "03 Team Sharing",
+      title: "Granular Team Access",
+      shortDesc: "Invite collaborators via email, assign roles, and issue password-locked public links.",
       image: "/landing/share-modal.png",
-      tagColor: "blue",
-      features: [
-        "Email invites with Viewer/Editor roles",
-        "Incoming Access Request queue",
-        "Password & expiration link limits",
-        "Restricted vs public link toggles"
-      ]
+      tag: "Enterprise Access",
+      chips: ["Viewer / Editor Roles", "Access Requests", "Password Locks"],
+      accentGlow: "rgba(59, 130, 246, 0.25)"
     },
     {
       id: "upload",
-      title: "High-Speed Chunked Cloud Uploader",
-      subtitle: "2GB File Ceiling with Zero Drops & 4-Part Concurrency",
-      description: "Drag and drop massive multi-gigabyte ISOs, raw video shoots, and zipped archives. Automatic 20MB chunking ensures flawless uploads even through network blips.",
-      badge: "Chunked Engine",
+      num: "04",
+      badge: "High-Speed Ingest",
+      tabTitle: "04 2GB Uploader",
+      title: "Parallel Multi-Chunk",
+      shortDesc: "Upload files up to 2GB each with automatic 20MB chunking and zero dropped transfers.",
       image: "/landing/upload-modal.png",
-      tagColor: "emerald",
-      features: [
-        "Multi-file drag and drop dropzone",
-        "Live byte sync and upload speedometer",
-        "Background upload fault tolerance",
-        "Up to 2GB per file support"
-      ]
+      tag: "2GB Ceiling",
+      chips: ["48.2 MB/s Concurrency", "Auto-Resume", "Drag & Drop"],
+      accentGlow: "rgba(16, 185, 129, 0.25)"
     },
     {
       id: "menu",
-      title: "1-Click Power Context Menus",
-      subtitle: "Instant Operations for Every Item in Your Workspace",
-      description: "Right-click or tap three dots for instant file operations: generate public share links, star critical documents, rename, relocate, inspect metadata, or safely move to trash.",
-      badge: "Intuitive UX",
+      num: "05",
+      badge: "Instant Control",
+      tabTitle: "05 Quick Actions",
+      title: "1-Click Context Menu",
+      shortDesc: "Star, share, rename, relocate, inspect metadata, or safely restore from trash.",
       image: "/landing/context-menu.png",
-      tagColor: "purple",
-      features: [
-        "1-click link generation & sharing",
-        "Favorite & starred item tagging",
-        "Tree relocation & instant rename",
-        "Safe trash bin with 1-click restore"
-      ]
+      tag: "1-Click Control",
+      chips: ["Instant Star", "Quick Share", "Safe Trash"],
+      accentGlow: "rgba(168, 85, 247, 0.25)"
     }
   ];
 
@@ -372,35 +359,59 @@ export default function LandingPage({ onNavigate, siteSettings }) {
 
         {/* Mobile Dropdown Menu */}
         {mobileMenuOpen && (
-          <div className="lg:hidden pt-4 pb-2 border-t border-white/10 mt-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="lg:hidden pt-4 pb-3 border-t border-white/10 mt-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-150">
             <a
               href="#demo"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
+              className="block px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
             >
               Interactive Demo
             </a>
             <a
               href="#bento"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
+              className="block px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
             >
               Features & Bento Grid
             </a>
             <a
+              href="#tour"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
+            >
+              Visual Tour
+            </a>
+            <a
               href="#comparison"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
+              className="block px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
             >
               Compare Storage
             </a>
             <a
               href="#faqs"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
+              className="block px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/[0.06]"
             >
               FAQs
             </a>
+
+            <div className="pt-3 border-t border-white/[0.06] flex flex-col gap-2">
+              <ShimmerButton
+                onClick={() => { setMobileMenuOpen(false); onNavigate("auth", "signup"); }}
+                className="w-full py-3 text-xs"
+              >
+                <span>Create Free Account</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </ShimmerButton>
+
+              <button
+                onClick={() => { setMobileMenuOpen(false); onNavigate("auth", "signin"); }}
+                className="w-full py-2.5 rounded-xl border border-white/10 bg-white/[0.04] text-xs font-bold text-slate-200 hover:bg-white/[0.08] transition-all"
+              >
+                Sign In to Existing Account
+              </button>
+            </div>
           </div>
         )}
       </header>
@@ -437,7 +448,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <ShimmerButton
             onClick={() => onNavigate("auth", "signup")}
-            className="px-8 py-4 text-sm sm:text-base font-black shadow-2xl shadow-indigo-600/30"
+            className="w-full sm:w-auto px-8 py-4 text-sm sm:text-base font-black shadow-2xl shadow-indigo-600/30"
           >
             <span>Create Free Account</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -445,11 +456,22 @@ export default function LandingPage({ onNavigate, siteSettings }) {
 
           <a
             href="#demo"
-            className="inline-flex items-center gap-2.5 px-7 py-4 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-sm font-bold text-slate-200 backdrop-blur-md transition-all hover:scale-[1.02]"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-4 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-sm font-bold text-slate-200 backdrop-blur-md transition-all hover:scale-[1.02]"
           >
             <Play className="w-4 h-4 text-indigo-400 fill-indigo-400" />
             <span>Watch Live Interactive Demo</span>
           </a>
+        </div>
+
+        {/* Direct Sign In Link */}
+        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400">
+          <span>Already have an account?</span>
+          <button
+            onClick={() => onNavigate("auth", "signin")}
+            className="text-indigo-400 hover:text-indigo-300 font-bold underline underline-offset-4"
+          >
+            Sign In here
+          </button>
         </div>
 
         {/* High-Contrast Floating Feature Pills */}
@@ -779,7 +801,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                 {/* MODAL OVERLAY: SHARE DIALOG SIMULATOR */}
                 {activeModalOverlay === "share" && (
                   <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-30 flex items-center justify-center p-3 sm:p-6 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="relative max-w-xl w-full rounded-2xl overflow-hidden border border-indigo-500/40 bg-[#0c0e17] shadow-2xl shadow-indigo-950/80 p-2 sm:p-4">
+                    <div className="relative max-w-xl w-full max-h-[85vh] overflow-y-auto rounded-2xl border border-indigo-500/40 bg-[#0c0e17] shadow-2xl shadow-indigo-950/80 p-2 sm:p-4">
                       <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3 px-2">
                         <div className="flex items-center gap-2">
                           <Share2 className="w-4 h-4 text-blue-400" />
@@ -821,7 +843,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                 {/* MODAL OVERLAY: UPLOAD DIALOG SIMULATOR */}
                 {activeModalOverlay === "upload" && (
                   <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-30 flex items-center justify-center p-3 sm:p-6 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="relative max-w-xl w-full rounded-2xl overflow-hidden border border-emerald-500/40 bg-[#0c0e17] shadow-2xl shadow-emerald-950/80 p-2 sm:p-4">
+                    <div className="relative max-w-xl w-full max-h-[85vh] overflow-y-auto rounded-2xl border border-emerald-500/40 bg-[#0c0e17] shadow-2xl shadow-emerald-950/80 p-2 sm:p-4">
                       <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3 px-2">
                         <div className="flex items-center gap-2">
                           <Upload className="w-4 h-4 text-emerald-400" />
@@ -1274,107 +1296,207 @@ export default function LandingPage({ onNavigate, siteSettings }) {
       </section>
 
       {/* ========================================================================= */}
-      {/* 6.5 VISUAL PRODUCT TOUR (AUTHENTIC HIGH-RES UI SHOWCASE)                 */}
+      {/* 6.5 VISUAL PRODUCT TOUR (SHERYIANS HIGH-VOLTAGE SHOWCASE)                */}
       {/* ========================================================================= */}
-      <section className="relative z-10 py-20 px-4 sm:px-6 max-w-7xl mx-auto">
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-black uppercase tracking-wider mb-3">
-            <LayoutGrid className="w-3.5 h-3.5" />
-            <span>Visual Tour</span>
+      <section id="tour" className="relative z-10 py-20 px-4 sm:px-6 max-w-7xl mx-auto">
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/25 text-xs font-black uppercase tracking-wider mb-4 shadow-inner shadow-indigo-500/20">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>PLATFORM SHOWCASE</span>
           </div>
-          <h2 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-white">
-            Inside Your New Cloud OS
+          <h2 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-white leading-tight">
+            INSIDE THE TELEDRIVE EXPERIENCE.
           </h2>
-          <p className="mt-4 text-sm sm:text-base text-slate-400 max-w-2xl mx-auto">
-            Explore authentic screenshots of TeleDrive's production interface. Built for speed, tuned for aesthetics, and engineered for complete control.
+          <p className="mt-3 text-sm sm:text-base text-slate-400 max-w-lg mx-auto font-normal">
+            Simple, lightning-fast, and distraction-free. Browse the real production interface below.
           </p>
         </div>
 
-        {/* Interactive Tour Navigator Tabs */}
-        <div className="flex flex-wrap justify-center gap-2 mb-8">
-          {productScreenshots.map((item, idx) => (
-            <button
-              key={item.id}
-              onClick={() => setProductTourTab(idx)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                productTourTab === idx
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 scale-105"
-                  : "bg-white/[0.03] text-slate-400 border border-white/[0.06] hover:bg-white/[0.08] hover:text-white"
-              }`}
-            >
-              <span>{item.badge}</span>
-            </button>
-          ))}
+        {/* Sheryians-Style Animated Top Tab Controls with Next/Prev Arrows */}
+        <div className="flex items-center justify-center gap-2 pb-2 mb-6">
+          <button
+            onClick={() => setProductTourTab((prev) => (prev === 0 ? productScreenshots.length - 1 : prev - 1))}
+            className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] text-slate-300 hover:text-white transition-all active:scale-95 flex-shrink-0"
+            aria-label="Previous Slide"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <div className="flex overflow-x-auto no-scrollbar items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] backdrop-blur-md select-none max-w-full">
+            {productScreenshots.map((item, idx) => {
+              const isActive = productTourTab === idx;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setProductTourTab(idx)}
+                  className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-black tracking-tight whitespace-nowrap transition-all duration-300 flex items-center gap-2 ${
+                    isActive
+                      ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-xl shadow-indigo-600/30 border border-indigo-400/30 scale-105"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <span className={`text-[10px] font-mono ${isActive ? "text-indigo-200" : "text-slate-500"}`}>
+                    {item.num}
+                  </span>
+                  <span>{item.title}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setProductTourTab((prev) => (prev === productScreenshots.length - 1 ? 0 : prev + 1))}
+            className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] text-slate-300 hover:text-white transition-all active:scale-95 flex-shrink-0"
+            aria-label="Next Slide"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Featured Showcase Card */}
+        {/* Featured Showcase Card (Sheryians Aesthetic) */}
         {(() => {
           const current = productScreenshots[productTourTab];
           return (
-            <div className="rounded-3xl border border-white/10 bg-[#0c0e17]/90 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl shadow-indigo-950/60 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-              {/* Left Column: Details & Feature Checklist */}
-              <div className="lg:col-span-5 space-y-6">
-                <div>
-                  <span className="inline-block px-3 py-1 rounded-full bg-indigo-500/15 text-indigo-400 text-[11px] font-mono font-bold border border-indigo-500/30 mb-3">
-                    {current.badge}
-                  </span>
-                  <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            <div className="relative rounded-3xl border border-white/[0.12] bg-[#0c0e17]/90 backdrop-blur-2xl p-5 sm:p-8 md:p-10 shadow-2xl shadow-indigo-950/70 overflow-hidden transition-all duration-500">
+              {/* Dynamic Ambient Glow Behind Active Card */}
+              <div
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[400px] blur-[140px] pointer-events-none rounded-full transition-all duration-700 opacity-60"
+                style={{ backgroundColor: current.accentGlow }}
+              />
+
+              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-center">
+                {/* Left: Punchy Minimal Info */}
+                <div className="lg:col-span-5 space-y-4 sm:space-y-5 text-left">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-white font-mono text-[11px] font-bold">
+                      {current.num} / 05
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold">
+                      {current.badge}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      {current.tag}
+                    </span>
+                  </div>
+
+                  <h3 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tight leading-[1.15]">
                     {current.title}
                   </h3>
-                  <p className="text-sm font-semibold text-slate-300 mt-1">
-                    {current.subtitle}
+
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+                    {current.shortDesc}
                   </p>
-                  <p className="text-xs sm:text-sm text-slate-400 mt-3 leading-relaxed">
-                    {current.description}
-                  </p>
+
+                  {/* Minimal Visual Feature Chips */}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {current.chips.map((chip, i) => (
+                      <span
+                        key={i}
+                        className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-[11px] font-semibold text-slate-300"
+                      >
+                        • {chip}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Dual Actions */}
+                  <div className="pt-3 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => setLightboxImg({ src: current.image, title: current.title, desc: current.shortDesc })}
+                      className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black transition-all flex items-center gap-2 shadow-xl shadow-indigo-600/30 hover:scale-105 active:scale-95"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                      <span>Expand High-Res</span>
+                    </button>
+
+                    <button
+                      onClick={() => onNavigate("auth", "signup")}
+                      className="px-5 py-3 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-white text-xs font-bold transition-all"
+                    >
+                      Try Live In App
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-2.5 pt-2">
-                  {current.features.map((feat, fIdx) => (
-                    <div key={fIdx} className="flex items-center gap-2.5 text-xs text-slate-300 font-medium">
-                      <div className="w-5 h-5 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                        <Check className="w-3 h-3" />
-                      </div>
-                      <span>{feat}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-4 flex items-center gap-3">
-                  <button
-                    onClick={() => setLightboxImg({ src: current.image, title: current.title, desc: current.description })}
-                    className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white flex items-center gap-2 transition-all hover:scale-105"
+                {/* Right: Modern Frame with Hover Zoom */}
+                <div className="lg:col-span-7">
+                  <div
+                    onClick={() => setLightboxImg({ src: current.image, title: current.title, desc: current.shortDesc })}
+                    className="relative group rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/70 shadow-2xl cursor-pointer transition-all duration-500 hover:border-indigo-500/50 hover:shadow-2xl hover:shadow-indigo-500/25"
                   >
-                    <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Expand High-Res View</span>
-                  </button>
-                  <span className="text-[11px] text-slate-500">Click image to enlarge</span>
-                </div>
-              </div>
+                    {/* Mini Top Chrome Bar */}
+                    <div className="h-8 bg-black/60 border-b border-white/10 px-3.5 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
+                        <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 truncate">
+                        teledrive_{current.id}_view.png
+                      </span>
+                      <Maximize2 className="w-3 h-3 text-slate-500 group-hover:text-white transition-colors" />
+                    </div>
 
-              {/* Right Column: High-Res Interactive Screenshot Frame */}
-              <div className="lg:col-span-7">
-                <div 
-                  onClick={() => setLightboxImg({ src: current.image, title: current.title, desc: current.description })}
-                  className="relative group rounded-2xl overflow-hidden border border-white/15 bg-black/60 shadow-2xl cursor-pointer transition-all duration-300 hover:border-indigo-500/50 hover:shadow-indigo-500/20"
-                >
-                  <img
-                    src={current.image}
-                    alt={current.title}
-                    className="w-full h-auto object-cover rounded-xl transition-transform duration-500 group-hover:scale-[1.02]"
-                  />
-                  {/* Subtle Hover Overlay with Zoom Icon */}
-                  <div className="absolute inset-0 bg-indigo-950/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
-                    <span className="px-4 py-2 rounded-xl bg-black/80 text-white text-xs font-bold border border-white/20 flex items-center gap-2 shadow-xl">
-                      <Maximize2 className="w-4 h-4 text-indigo-400" />
-                      <span>Click to View Fullscreen</span>
-                    </span>
+                    {/* High-Res Image Display */}
+                    <div className="relative overflow-hidden bg-black/40">
+                      <img
+                        src={current.image}
+                        alt={current.title}
+                        className="w-full h-auto object-cover max-h-[420px] sm:max-h-[500px] transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+                      />
+
+                      {/* Hover Overlay */}
+                      <div className="absolute inset-0 bg-indigo-950/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
+                        <span className="px-4 py-2.5 rounded-2xl bg-black/80 text-white text-xs font-black border border-white/20 flex items-center gap-2 shadow-2xl scale-95 group-hover:scale-100 transition-transform">
+                          <Maximize2 className="w-4 h-4 text-indigo-400" />
+                          <span>View In Full High-Res</span>
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           );
         })()}
+
+        {/* Sheryians-Style Thumbnail Strip Navigation */}
+        <div className="mt-6 flex overflow-x-auto no-scrollbar items-center gap-3 pb-2 select-none">
+          {productScreenshots.map((item, idx) => {
+            const isActive = productTourTab === idx;
+            return (
+              <div
+                key={item.id}
+                onClick={() => setProductTourTab(idx)}
+                className={`flex-1 min-w-[140px] sm:min-w-[180px] p-2 rounded-2xl border cursor-pointer transition-all duration-300 group ${
+                  isActive
+                    ? "bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-600/20 scale-[1.02]"
+                    : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/15 opacity-70 hover:opacity-100"
+                }`}
+              >
+                <div className="relative aspect-video rounded-xl overflow-hidden border border-white/10 mb-2 bg-black/40">
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  {isActive && (
+                    <div className="absolute inset-0 border-2 border-indigo-400 rounded-xl pointer-events-none" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[11px] px-0.5">
+                  <span className={`font-mono font-bold ${isActive ? "text-indigo-300" : "text-slate-500"}`}>
+                    {item.num}
+                  </span>
+                  <span className={`font-bold truncate ${isActive ? "text-white" : "text-slate-400"}`}>
+                    {item.title}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {/* ========================================================================= */}
@@ -1396,7 +1518,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
 
         <div className="rounded-3xl border border-white/10 bg-[#0c0e17]/80 backdrop-blur-xl overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
+            <table className="w-full min-w-[620px] text-left text-xs sm:text-sm">
               <thead className="bg-white/[0.03] border-b border-white/[0.08] text-slate-400 font-bold uppercase tracking-wider">
                 <tr>
                   <th className="p-4 sm:p-5">Feature</th>
@@ -1578,7 +1700,26 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             <p className="font-bold text-white uppercase tracking-wider text-[11px]">Product</p>
             <ul className="space-y-1.5">
               <li>
+                <button
+                  onClick={() => onNavigate("auth", "signup")}
+                  className="hover:text-indigo-300 text-indigo-400 font-bold transition-colors text-left"
+                >
+                  Create Free Account
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onNavigate("auth", "signin")}
+                  className="hover:text-white transition-colors text-left"
+                >
+                  Sign In to Drive
+                </button>
+              </li>
+              <li>
                 <a href="#demo" className="hover:text-white transition-colors">Interactive Demo</a>
+              </li>
+              <li>
+                <a href="#tour" className="hover:text-white transition-colors">Visual Tour</a>
               </li>
               <li>
                 <a href="#bento" className="hover:text-white transition-colors">Bento Architecture</a>
