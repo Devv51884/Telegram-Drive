@@ -40,7 +40,12 @@ import {
   VolumeX,
   Flame,
   Globe,
-  Infinity
+  Infinity,
+  LayoutGrid,
+  List,
+  Users,
+  Upload,
+  MoreVertical
 } from "lucide-react";
 
 /**
@@ -102,13 +107,17 @@ function ShimmerButton({ children, onClick, className = "", variant = "primary" 
 
 export default function LandingPage({ onNavigate, siteSettings }) {
   const [openFaq, setOpenFaq] = useState(0);
-  const [demoTab, setDemoTab] = useState("stream"); // 'stream' | 'upload' | 'import' | 'files'
+  const [demoTab, setDemoTab] = useState("explorer"); // 'explorer' | 'share' | 'upload' | 'stream'
+  const [explorerView, setExplorerView] = useState("grid"); // 'grid' | 'table' | 'menu'
+  const [activeModalOverlay, setActiveModalOverlay] = useState(null); // null | 'share' | 'upload'
+  const [productTourTab, setProductTourTab] = useState(0);
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [simulatedTime, setSimulatedTime] = useState(42);
   const [uploadPercent, setUploadPercent] = useState(78);
   const [isMuted, setIsMuted] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState("supreme");
 
   // Simulated video playback timer in demo
   useEffect(() => {
@@ -124,17 +133,100 @@ export default function LandingPage({ onNavigate, siteSettings }) {
   // Simulated upload progress in demo
   useEffect(() => {
     let interval;
-    if (demoTab === "upload") {
+    if (demoTab === "upload" || activeModalOverlay === "upload") {
       interval = setInterval(() => {
         setUploadPercent((prev) => (prev >= 100 ? 15 : prev + 1));
       }, 600);
     }
     return () => clearInterval(interval);
-  }, [demoTab]);
+  }, [demoTab, activeModalOverlay]);
 
   const toggleFaq = (index) => {
     setOpenFaq(openFaq === index ? null : index);
   };
+
+  const handleCopyLink = () => {
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2200);
+  };
+
+  const productScreenshots = [
+    {
+      id: "grid",
+      title: "Visual File Grid & Rich Previews",
+      subtitle: "Instant Document & Media Previews with Custom Folders",
+      description: "Experience thumbnail-rich browsing for Excel formulas, PDF documents, full stack illustrations, and 4K videos alongside color-coded custom folders.",
+      badge: "Visual Workspace",
+      image: "/landing/grid-view.png",
+      tagColor: "indigo",
+      features: [
+        "Live PDF & Spreadsheet thumbnails",
+        "Color-coded folder organization",
+        "Real-time unlimited storage meter",
+        "Instant search and category filters"
+      ]
+    },
+    {
+      id: "table",
+      title: "Structured Metadata Table",
+      subtitle: "High-Density Productivity View for Power Users",
+      description: "Switch to a clean, high-efficiency list view. View file type icons, source paths, modification timestamps, and byte-precise file sizes at a single glance.",
+      badge: "Power Metadata",
+      image: "/landing/table-view.png",
+      tagColor: "cyan",
+      features: [
+        "Instant multi-column sorting",
+        "Source & channel path tracing",
+        "Exact byte-level file sizes",
+        "Batch selection & bulk management"
+      ]
+    },
+    {
+      id: "share",
+      title: "Granular Sharing & Team Permissions",
+      subtitle: "Google Drive-Grade Collaboration & Security",
+      description: "Manage who sees and edits your files. Invite colleagues via email with Viewer/Editor roles, process pending access requests, or generate password-protected public links.",
+      badge: "Enterprise Security",
+      image: "/landing/share-modal.png",
+      tagColor: "blue",
+      features: [
+        "Email invites with Viewer/Editor roles",
+        "Incoming Access Request queue",
+        "Password & expiration link limits",
+        "Restricted vs public link toggles"
+      ]
+    },
+    {
+      id: "upload",
+      title: "High-Speed Chunked Cloud Uploader",
+      subtitle: "2GB File Ceiling with Zero Drops & 4-Part Concurrency",
+      description: "Drag and drop massive multi-gigabyte ISOs, raw video shoots, and zipped archives. Automatic 20MB chunking ensures flawless uploads even through network blips.",
+      badge: "Chunked Engine",
+      image: "/landing/upload-modal.png",
+      tagColor: "emerald",
+      features: [
+        "Multi-file drag and drop dropzone",
+        "Live byte sync and upload speedometer",
+        "Background upload fault tolerance",
+        "Up to 2GB per file support"
+      ]
+    },
+    {
+      id: "menu",
+      title: "1-Click Power Context Menus",
+      subtitle: "Instant Operations for Every Item in Your Workspace",
+      description: "Right-click or tap three dots for instant file operations: generate public share links, star critical documents, rename, relocate, inspect metadata, or safely move to trash.",
+      badge: "Intuitive UX",
+      image: "/landing/context-menu.png",
+      tagColor: "purple",
+      features: [
+        "1-click link generation & sharing",
+        "Favorite & starred item tagging",
+        "Tree relocation & instant rename",
+        "Safe trash bin with 1-click restore"
+      ]
+    }
+  ];
 
   const supportEmail = siteSettings?.supportEmail || "support@telegram-drive.in";
   const telegramChannel = siteSettings?.telegramChannel || "https://t.me/telegram_drive_in";
@@ -464,7 +556,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
       </div>
 
       {/* ========================================================================= */}
-      {/* 5. INTERACTIVE LIVE WORKSPACE DEMO (MOTION PRIMITIVES BROWSER MOCKUP)      */}
+      {/* 5. INTERACTIVE LIVE WORKSPACE DEMO (AUTHENTIC UI SCREENSHOTS + SIMULATOR) */}
       {/* ========================================================================= */}
       <section id="demo" className="relative z-10 py-20 px-4 sm:px-6 max-w-6xl mx-auto">
         <div className="text-center mb-10">
@@ -476,7 +568,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             Test Drive The Next-Gen Interface
           </h2>
           <p className="mt-3 text-sm text-slate-400 max-w-xl mx-auto">
-            Switch between live simulated streaming, chunked uploads, and channel imports right from your browser.
+            Interact with live workspace views, granular sharing dialogs, chunked uploads, and direct 4K streaming.
           </p>
         </div>
 
@@ -491,80 +583,442 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </div>
 
             {/* Fake Omnibox */}
-            {/* Fake Omnibox */}
             <div className="flex-1 max-w-md hidden sm:flex items-center justify-center">
               <div className="w-full py-1 px-3 bg-black/40 border border-white/[0.06] rounded-xl text-[11px] font-mono text-slate-400 flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-slate-300">
                   <Lock className="w-3 h-3 text-emerald-400" />
-                  https://telegram-drive.in/my_drive
+                  https://teledrive.app/my_drive
                 </span>
                 <span className="text-[10px] text-indigo-400 font-bold">Cloud Edge DC2</span>
               </div>
             </div>
 
-            {/* Simulated Live User Pill */}
+            {/* Live User Badge */}
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-              <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-black">
-                T
+              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-[10px] font-black text-white">
+                AL
               </div>
-              <span className="hidden xs:inline">Demo User</span>
+              <span className="hidden xs:inline">Aalo lelo</span>
             </div>
           </div>
 
           {/* Interactive Navigation Tabs */}
-          <div className="p-3 bg-white/[0.01] border-b border-white/[0.06] flex flex-wrap gap-2 justify-center sm:justify-start">
-            <button
-              onClick={() => setDemoTab("stream")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                demoTab === "stream"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-            >
-              <Film className="w-4 h-4" />
-              <span>4K Video Streamer</span>
-            </button>
+          <div className="p-3 bg-white/[0.01] border-b border-white/[0.06] flex flex-wrap gap-2 justify-between items-center">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => { setDemoTab("explorer"); setActiveModalOverlay(null); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  demoTab === "explorer"
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
+                    : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                <span>Drive Workspace</span>
+              </button>
 
-            <button
-              onClick={() => setDemoTab("upload")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                demoTab === "upload"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-            >
-              <Cloud className="w-4 h-4" />
-              <span>Chunked 2GB Uploader</span>
-            </button>
+              <button
+                onClick={() => { setDemoTab("share"); setActiveModalOverlay(null); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  demoTab === "share"
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
+                    : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Team Sharing & Access</span>
+              </button>
 
-            <button
-              onClick={() => setDemoTab("share")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                demoTab === "share"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-            >
-              <Share2 className="w-4 h-4" />
-              <span>Instant Link Sharing</span>
-            </button>
+              <button
+                onClick={() => { setDemoTab("upload"); setActiveModalOverlay(null); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  demoTab === "upload"
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
+                    : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+              >
+                <Upload className="w-4 h-4" />
+                <span>Chunked 2GB Uploader</span>
+              </button>
 
-            <button
-              onClick={() => setDemoTab("files")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                demoTab === "files"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-            >
-              <Folder className="w-4 h-4" />
-              <span>Cloud File Explorer</span>
-            </button>
+              <button
+                onClick={() => { setDemoTab("stream"); setActiveModalOverlay(null); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  demoTab === "stream"
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
+                    : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+              >
+                <Film className="w-4 h-4" />
+                <span>4K Video Streamer</span>
+              </button>
+            </div>
+
+            {/* Quick Action Simulators for Explorer View */}
+            {demoTab === "explorer" && (
+              <div className="flex items-center gap-1.5 pt-2 sm:pt-0">
+                <div className="bg-white/[0.04] p-1 rounded-xl border border-white/[0.08] flex items-center gap-1">
+                  <button
+                    onClick={() => { setExplorerView("grid"); setActiveModalOverlay(null); }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                      explorerView === "grid" && !activeModalOverlay
+                        ? "bg-indigo-600 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Thumbnail Grid View"
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                    <span className="hidden sm:inline">Grid</span>
+                  </button>
+                  <button
+                    onClick={() => { setExplorerView("table"); setActiveModalOverlay(null); }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                      explorerView === "table" && !activeModalOverlay
+                        ? "bg-indigo-600 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Detailed List / Table View"
+                  >
+                    <List className="w-3 h-3" />
+                    <span className="hidden sm:inline">List</span>
+                  </button>
+                  <button
+                    onClick={() => { setExplorerView("menu"); setActiveModalOverlay(null); }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                      explorerView === "menu" && !activeModalOverlay
+                        ? "bg-indigo-600 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Folder Context Menu"
+                  >
+                    <MoreVertical className="w-3 h-3" />
+                    <span className="hidden sm:inline">Menu</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setActiveModalOverlay(activeModalOverlay === "share" ? null : "share")}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1.5 ${
+                    activeModalOverlay === "share"
+                      ? "bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/20"
+                      : "bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.08]"
+                  }`}
+                >
+                  <Share2 className="w-3 h-3 text-blue-400" />
+                  <span className="hidden md:inline">Test Share Modal</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveModalOverlay(activeModalOverlay === "upload" ? null : "upload")}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1.5 ${
+                    activeModalOverlay === "upload"
+                      ? "bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-500/20"
+                      : "bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.08]"
+                  }`}
+                >
+                  <Upload className="w-3 h-3 text-emerald-400" />
+                  <span className="hidden md:inline">Test Upload Modal</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Interactive Tab Body */}
-          <div className="p-5 sm:p-8 min-h-[420px] flex items-center justify-center">
-            {/* TAB 1: 4K VIDEO STREAMER DEMO */}
+          <div className="p-4 sm:p-6 min-h-[420px] flex items-center justify-center relative">
+            {/* TAB 1: DRIVE WORKSPACE (REAL SCREENSHOTS WITH INTERACTIVE OVERLAYS) */}
+            {demoTab === "explorer" && (
+              <div className="w-full relative rounded-2xl overflow-hidden border border-white/10 bg-black/60 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                {/* Visual Image Render */}
+                <div className="relative group cursor-pointer" onClick={() => {
+                  const targetImg = explorerView === "grid" 
+                    ? { src: "/landing/grid-view.png", title: "Visual Thumbnail Grid", desc: "Interactive file grid with instant PDF, Excel, and video thumbnails" }
+                    : explorerView === "table"
+                    ? { src: "/landing/table-view.png", title: "Detailed Metadata Table", desc: "Structured list view with fast sorting by size, date, and type" }
+                    : { src: "/landing/context-menu.png", title: "Folder Context Operations", desc: "1-click actions: Open, Share, Star, Rename, Move, Details, Trash" };
+                  setLightboxImg(targetImg);
+                }}>
+                  <img
+                    src={
+                      explorerView === "grid"
+                        ? "/landing/grid-view.png"
+                        : explorerView === "table"
+                        ? "/landing/table-view.png"
+                        : "/landing/context-menu.png"
+                    }
+                    alt="TeleDrive UI Preview"
+                    className="w-full h-auto object-cover max-h-[580px] rounded-xl"
+                  />
+
+                  {/* Interactive Hotspot Pills (Overlaid on Grid View) */}
+                  {explorerView === "grid" && !activeModalOverlay && (
+                    <>
+                      <div className="absolute top-[22%] left-[28%] hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 border border-indigo-500/40 text-[10px] font-bold text-white shadow-xl pointer-events-none animate-pulse">
+                        <Folder className="w-3 h-3 text-indigo-400" />
+                        <span>Documents & Photos Folders</span>
+                      </div>
+
+                      <div className="absolute bottom-[30%] left-[38%] hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 border border-emerald-500/40 text-[10px] font-bold text-emerald-300 shadow-xl pointer-events-none">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Live Excel & PDF Previews</span>
+                      </div>
+
+                      <div className="absolute bottom-[8%] left-[5%] hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 border border-cyan-500/40 text-[10px] font-bold text-cyan-300 shadow-xl pointer-events-none">
+                        <HardDrive className="w-3 h-3 text-cyan-400" />
+                        <span>Unlimited Cloud Storage</span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Expand Fullscreen Hint */}
+                  <div className="absolute bottom-3 right-3 bg-black/70 hover:bg-black/90 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white border border-white/10 flex items-center gap-1.5 backdrop-blur-md">
+                    <Maximize2 className="w-3 h-3 text-indigo-400" />
+                    <span>Expand High-Res</span>
+                  </div>
+                </div>
+
+                {/* MODAL OVERLAY: SHARE DIALOG SIMULATOR */}
+                {activeModalOverlay === "share" && (
+                  <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-30 flex items-center justify-center p-3 sm:p-6 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="relative max-w-xl w-full rounded-2xl overflow-hidden border border-indigo-500/40 bg-[#0c0e17] shadow-2xl shadow-indigo-950/80 p-2 sm:p-4">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3 px-2">
+                        <div className="flex items-center gap-2">
+                          <Share2 className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-bold text-white">Live Share Dialog Preview</span>
+                        </div>
+                        <button
+                          onClick={() => setActiveModalOverlay(null)}
+                          className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="relative rounded-xl overflow-hidden border border-white/10 mb-3">
+                        <img
+                          src="/landing/share-modal.png"
+                          alt="Share Modal UI"
+                          className="w-full h-auto max-h-[380px] object-contain"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 px-1">
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                          <Lock className="w-3 h-3 text-amber-400" />
+                          <span>Restricted & Public Modes Included</span>
+                        </div>
+                        <button
+                          onClick={handleCopyLink}
+                          className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-blue-500/30"
+                        >
+                          {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedLink ? "Link Copied!" : "Simulate Copy Link"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL OVERLAY: UPLOAD DIALOG SIMULATOR */}
+                {activeModalOverlay === "upload" && (
+                  <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-30 flex items-center justify-center p-3 sm:p-6 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="relative max-w-xl w-full rounded-2xl overflow-hidden border border-emerald-500/40 bg-[#0c0e17] shadow-2xl shadow-emerald-950/80 p-2 sm:p-4">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3 px-2">
+                        <div className="flex items-center gap-2">
+                          <Upload className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-bold text-white">Live Cloud Uploader Preview</span>
+                        </div>
+                        <button
+                          onClick={() => setActiveModalOverlay(null)}
+                          className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="relative rounded-xl overflow-hidden border border-white/10 mb-3">
+                        <img
+                          src="/landing/upload-modal.png"
+                          alt="Upload Modal UI"
+                          className="w-full h-auto max-h-[380px] object-contain"
+                        />
+                      </div>
+
+                      <div className="space-y-2 bg-white/[0.02] p-3 rounded-xl border border-white/[0.06]">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-300 font-bold">Simulated Parallel Chunk Upload</span>
+                          <span className="text-emerald-400 font-mono font-bold">{uploadPercent}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadPercent}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                          <span>Speed: 48.2 MB/s</span>
+                          <span>4 Parts Concurrent</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: TEAM SHARING & PERMISSIONS (DETAILED BREAKDOWN + SCREENSHOT) */}
+            {demoTab === "share" && (
+              <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-center animate-in fade-in zoom-in-95 duration-200">
+                <div className="lg:col-span-7">
+                  <div
+                    onClick={() => setLightboxImg({ src: "/landing/share-modal.png", title: "Granular Team Sharing & Access Control", desc: "Invite collaborators via email, assign roles, and issue password-protected links" })}
+                    className="relative rounded-2xl overflow-hidden border border-white/15 bg-black/60 shadow-2xl cursor-pointer group hover:border-blue-500/50 transition-all"
+                  >
+                    <img
+                      src="/landing/share-modal.png"
+                      alt="Share Modal"
+                      className="w-full h-auto object-cover rounded-xl transition-transform duration-300 group-hover:scale-[1.01]"
+                    />
+                    <div className="absolute bottom-2 right-2 bg-black/70 px-2.5 py-1 rounded-lg text-[10px] font-bold text-white border border-white/10 flex items-center gap-1">
+                      <Maximize2 className="w-3 h-3 text-blue-400" />
+                      <span>Click to Enlarge</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5 space-y-4 text-left">
+                  <div>
+                    <span className="px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 text-[10px] font-bold border border-blue-500/30 uppercase tracking-wider">
+                      Collaborative Drive
+                    </span>
+                    <h3 className="text-xl sm:text-2xl font-black text-white mt-2">
+                      Granular Sharing & Access
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                      TeleDrive incorporates enterprise-grade permission management designed just like Google Drive.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <div className="flex items-center gap-2 text-xs font-bold text-white">
+                        <Users className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Email Invitations & Roles</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Add users with Viewer or Editor roles with instant permission syncing.
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <div className="flex items-center gap-2 text-xs font-bold text-white">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Access Requests Approval</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Incoming requests from unauthorized viewers can be approved or rejected with 1 click.
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <div className="flex items-center gap-2 text-xs font-bold text-white">
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Protected Public Links</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Create public links with custom passwords, expiration dates, and download limits.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCopyLink}
+                    className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+                  >
+                    {copiedLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedLink ? "Protected Link Copied!" : "Simulate Copy Share Link"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: CHUNKED 2GB UPLOADER DEMO */}
+            {demoTab === "upload" && (
+              <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-center animate-in fade-in zoom-in-95 duration-200">
+                <div className="lg:col-span-7">
+                  <div
+                    onClick={() => setLightboxImg({ src: "/landing/upload-modal.png", title: "High-Speed Chunked Cloud Uploader", desc: "Drag and drop up to 2GB files with parallel chunk streaming" })}
+                    className="relative rounded-2xl overflow-hidden border border-white/15 bg-black/60 shadow-2xl cursor-pointer group hover:border-emerald-500/50 transition-all"
+                  >
+                    <img
+                      src="/landing/upload-modal.png"
+                      alt="Upload Modal"
+                      className="w-full h-auto object-cover rounded-xl transition-transform duration-300 group-hover:scale-[1.01]"
+                    />
+                    <div className="absolute bottom-2 right-2 bg-black/70 px-2.5 py-1 rounded-lg text-[10px] font-bold text-white border border-white/10 flex items-center gap-1">
+                      <Maximize2 className="w-3 h-3 text-emerald-400" />
+                      <span>Click to Enlarge</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5 space-y-4 text-left">
+                  <div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 uppercase tracking-wider">
+                      Parallel Pipeline
+                    </span>
+                    <h3 className="text-xl sm:text-2xl font-black text-white mt-2">
+                      2GB Chunked Uploader
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                      Files are split into 20MB parts and uploaded concurrently. Zero drops even on flaky network connections.
+                    </p>
+                  </div>
+
+                  {/* Live Telemetry Card */}
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-xs">
+                          ISO
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white">Ubuntu_24.04_LTS_Server.iso</p>
+                          <p className="text-[10px] text-slate-400">1.84 GB • Speed: 48.2 MB/s</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-emerald-400">{uploadPercent}%</span>
+                    </div>
+
+                    <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 via-indigo-500 to-cyan-400 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadPercent}%` }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                      <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                        <CheckCircle2 className="w-3 h-3" /> Chunks 74/92 Dispatched
+                      </span>
+                      <span>ETA: 4 seconds</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Concurrency</span>
+                      <span className="text-xs font-mono font-black text-white">4 Parts Parallel</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Max File Size</span>
+                      <span className="text-xs font-mono font-black text-emerald-400">2.0 GB / File</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: 4K VIDEO STREAMER DEMO */}
             {demoTab === "stream" && (
               <div className="w-full max-w-3xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
                 <div className="relative aspect-video rounded-2xl bg-black border border-white/10 overflow-hidden shadow-2xl flex flex-col justify-between p-4 sm:p-6 group">
@@ -589,7 +1043,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                     <div className="flex items-center gap-2.5">
                       <span className="px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[11px] font-bold text-white border border-white/10 flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        4K 60FPS • Multi-DC Stream
+                        4K 60FPS • Direct Edge Stream
                       </span>
                       <span className="hidden sm:inline-block text-xs font-semibold text-slate-300 truncate max-w-xs">
                         Cinematic_Showreel_2026_4K.mkv
@@ -648,145 +1102,6 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                         <Maximize2 className="w-3.5 h-3.5 hover:text-white cursor-pointer" />
                       </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: CHUNKED 2GB UPLOADER DEMO */}
-            {demoTab === "upload" && (
-              <div className="w-full max-w-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                <div className="p-6 rounded-2xl bg-white/[0.02] border border-dashed border-indigo-500/40 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto">
-                    <Cloud className="w-6 h-6 animate-bounce" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">Chunked Streaming Uploader Active</h4>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Files are split into 20MB parts and uploaded concurrently with high-speed parallel chunking.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Simulated Active Upload Card */}
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xs">
-                        ISO
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white">Ubuntu_24.04_LTS_Server_ARM64.iso</p>
-                        <p className="text-[11px] text-slate-400">1.84 GB • Upload speed: 48.2 MB/s</p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold font-mono text-indigo-400">{uploadPercent}%</span>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadPercent}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Chunks 74/92 Dispatched
-                    </span>
-                    <span>ETA: 4 seconds</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: SECURE PUBLIC FILE SHARING DEMO */}
-            {demoTab === "share" && (
-              <div className="w-full max-w-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-                        <Share2 className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-white text-sm">Client_Project_Deliverables_4K.zip</h4>
-                        <p className="text-[11px] text-slate-400">1.4 GB • Ready to share</p>
-                      </div>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
-                      Link Active
-                    </span>
-                  </div>
-
-                  {/* Public Link Field */}
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Public Share Link</label>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-xs font-mono text-indigo-300 truncate">
-                        https://telegram-drive.in/s/x9K2pL
-                      </div>
-                      <button
-                        onClick={() => alert("Simulated link copied to clipboard!")}
-                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Privacy Controls Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1">
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Password Protection</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono">•••••••• (Active)</p>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1">
-                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Auto Expiration</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono">7 Days Remaining</p>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1">
-                        <Download className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Download Limit</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono">3 / 10 Downloads Used</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 4: CLOUD FILE EXPLORER DEMO */}
-            {demoTab === "files" && (
-              <div className="w-full max-w-3xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-left">
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 transition-all group cursor-pointer">
-                    <Folder className="w-8 h-8 text-indigo-400 fill-indigo-400/20 mb-2 group-hover:scale-110 transition-transform" />
-                    <p className="font-bold text-xs text-white truncate">Full Course Videos</p>
-                    <p className="text-[11px] text-slate-400">42 items • 18.4 GB</p>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 transition-all group cursor-pointer">
-                    <Film className="w-8 h-8 text-cyan-400 mb-2 group-hover:scale-110 transition-transform" />
-                    <p className="font-bold text-xs text-white truncate">Project_Final_4K.mp4</p>
-                    <p className="text-[11px] text-slate-400">1.4 GB • Ready to Stream</p>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 transition-all group cursor-pointer">
-                    <FileText className="w-8 h-8 text-emerald-400 mb-2 group-hover:scale-110 transition-transform" />
-                    <p className="font-bold text-xs text-white truncate">System_Architecture.pdf</p>
-                    <p className="text-[11px] text-slate-400">12 MB • Instant Preview</p>
                   </div>
                 </div>
               </div>
@@ -926,33 +1241,140 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </div>
           </SpotlightCard>
 
-          {/* Card 6: 2-Column Wide - Hybrid SQLite + Supabase Sync */}
-          <SpotlightCard className="md:col-span-2 p-8 sm:p-10 flex flex-col justify-between min-h-[340px]">
-            <div className="space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                <Server className="w-6 h-6" />
+          {/* Card 6: 2-Column Wide - Granular Permissions & Team Sharing */}
+          <SpotlightCard className="md:col-span-2 p-8 sm:p-10 flex flex-col justify-between min-h-[340px] relative overflow-hidden group">
+            <div className="space-y-4 relative z-10">
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                <Users className="w-6 h-6" />
               </div>
               <h3 className="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight">
-                Bi-Directional Supabase Cloud Persistence
+                Granular Permissions & Team Sharing
               </h3>
               <p className="text-sm text-slate-400 max-w-xl leading-relaxed">
-                Enjoy ultra-fast local SQLite queries paired with automated Supabase PostgreSQL synchronization. Even if you migrate servers or restart your instance, every single file and folder metadata is preserved permanently.
+                Collaborate effortlessly with precision access control. Add people by email, assign Viewer or Editor rights, approve Google Drive-style access requests, and create password-protected links with custom expiration.
               </p>
             </div>
 
-            <div className="pt-8 flex flex-wrap items-center gap-3 text-xs font-mono text-slate-300">
-              <span className="px-3 py-1 rounded-xl bg-white/[0.04] border border-white/10">
-                WAL-Mode SQLite Cache
+            <div className="pt-8 flex flex-wrap items-center gap-3 text-xs font-mono text-slate-300 relative z-10">
+              <span className="px-3 py-1 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300 font-sans font-bold flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" /> Email Invites (Viewer / Editor)
               </span>
               <span className="px-3 py-1 rounded-xl bg-white/[0.04] border border-white/10">
-                Chunked Supabase Range Sync
+                Google Drive-Style Access Requests
               </span>
               <span className="px-3 py-1 rounded-xl bg-white/[0.04] border border-white/10">
-                100% Data Redundancy
+                Restricted & Public Link Modes
+              </span>
+              <span className="px-3 py-1 rounded-xl bg-white/[0.04] border border-white/10">
+                Password & Expiry Protection
               </span>
             </div>
           </SpotlightCard>
         </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* 6.5 VISUAL PRODUCT TOUR (AUTHENTIC HIGH-RES UI SHOWCASE)                 */}
+      {/* ========================================================================= */}
+      <section className="relative z-10 py-20 px-4 sm:px-6 max-w-7xl mx-auto">
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-black uppercase tracking-wider mb-3">
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Visual Tour</span>
+          </div>
+          <h2 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-white">
+            Inside Your New Cloud OS
+          </h2>
+          <p className="mt-4 text-sm sm:text-base text-slate-400 max-w-2xl mx-auto">
+            Explore authentic screenshots of TeleDrive's production interface. Built for speed, tuned for aesthetics, and engineered for complete control.
+          </p>
+        </div>
+
+        {/* Interactive Tour Navigator Tabs */}
+        <div className="flex flex-wrap justify-center gap-2 mb-8">
+          {productScreenshots.map((item, idx) => (
+            <button
+              key={item.id}
+              onClick={() => setProductTourTab(idx)}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                productTourTab === idx
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 scale-105"
+                  : "bg-white/[0.03] text-slate-400 border border-white/[0.06] hover:bg-white/[0.08] hover:text-white"
+              }`}
+            >
+              <span>{item.badge}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Featured Showcase Card */}
+        {(() => {
+          const current = productScreenshots[productTourTab];
+          return (
+            <div className="rounded-3xl border border-white/10 bg-[#0c0e17]/90 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl shadow-indigo-950/60 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+              {/* Left Column: Details & Feature Checklist */}
+              <div className="lg:col-span-5 space-y-6">
+                <div>
+                  <span className="inline-block px-3 py-1 rounded-full bg-indigo-500/15 text-indigo-400 text-[11px] font-mono font-bold border border-indigo-500/30 mb-3">
+                    {current.badge}
+                  </span>
+                  <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {current.title}
+                  </h3>
+                  <p className="text-sm font-semibold text-slate-300 mt-1">
+                    {current.subtitle}
+                  </p>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-3 leading-relaxed">
+                    {current.description}
+                  </p>
+                </div>
+
+                <div className="space-y-2.5 pt-2">
+                  {current.features.map((feat, fIdx) => (
+                    <div key={fIdx} className="flex items-center gap-2.5 text-xs text-slate-300 font-medium">
+                      <div className="w-5 h-5 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                        <Check className="w-3 h-3" />
+                      </div>
+                      <span>{feat}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-4 flex items-center gap-3">
+                  <button
+                    onClick={() => setLightboxImg({ src: current.image, title: current.title, desc: current.description })}
+                    className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white flex items-center gap-2 transition-all hover:scale-105"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Expand High-Res View</span>
+                  </button>
+                  <span className="text-[11px] text-slate-500">Click image to enlarge</span>
+                </div>
+              </div>
+
+              {/* Right Column: High-Res Interactive Screenshot Frame */}
+              <div className="lg:col-span-7">
+                <div 
+                  onClick={() => setLightboxImg({ src: current.image, title: current.title, desc: current.description })}
+                  className="relative group rounded-2xl overflow-hidden border border-white/15 bg-black/60 shadow-2xl cursor-pointer transition-all duration-300 hover:border-indigo-500/50 hover:shadow-indigo-500/20"
+                >
+                  <img
+                    src={current.image}
+                    alt={current.title}
+                    className="w-full h-auto object-cover rounded-xl transition-transform duration-500 group-hover:scale-[1.02]"
+                  />
+                  {/* Subtle Hover Overlay with Zoom Icon */}
+                  <div className="absolute inset-0 bg-indigo-950/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                    <span className="px-4 py-2 rounded-xl bg-black/80 text-white text-xs font-bold border border-white/20 flex items-center gap-2 shadow-xl">
+                      <Maximize2 className="w-4 h-4 text-indigo-400" />
+                      <span>Click to View Fullscreen</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {/* ========================================================================= */}
@@ -1218,6 +1640,42 @@ export default function LandingPage({ onNavigate, siteSettings }) {
           <p>Encrypted End-to-End • Zero Third-Party Tracking</p>
         </div>
       </footer>
+
+      {/* ========================================================================= */}
+      {/* 11. HIGH-RESOLUTION LIGHTBOX MODAL                                       */}
+      {/* ========================================================================= */}
+      {lightboxImg && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div 
+            className="relative max-w-5xl w-full bg-[#0c0e17] border border-white/20 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-950/80 p-4 sm:p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 px-1">
+              <div>
+                <h3 className="text-base sm:text-xl font-black text-white">{lightboxImg.title}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{lightboxImg.desc}</p>
+              </div>
+              <button
+                onClick={() => setLightboxImg(null)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden border border-white/10 max-h-[75vh] flex items-center justify-center bg-black/60 p-1">
+              <img 
+                src={lightboxImg.src} 
+                alt={lightboxImg.title} 
+                className="w-full h-auto max-h-[72vh] object-contain rounded-xl"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
