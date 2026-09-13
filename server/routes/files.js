@@ -390,7 +390,7 @@ router.post("/upload", uploadLimiter, upload.single("file"), async (req, res) =>
   }
 });
 
-// POST /api/files/import-link - Import media from a Telegram post URL
+// POST /api/files/import-link - Import media from a Telegram post URL (Single or Range / Bulk)
 router.post("/import-link", uploadLimiter, async (req, res) => {
   try {
     const { postUrl, folderId, customName } = req.body;
@@ -398,32 +398,73 @@ router.post("/import-link", uploadLimiter, async (req, res) => {
     if (!postUrl || !validateTelegramUrl(postUrl)) {
       return res.status(400).json({
         success: false,
-        error: "Valid Telegram post URL is required (e.g., https://t.me/channel_name/123 or https://t.me/c/1234567890/123)"
+        error: "Valid Telegram post URL is required (e.g., https://t.me/channel_name/123 or https://t.me/c/1234567890/1054-1090)"
       });
     }
 
-    const mediaInfo = await parseAndFetchTelegramPost(postUrl, req.userId || null);
-    const fileName = customName ? sanitizeFileName(customName) : sanitizeFileName(mediaInfo.fileName);
+    const result = await parseAndFetchTelegramPost(postUrl, req.userId || null);
     const targetFolder = folderId === "root" || !folderId ? null : folderId;
 
+    // Handle Range or Multi-line Bulk Import
+    if (result.isBulk && Array.isArray(result.items)) {
+      const savedFiles = [];
+      for (const item of result.items) {
+        const fileId = generateId("file_");
+        const fileRecord = {
+          id: fileId,
+          user_id: req.userId || null,
+          name: sanitizeFileName(item.fileName),
+          folder_id: targetFolder,
+          size: item.fileSize,
+          mime_type: item.mimeType,
+          type: item.type,
+          source_type: "telegram_post",
+          telegram_post_url: item.postUrl || postUrl.trim(),
+          telegram_file_id: item.docId || null,
+          telegram_message_id: item.messageId,
+          telegram_channel_id: item.channelId,
+          telegram_channel_title: item.channelTitle || result.channelTitle || "Telegram Channel",
+          telegram_access_hash: item.accessHash || null,
+          telegram_file_reference: item.fileReference || null,
+          telegram_dc_id: item.dcId || null,
+          is_starred: 0,
+          is_trash: 0
+        };
+
+        const saved = await dbInsertFile(fileRecord);
+        savedFiles.push(saved);
+      }
+
+      return res.json({
+        success: true,
+        isBulk: true,
+        count: savedFiles.length,
+        skipped: result.skipped || 0,
+        files: savedFiles,
+        file: savedFiles[0] || null
+      });
+    }
+
+    // Single Media Post Import
+    const fileName = customName ? sanitizeFileName(customName) : sanitizeFileName(result.fileName);
     const fileId = generateId("file_");
     const fileRecord = {
       id: fileId,
       user_id: req.userId || null,
       name: fileName,
       folder_id: targetFolder,
-      size: mediaInfo.fileSize,
-      mime_type: mediaInfo.mimeType,
-      type: mediaInfo.type,
+      size: result.fileSize,
+      mime_type: result.mimeType,
+      type: result.type,
       source_type: "telegram_post",
-      telegram_post_url: postUrl.trim(),
-      telegram_file_id: mediaInfo.docId || null,
-      telegram_message_id: mediaInfo.messageId,
-      telegram_channel_id: mediaInfo.channelId,
-      telegram_channel_title: mediaInfo.channelTitle,
-      telegram_access_hash: mediaInfo.accessHash || null,
-      telegram_file_reference: mediaInfo.fileReference || null,
-      telegram_dc_id: mediaInfo.dcId || null,
+      telegram_post_url: result.postUrl || postUrl.trim(),
+      telegram_file_id: result.docId || null,
+      telegram_message_id: result.messageId,
+      telegram_channel_id: result.channelId,
+      telegram_channel_title: result.channelTitle,
+      telegram_access_hash: result.accessHash || null,
+      telegram_file_reference: result.fileReference || null,
+      telegram_dc_id: result.dcId || null,
       is_starred: 0,
       is_trash: 0
     };

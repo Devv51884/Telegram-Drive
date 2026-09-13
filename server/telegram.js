@@ -785,16 +785,55 @@ export async function logoutTelegramUser(userId = null) {
   return { success: true };
 }
 
-// Parse Telegram Post Link (supports private channel, public channel, and forum topics)
+// In-memory media location cache to eliminate MTProto roundtrips on range requests
+const mediaLocationCache = new Map();
+
+// Helper to parse message ID or range (e.g. 1054, 1054-1090, 1054..1090)
+function parseMessageRange(msgPart) {
+  if (!msgPart) return { isRange: false, messageId: 0, messageIds: [] };
+  const rangeMatch = msgPart.match(/^(\d+)[-_.:]{1,2}(\d+)$/);
+  if (rangeMatch) {
+    let start = parseInt(rangeMatch[1], 10);
+    let end = parseInt(rangeMatch[2], 10);
+    if (start > end) {
+      const temp = start;
+      start = end;
+      end = temp;
+    }
+    // Safety cap: max 100 messages per single range request to prevent Telegram FloodWait
+    const count = Math.min(end - start + 1, 100);
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+      ids.push(start + i);
+    }
+    return {
+      isRange: true,
+      startId: start,
+      endId: start + count - 1,
+      messageId: start,
+      messageIds: ids
+    };
+  }
+  const singleId = parseInt(msgPart, 10);
+  return {
+    isRange: false,
+    startId: singleId,
+    endId: singleId,
+    messageId: singleId,
+    messageIds: [singleId]
+  };
+}
+
+// Parse Telegram Post Link (supports private channel, public channel, forum topics, and ranges like 1054-1090)
 export function parseTelegramPostUrl(url) {
   if (!url || typeof url !== "string") return null;
   const cleanUrl = url.trim().split("?")[0].split("#")[0].replace(/\/+$/, "");
 
-  // 1. Private channel / supergroup / forum topic: t.me/c/2643917389/1036/1039 or t.me/c/2643917389/1039
-  const privateMatch = cleanUrl.match(/t\.me\/c\/(\d+)(?:\/(\d+))?\/(\d+)$/i);
+  // 1. Private channel / supergroup / forum topic: t.me/c/2643917389/1036/1054-1090 or t.me/c/2643917389/1054-1090
+  const privateMatch = cleanUrl.match(/t\.me\/c\/(\d+)(?:\/(\d+))?\/(\d+(?:[-_.:]{1,2}\d+)?)$/i);
   if (privateMatch) {
     const rawChannelId = privateMatch[1];
-    const messageId = parseInt(privateMatch[3] || privateMatch[2], 10);
+    const rangeInfo = parseMessageRange(privateMatch[3] || privateMatch[2]);
     const topicId = privateMatch[3] ? parseInt(privateMatch[2], 10) : null;
     const fullChannelId = rawChannelId.startsWith("-100") ? rawChannelId : `-100${rawChannelId}`;
     return {
@@ -802,58 +841,152 @@ export function parseTelegramPostUrl(url) {
       channelId: fullChannelId,
       rawChannelId,
       topicId,
-      messageId
+      ...rangeInfo
     };
   }
 
-  // 2. Public channel / group / forum topic: t.me/channel_name/1036/1039 or t.me/channel_name/1039
-  const publicMatch = cleanUrl.match(/t\.me\/([a-zA-Z0-9_]+)(?:\/(\d+))?\/(\d+)$/i);
+  // 2. Public channel / group / forum topic: t.me/channel_name/1036/1054-1090 or t.me/channel_name/1054-1090
+  const publicMatch = cleanUrl.match(/t\.me\/([a-zA-Z0-9_]+)(?:\/(\d+))?\/(\d+(?:[-_.:]{1,2}\d+)?)$/i);
   if (publicMatch && publicMatch[1] !== "c") {
     const channelUsername = publicMatch[1];
-    const messageId = parseInt(publicMatch[3] || publicMatch[2], 10);
+    const rangeInfo = parseMessageRange(publicMatch[3] || publicMatch[2]);
     const topicId = publicMatch[3] ? parseInt(publicMatch[2], 10) : null;
     return {
       isPrivate: false,
       channelUsername,
       channelId: channelUsername,
       topicId,
-      messageId
+      ...rangeInfo
     };
   }
 
   return null;
 }
 
-// Parse and Fetch Telegram Post Media using GramJS MTProto Client
-export async function parseAndFetchTelegramPost(postUrl, userId = null) {
-  const parsed = parseTelegramPostUrl(postUrl);
-  if (!parsed) {
-    throw new Error(
-      "Invalid Telegram link format. Expected https://t.me/channel_name/123 or https://t.me/c/1234567890/123"
-    );
+// Helper: Extract media metadata from a single GramJS Message object
+function extractMediaFromMessage(msg, peer, channelTitle, client) {
+  if (!msg || !msg.media) return null;
+  const messageId = msg.id;
+  let fileName = "telegram_media";
+  let mimeType = "application/octet-stream";
+  let fileSize = 0;
+  let type = "other";
+  let caption = msg.message || "";
+  let duration = 0;
+
+  let fileReference = null;
+  let accessHash = null;
+  let dcId = null;
+
+  if (msg.media.document) {
+    const doc = msg.media.document;
+    fileSize = Number(doc.size || 0);
+    mimeType = doc.mimeType || "application/octet-stream";
+    fileReference = doc.fileReference ? Buffer.from(doc.fileReference).toString("base64") : null;
+    accessHash = doc.accessHash ? doc.accessHash.toString() : null;
+    dcId = doc.dcId;
+
+    const fileAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeFilename");
+    const videoAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeVideo");
+    const audioAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeAudio");
+
+    if (fileAttr && fileAttr.fileName) {
+      fileName = fileAttr.fileName;
+    } else if (mimeType.startsWith("video/")) {
+      fileName = `video_${messageId}.mp4`;
+    } else if (mimeType.startsWith("audio/")) {
+      fileName = `audio_${messageId}.mp3`;
+    } else if (mimeType === "application/pdf") {
+      fileName = `document_${messageId}.pdf`;
+    } else {
+      fileName = `document_${messageId}`;
+    }
+
+    if (videoAttr) {
+      type = "video";
+      duration = videoAttr.duration || 0;
+    } else if (audioAttr) {
+      type = "audio";
+      duration = audioAttr.duration || 0;
+    } else if (mimeType.startsWith("video/")) {
+      type = "video";
+    } else if (mimeType.startsWith("image/")) {
+      type = "image";
+    } else if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
+      type = "pdf";
+    } else {
+      type = "document";
+    }
+  } else if (msg.media.photo) {
+    type = "image";
+    mimeType = "image/jpeg";
+    fileName = `photo_${messageId}.jpg`;
+    const photo = msg.media.photo;
+    fileReference = photo.fileReference ? Buffer.from(photo.fileReference).toString("base64") : null;
+    accessHash = photo.accessHash ? photo.accessHash.toString() : null;
+    dcId = photo.dcId;
+    const sizes = photo.sizes || [];
+    const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
+    fileSize = Number(largest?.size || 1024 * 500);
+  } else {
+    return null;
   }
 
-  let client = await getUserGramClient(userId);
-  if (!client) {
-    client = await getGramClient(userId);
+  // Pre-populate mediaLocationCache so immediate stream request is instant 0ms
+  let location = null;
+  if (msg.media.document) {
+    const doc = msg.media.document;
+    location = new Api.InputDocumentFileLocation({
+      id: doc.id,
+      accessHash: doc.accessHash,
+      fileReference: doc.fileReference,
+      thumbSize: ""
+    });
+  } else if (msg.media.photo) {
+    const photo = msg.media.photo;
+    const sizes = photo.sizes || [];
+    const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
+    location = new Api.InputPhotoFileLocation({
+      id: photo.id,
+      accessHash: photo.accessHash,
+      fileReference: photo.fileReference,
+      thumbSize: largest?.type || "y"
+    });
   }
-  if (!client) {
-    throw new Error(
-      "No Telegram user account is connected. Please connect your Telegram account in Settings to import channel media."
-    );
+  if (location) {
+    const cacheKey = `${peer.toString()}_${messageId.toString()}`;
+    mediaLocationCache.set(cacheKey, {
+      totalSize: Number(fileSize),
+      location,
+      dcId: dcId || client?.session?.dcId
+    });
+    setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
   }
 
-  if (!client.connected) {
-    try {
-      await client.connect();
-    } catch {}
-  }
+  const docId = msg.media.document?.id?.toString() || msg.media.photo?.id?.toString() || null;
 
+  return {
+    messageId: messageId.toString(),
+    channelId: peer.toString(),
+    channelTitle,
+    fileName,
+    mimeType,
+    fileSize,
+    type,
+    caption,
+    duration,
+    docId,
+    fileReference,
+    accessHash,
+    dcId: dcId || client?.session?.dcId || 2
+  };
+}
+
+// Internal helper to fetch messages from a single parsed post target
+async function fetchFromParsedPost(parsed, client) {
   const peer = parsed.channelId;
   const rawNum = parsed.rawChannelId || parsed.channelId.replace(/^-100/, "").replace(/^-/, "");
-  const messageId = parsed.messageId;
 
-  // Resolve target peer entity with deep dialog search for private channels/groups
   let targetPeer = null;
 
   // 1. If public username, try getEntity directly
@@ -902,151 +1035,152 @@ export async function parseAndFetchTelegramPost(postUrl, userId = null) {
   if (!targetPeer) {
     if (parsed.isPrivate) {
       throw new Error(
-        `Could not access private channel #${rawNum}. Please ensure your connected Telegram account is a member of this channel in the Telegram app, or forward the message to your 'Saved Messages' and import from there.`
+        `Could not access private channel #${rawNum}. Please ensure your connected Telegram account is a member of this channel in the Telegram app.`
       );
     } else {
       targetPeer = parsed.channelId;
     }
   }
 
+  let channelTitle = "Telegram Channel";
   try {
-    const messages = await client.getMessages(targetPeer, { ids: [messageId] });
-    if (!messages || messages.length === 0 || !messages[0]) {
-      throw new Error(`Message #${messageId} not found in this channel.`);
-    }
+    const chat = await client.getEntity(targetPeer || peer);
+    channelTitle = chat?.title || chat?.username || "Telegram Channel";
+  } catch {}
 
+  const messages = await client.getMessages(targetPeer, { ids: parsed.messageIds });
+  if (!messages || messages.length === 0) {
+    throw new Error(`Requested message(s) not found in this channel.`);
+  }
+
+  // Single post mode (not a range)
+  if (!parsed.isRange) {
     const msg = messages[0];
+    if (!msg) {
+      throw new Error(`Message #${parsed.messageId} not found.`);
+    }
     if (!msg.media) {
       throw new Error("This message contains only text and no downloadable file/video media.");
     }
-
-    let fileName = "telegram_media";
-    let mimeType = "application/octet-stream";
-    let fileSize = 0;
-    let type = "other";
-    let caption = msg.message || "";
-    let duration = 0;
-
-    let fileReference = null;
-    let accessHash = null;
-    let dcId = null;
-
-    if (msg.media.document) {
-      const doc = msg.media.document;
-      fileSize = Number(doc.size || 0);
-      mimeType = doc.mimeType || "application/octet-stream";
-      fileReference = doc.fileReference ? Buffer.from(doc.fileReference).toString("base64") : null;
-      accessHash = doc.accessHash ? doc.accessHash.toString() : null;
-      dcId = doc.dcId;
-
-      const fileAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeFilename");
-      const videoAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeVideo");
-      const audioAttr = doc.attributes?.find((a) => a.className === "DocumentAttributeAudio");
-
-      if (fileAttr && fileAttr.fileName) {
-        fileName = fileAttr.fileName;
-      } else if (mimeType.startsWith("video/")) {
-        fileName = `video_${messageId}.mp4`;
-      } else if (mimeType.startsWith("audio/")) {
-        fileName = `audio_${messageId}.mp3`;
-      } else if (mimeType === "application/pdf") {
-        fileName = `document_${messageId}.pdf`;
-      } else {
-        fileName = `document_${messageId}`;
-      }
-
-      if (videoAttr) {
-        type = "video";
-        duration = videoAttr.duration || 0;
-      } else if (audioAttr) {
-        type = "audio";
-        duration = audioAttr.duration || 0;
-      } else if (mimeType.startsWith("video/")) {
-        type = "video";
-      } else if (mimeType.startsWith("image/")) {
-        type = "image";
-      } else if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
-        type = "pdf";
-      } else {
-        type = "document";
-      }
-    } else if (msg.media.photo) {
-      type = "image";
-      mimeType = "image/jpeg";
-      fileName = `photo_${messageId}.jpg`;
-      const photo = msg.media.photo;
-      fileReference = photo.fileReference ? Buffer.from(photo.fileReference).toString("base64") : null;
-      accessHash = photo.accessHash ? photo.accessHash.toString() : null;
-      dcId = photo.dcId;
-      const sizes = photo.sizes || [];
-      const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
-      fileSize = Number(largest?.size || 1024 * 500);
+    const media = extractMediaFromMessage(msg, peer, channelTitle, client);
+    if (!media) {
+      throw new Error("Unsupported media type in this message.");
     }
-
-    let channelTitle = "Telegram Channel";
-    try {
-      const chat = await client.getEntity(targetPeer || peer);
-      channelTitle = chat?.title || chat?.username || "Telegram Channel";
-    } catch {}
-
-    // Pre-populate mediaLocationCache so immediate stream request is instant 0ms
-    if (msg.media) {
-      let location = null;
-      if (msg.media.document) {
-        const doc = msg.media.document;
-        location = new Api.InputDocumentFileLocation({
-          id: doc.id,
-          accessHash: doc.accessHash,
-          fileReference: doc.fileReference,
-          thumbSize: ""
-        });
-      } else if (msg.media.photo) {
-        const photo = msg.media.photo;
-        const sizes = photo.sizes || [];
-        const largest = sizes.filter((s) => s.size || (s.w && s.h)).pop() || sizes[sizes.length - 1];
-        location = new Api.InputPhotoFileLocation({
-          id: photo.id,
-          accessHash: photo.accessHash,
-          fileReference: photo.fileReference,
-          thumbSize: largest?.type || "y"
-        });
-      }
-      if (location) {
-        const cacheKey = `${peer.toString()}_${messageId.toString()}`;
-        mediaLocationCache.set(cacheKey, {
-          totalSize: Number(fileSize),
-          location,
-          dcId: dcId || client.session.dcId
-        });
-        setTimeout(() => mediaLocationCache.delete(cacheKey), 30 * 60 * 1000);
-      }
-    }
-
-    const docId = msg.media.document?.id?.toString() || msg.media.photo?.id?.toString() || null;
-
-    return {
-      messageId: messageId.toString(),
-      channelId: peer.toString(),
-      channelTitle,
-      postUrl: postUrl.trim(),
-      fileName,
-      mimeType,
-      fileSize,
-      type,
-      caption,
-      duration,
-      docId,
-      fileReference,
-      accessHash,
-      dcId
-    };
-  } catch (err) {
-    throw new Error(`Failed to fetch Telegram message: ${err.message}`);
+    return media;
   }
+
+  // Range bulk mode
+  const validItems = [];
+  for (const msg of messages) {
+    if (msg && msg.media) {
+      const media = extractMediaFromMessage(msg, peer, channelTitle, client);
+      if (media) {
+        media.postUrl = parsed.isPrivate
+          ? `https://t.me/c/${parsed.rawChannelId}/${parsed.topicId ? `${parsed.topicId}/` : ""}${msg.id}`
+          : `https://t.me/${parsed.channelUsername}/${parsed.topicId ? `${parsed.topicId}/` : ""}${msg.id}`;
+        validItems.push(media);
+      }
+    }
+  }
+
+  if (validItems.length === 0) {
+    throw new Error("No downloadable media files (videos, documents, audio, or photos) were found in the requested message range.");
+  }
+
+  return {
+    isBulk: true,
+    totalRequested: parsed.messageIds.length,
+    count: validItems.length,
+    skipped: parsed.messageIds.length - validItems.length,
+    channelTitle,
+    items: validItems
+  };
 }
 
-// In-memory media location cache to eliminate MTProto roundtrips on range requests
-const mediaLocationCache = new Map();
+// Parse and Fetch Telegram Post Media using GramJS MTProto Client (Single, Range, or Multi-line)
+export async function parseAndFetchTelegramPost(postUrl, userId = null) {
+  if (!postUrl || typeof postUrl !== "string") {
+    throw new Error("Valid Telegram post URL is required.");
+  }
+
+  const lines = postUrl
+    .trim()
+    .split(/[\r\n,]+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    throw new Error("Please enter at least one Telegram post link.");
+  }
+
+  let client = await getUserGramClient(userId);
+  if (!client) {
+    client = await getGramClient(userId);
+  }
+  if (!client) {
+    throw new Error(
+      "No Telegram user account is connected. Please connect your Telegram account in Settings to import channel media."
+    );
+  }
+
+  if (!client.connected) {
+    try {
+      await client.connect();
+    } catch {}
+  }
+
+  // Case 1: Single line link (could be single post or range e.g. 1054-1090)
+  if (lines.length === 1) {
+    const parsed = parseTelegramPostUrl(lines[0]);
+    if (!parsed) {
+      throw new Error(
+        "Invalid Telegram link format. Expected https://t.me/channel_name/123 or https://t.me/c/1234567890/1054-1090"
+      );
+    }
+    const result = await fetchFromParsedPost(parsed, client);
+    if (!result.isBulk) {
+      result.postUrl = lines[0].trim();
+    }
+    return result;
+  }
+
+  // Case 2: Multi-line batch import
+  const allItems = [];
+  let totalRequested = 0;
+  let totalSkipped = 0;
+
+  for (const line of lines) {
+    const parsed = parseTelegramPostUrl(line);
+    if (!parsed) continue;
+
+    try {
+      const res = await fetchFromParsedPost(parsed, client);
+      if (res.isBulk && Array.isArray(res.items)) {
+        totalRequested += res.totalRequested;
+        totalSkipped += res.skipped;
+        allItems.push(...res.items);
+      } else if (res && res.docId) {
+        totalRequested += 1;
+        res.postUrl = line;
+        allItems.push(res);
+      }
+    } catch (lineErr) {
+      console.warn(`Skipping line ${line} due to error:`, lineErr.message);
+    }
+  }
+
+  if (allItems.length === 0) {
+    throw new Error("No downloadable files could be found from the provided Telegram links.");
+  }
+
+  return {
+    isBulk: true,
+    totalRequested,
+    count: allItems.length,
+    skipped: totalSkipped,
+    items: allItems
+  };
+}
 
 // Download/Stream chunk from GramJS MTProto message with HTTP Range support & direct download (Multi-DC Streaming)
 export async function streamGramMedia(

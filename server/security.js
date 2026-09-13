@@ -345,13 +345,23 @@ export function sanitizeFileName(fileName) {
 export function validateTelegramUrl(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
+  if (!trimmed) return false;
+
   // Supports:
   // - https://t.me/channel_name/123
+  // - https://t.me/channel_name/100-150
   // - https://t.me/channel_name/topic_id/123
+  // - https://t.me/channel_name/topic_id/1054-1090
   // - https://t.me/c/1234567890/123
-  // - https://t.me/c/1234567890/topic_id/123
-  const pattern = /^https?:\/\/(t\.me|telegram\.me)\/(c\/\d+(\/\d+)+|[a-zA-Z0-9_]+(\/\d+)+)$/i;
-  return pattern.test(trimmed);
+  // - https://t.me/c/1234567890/1054-1090
+  // - https://t.me/c/1234567890/topic_id/1054-1090
+  // Also supports multi-line / comma-separated batches
+  const singlePattern = /^https?:\/\/(?:t\.me|telegram\.me)\/(?:c\/\d+(?:\/\d+)*(?:\/\d+(?:[-_.:]{1,2}\d+)?)?|[a-zA-Z0-9_]+(?:\/\d+)*(?:\/\d+(?:[-_.:]{1,2}\d+)?)?)$/i;
+
+  const lines = trimmed.split(/[\r\n,]+/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return false;
+
+  return lines.every((line) => singlePattern.test(line));
 }
 
 export function maskSecret(secret, visible = 4) {
