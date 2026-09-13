@@ -45,9 +45,9 @@ router.get("/settings", async (req, res) => {
         contactHeading: settings.contactHeading || "We'd love to hear from you",
         contactSubheading: settings.contactSubheading || "Have a question, feedback, or need assistance? Get in touch with our team directly.",
         // Monetization & Google AdSense Settings
-        adsEnabled: settings.adsEnabled === "true",
-        adsenseClientId: settings.adsenseClientId || "",
-        adsenseAutoAds: settings.adsenseAutoAds === "true",
+        adsEnabled: settings.adsEnabled === undefined ? true : settings.adsEnabled === "true",
+        adsenseClientId: settings.adsenseClientId || "ca-pub-9550222186070886",
+        adsenseAutoAds: settings.adsenseAutoAds === undefined ? true : settings.adsenseAutoAds === "true",
         adsensePublicShareSlot: settings.adsensePublicShareSlot || "",
         adsenseLandingSlot: settings.adsenseLandingSlot || "",
         adsenseDownloadSlot: settings.adsenseDownloadSlot || "",

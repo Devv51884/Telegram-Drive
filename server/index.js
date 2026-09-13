@@ -56,14 +56,39 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdnjs.cloudflare.com"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          "https://cdnjs.cloudflare.com",
+          "https://pagead2.googlesyndication.com",
+          "https://*.googlesyndication.com",
+          "https://*.google.com",
+          "https://*.doubleclick.net"
+        ],
+        frameSrc: [
+          "'self'",
+          "https://googleads.g.doubleclick.net",
+          "https://*.google.com",
+          "https://*.googlesyndication.com",
+          "https://*.doubleclick.net"
+        ],
         workerSrc: ["'self'", "blob:"],
         childSrc: ["'self'", "blob:"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
         mediaSrc: ["'self'", "blob:", "https:", "http:"],
-        connectSrc: ["'self'", "https:", "wss:", "http:", "ws:"]
+        connectSrc: [
+          "'self'",
+          "https:",
+          "wss:",
+          "http:",
+          "ws:",
+          "https://*.googlesyndication.com",
+          "https://*.doubleclick.net",
+          "https://*.google.com"
+        ]
       }
     },
     crossOriginEmbedderPolicy: false,
@@ -238,6 +263,11 @@ app.get("/sitemap.xml", (req, res) => {
     <priority>0.9</priority>
   </url>
 </urlset>`);
+});
+
+app.get("/ads.txt", (req, res) => {
+  res.type("text/plain");
+  res.send("google.com, pub-9550222186070886, DIRECT, f08c47fec0942fa0\n");
 });
 
 // Serve frontend in production with smart caching (no-cache on HTML, immutable on hashed assets)
