@@ -2217,7 +2217,17 @@ export async function dbGetSiteSettings() {
     enableContactForm: "true",
     brandName: "TeleDrive",
     contactHeading: "We'd love to hear from you",
-    contactSubheading: "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly."
+    contactSubheading: "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly.",
+    adsEnabled: "true",
+    adsenseClientId: "ca-pub-9550222186070886",
+    adsenseAutoAds: "true",
+    adsensePublicShareSlot: "",
+    adsenseLandingSlot: "",
+    adsenseDownloadSlot: "",
+    showAdsOnPublicShare: "true",
+    showAdsOnLanding: "true",
+    showAdsOnDashboard: "false",
+    customAdCode: ""
   };
 
   if (rows && rows.length > 0) {
