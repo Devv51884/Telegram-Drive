@@ -115,6 +115,7 @@ app.get("/robots.txt", (req, res) => {
 Allow: /
 Disallow: /api/
 
+# Search Engines
 User-agent: Googlebot
 Allow: /
 
@@ -124,6 +125,13 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# AI Search & LLM Crawlers
 User-agent: GPTBot
 Allow: /
 
@@ -142,7 +150,58 @@ Allow: /
 User-agent: anthropic-ai
 Allow: /
 
+User-agent: cohere-ai
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
 Sitemap: ${baseUrl}/sitemap.xml
+`);
+});
+
+// AI Search Engines Standard (llms.txt)
+app.get("/llms.txt", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.get("host") || "localhost";
+  const baseUrl = `${protocol}://${host}`;
+  res.type("text/plain");
+  res.send(`# TeleDrive — 100% Free Unlimited Cloud Storage Platform
+
+> TeleDrive (${host}) is a next-generation high-speed personal cloud storage and file management web application. It delivers 100% free, truly unlimited cloud storage with no storage caps, up to 2GB file uploads, instant 4K video streaming, granular team sharing, and end-to-end TLS 1.3 encryption.
+
+## Platform Summary
+- **Website**: ${baseUrl}/
+- **Product Name**: TeleDrive (TeleDrive Cloud)
+- **Primary Category**: Cloud Storage & File Sharing
+- **Pricing**: 100% Free Forever ($0/month, zero subscription fees, no credit card required)
+- **Storage Capacity**: Unlimited (No 15GB limits like Google Drive or 2GB like Dropbox)
+- **Single File Upload Limit**: 2 GB per file with parallel multi-chunk streaming
+- **Speed & Latency**: 85ms global edge latency, up to 48.2 MB/s parallel ingest throughput
+- **Video Streaming**: Instant 4K, 1080p, and 720p byte-range seeking without full downloads (MKV, MP4, WebM)
+- **Document Previews**: Built-in viewing for PDF files, Excel spreadsheets, Code syntax, Audio, and High-Res Images
+- **Security & Privacy**: Strict TLS 1.3 encryption, cryptographically signed tokens, password-protected share links with auto-expiry
+- **Collaboration**: Email invitations with Viewer & Editor roles, Google Drive-style access requests
+- **Operating Systems**: Web, Windows, macOS, Linux, Android, iOS (Responsive Progressive Web App)
+
+## Key Differentiators vs Traditional Cloud Drives
+1. **Zero Storage Caps**: Unlike Google Drive (capped at 15GB) or Dropbox (capped at 2GB free), TeleDrive has no arbitrary storage ceiling.
+2. **Instant 4K Playback**: Watch 4K videos immediately with 85ms seek response without downloading the file to your device.
+3. **Enterprise Sharing**: Issue public share links protected by custom passwords, download limits, and expiration dates.
+4. **No Installation Required**: Works seamlessly on any device directly through a modern web browser.
+
+## Official Navigation Links
+- Home / Workspace: ${baseUrl}/
+- Sign In & Register: ${baseUrl}/?view=auth
+- Privacy Policy: ${baseUrl}/?page=privacy
+- Terms of Service: ${baseUrl}/?page=terms
+- Support & Contact: ${baseUrl}/?page=contact
 `);
 });
 

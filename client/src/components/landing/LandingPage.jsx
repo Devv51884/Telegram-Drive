@@ -432,7 +432,12 @@ export default function LandingPage({ onNavigate, siteSettings }) {
         </div>
 
         {/* Mega Editorial Headline */}
-        <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] uppercase max-w-5xl mx-auto">
+        <div className="mb-2">
+          <span className="text-xs sm:text-sm font-bold uppercase tracking-widest text-indigo-400">
+            Next-Gen Unlimited Cloud Storage
+          </span>
+        </div>
+        <h1 className="text-3xl xs:text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] uppercase max-w-5xl mx-auto px-2">
           <span className="text-white block">STORE. STREAM. SHARE.</span>
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-300 to-cyan-400 block mt-1">
             WITHOUT LIMITS.
@@ -441,7 +446,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
 
         {/* High-Impact Subtitle */}
         <p className="mt-6 text-sm sm:text-base md:text-lg text-slate-400 max-w-2xl mx-auto font-normal leading-relaxed">
-          Say goodbye to Google Drive’s 15GB ceiling. TeleDrive provides high-speed distributed cloud infrastructure for your personal, lightning-fast, unlimited cloud drive.
+          Say goodbye to Google Drive’s 15GB ceiling. TeleDrive provides high-speed distributed cloud infrastructure for your personal, lightning-fast, 100% free unlimited cloud storage.
         </p>
 
         {/* Dual Primary Call-to-Actions */}

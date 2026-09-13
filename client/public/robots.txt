@@ -6,7 +6,7 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-# AI Search Crawlers & LLM Indexers (Allowed for AI Search Visibility)
+# Search Engines
 User-agent: Googlebot
 Allow: /
 
@@ -16,6 +16,13 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# AI Search & LLM Crawlers
 User-agent: GPTBot
 Allow: /
 
@@ -34,7 +41,16 @@ Allow: /
 User-agent: anthropic-ai
 Allow: /
 
-User-agent: Applebot
+User-agent: cohere-ai
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
 Allow: /
 
 User-agent: Twitterbot
@@ -45,3 +61,4 @@ Allow: /
 
 # Sitemap Reference
 Sitemap: https://telegram-drive.in/sitemap.xml
+
