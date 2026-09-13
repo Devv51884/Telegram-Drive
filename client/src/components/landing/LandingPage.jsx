@@ -32,7 +32,6 @@ import {
   Clock,
   Smartphone,
   Laptop,
-  Radio,
   Copy,
   Folder,
   Sliders,
@@ -143,19 +142,19 @@ export default function LandingPage({ onNavigate, siteSettings }) {
   const faqs = [
     {
       q: "How does TeleDrive offer 100% free and unlimited storage?",
-      a: "TeleDrive leverages Telegram's globally distributed cloud infrastructure. Files are streamed and stored across Telegram's secure Datacenters through the official Bot API. With zero cloud rental or storage hosting markups, we pass 100% unlimited storage freely to you."
+      a: "TeleDrive leverages high-speed globally distributed cloud infrastructure. Files are streamed and stored across secure multi-DC edge nodes with chunked parallel distribution. With zero cloud rental or storage hosting markups, we pass 100% unlimited storage freely to you."
     },
     {
       q: "What is the maximum upload size for a single file?",
-      a: "You can upload individual files up to 2GB each. Our chunked streaming engine automatically handles large 4K video files, software ISOs, raw photo batches, zip archives, and multi-gigabyte course libraries."
+      a: "You can upload individual files up to 2GB each. Our chunked streaming engine automatically handles large 4K video files, software ISOs, raw photo batches, zip archives, and multi-gigabyte project libraries."
     },
     {
       q: "Can I stream 4K videos without downloading the whole file?",
       a: "Yes! TeleDrive incorporates an advanced Multi-DC byte-range streaming engine. You can instantly play 4K, 1080p, and 720p MKV, MP4, and WebM videos with full seekbar scrubbing, instant playback, and zero pre-download wait times."
     },
     {
-      q: "Can I import Telegram course channels and public media links?",
-      a: "Yes! TeleDrive's Telegram Channel Importer allows you to link public or private channels and media links. It indexes all video lectures, course materials, and attachments into your drive with clickable post references."
+      q: "How do secure public sharing links work?",
+      a: "With TeleDrive's Instant Share engine, you can generate public share links for any file or folder. You can configure optional password protection, maximum download limits, and automatic link expiration for complete privacy control."
     },
     {
       q: "How is my personal data secured?",
@@ -210,7 +209,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                 </span>
               </div>
               <p className="hidden md:block text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
-                Unlimited Telegram Cloud Drive
+                Next-Gen Unlimited Cloud Drive
               </p>
             </div>
           </div>
@@ -245,9 +244,9 @@ export default function LandingPage({ onNavigate, siteSettings }) {
               href={telegramChannel}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3.5 py-1.5 rounded-full hover:text-sky-400 hover:bg-sky-500/10 flex items-center gap-1 text-sky-400 font-bold transition-all"
+              className="px-3.5 py-1.5 rounded-full hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1 text-indigo-400 font-bold transition-all"
             >
-              <span>Telegram</span>
+              <span>Community</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </nav>
@@ -325,7 +324,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
           <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-indigo-300 to-cyan-400">
-            100% UNLIMITED STORAGE • 85MS MTPROTO STREAMING • ZERO FEES
+            100% UNLIMITED STORAGE • ULTRA-LOW 85MS LATENCY • ZERO FEES
           </span>
         </div>
 
@@ -339,7 +338,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
 
         {/* High-Impact Subtitle */}
         <p className="mt-6 text-sm sm:text-base md:text-lg text-slate-400 max-w-2xl mx-auto font-normal leading-relaxed">
-          Say goodbye to Google Drive’s 15GB ceiling. TeleDrive transforms Telegram's distributed multi-DC infrastructure into your personal, lightning-fast, unlimited cloud drive.
+          Say goodbye to Google Drive’s 15GB ceiling. TeleDrive provides high-speed distributed cloud infrastructure for your personal, lightning-fast, unlimited cloud drive.
         </p>
 
         {/* Dual Primary Call-to-Actions */}
@@ -379,7 +378,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </div>
             <div>
               <p className="text-xs font-black text-white">85ms Gateway Ping</p>
-              <p className="text-[11px] text-slate-400">Multi-DC MTProto</p>
+              <p className="text-[11px] text-slate-400">Multi-DC Cloud Edge</p>
             </div>
           </div>
 
@@ -412,12 +411,12 @@ export default function LandingPage({ onNavigate, siteSettings }) {
         <div className="animate-marquee gap-8 items-center text-xs font-black uppercase tracking-widest text-slate-400">
           <span className="flex items-center gap-2 text-white">
             <Zap className="w-4 h-4 text-indigo-400 fill-indigo-400" />
-            85MS MTPROTO DIRECT STREAMING
+            85MS DIRECT EDGE STREAMING
           </span>
           <span className="text-slate-600">•</span>
           <span className="flex items-center gap-2 text-cyan-400">
             <HardDrive className="w-4 h-4" />
-            UNLIMITED TELEGRAM BOT STORAGE
+            UNLIMITED DISTRIBUTED STORAGE
           </span>
           <span className="text-slate-600">•</span>
           <span className="flex items-center gap-2 text-white">
@@ -431,8 +430,8 @@ export default function LandingPage({ onNavigate, siteSettings }) {
           </span>
           <span className="text-slate-600">•</span>
           <span className="flex items-center gap-2 text-white">
-            <Layers className="w-4 h-4 text-indigo-400" />
-            1-CLICK COURSE CHANNEL IMPORTER
+            <Share2 className="w-4 h-4 text-indigo-400" />
+            SECURE PASSWORD-PROTECTED SHARES
           </span>
           <span className="text-slate-600">•</span>
           <span className="flex items-center gap-2 text-purple-300">
@@ -443,12 +442,12 @@ export default function LandingPage({ onNavigate, siteSettings }) {
           {/* Duplicate set for smooth infinite loop */}
           <span className="flex items-center gap-2 text-white">
             <Zap className="w-4 h-4 text-indigo-400 fill-indigo-400" />
-            85MS MTPROTO DIRECT STREAMING
+            85MS DIRECT EDGE STREAMING
           </span>
           <span className="text-slate-600">•</span>
           <span className="flex items-center gap-2 text-cyan-400">
             <HardDrive className="w-4 h-4" />
-            UNLIMITED TELEGRAM BOT STORAGE
+            UNLIMITED DISTRIBUTED STORAGE
           </span>
           <span className="text-slate-600">•</span>
           <span className="flex items-center gap-2 text-white">
@@ -492,13 +491,14 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </div>
 
             {/* Fake Omnibox */}
+            {/* Fake Omnibox */}
             <div className="flex-1 max-w-md hidden sm:flex items-center justify-center">
               <div className="w-full py-1 px-3 bg-black/40 border border-white/[0.06] rounded-xl text-[11px] font-mono text-slate-400 flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-slate-300">
                   <Lock className="w-3 h-3 text-emerald-400" />
                   https://telegram-drive.in/my_drive
                 </span>
-                <span className="text-[10px] text-indigo-400 font-bold">MTProto DC2</span>
+                <span className="text-[10px] text-indigo-400 font-bold">Cloud Edge DC2</span>
               </div>
             </div>
 
@@ -538,15 +538,15 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </button>
 
             <button
-              onClick={() => setDemoTab("import")}
+              onClick={() => setDemoTab("share")}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                demoTab === "import"
+                demoTab === "share"
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25"
                   : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
               }`}
             >
-              <Radio className="w-4 h-4" />
-              <span>Telegram Course Channels</span>
+              <Share2 className="w-4 h-4" />
+              <span>Instant Link Sharing</span>
             </button>
 
             <button
@@ -592,7 +592,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                         4K 60FPS • Multi-DC Stream
                       </span>
                       <span className="hidden sm:inline-block text-xs font-semibold text-slate-300 truncate max-w-xs">
-                        Supreme_2.0_Lecture_08_DynamicProgramming.mkv
+                        Cinematic_Showreel_2026_4K.mkv
                       </span>
                     </div>
 
@@ -663,7 +663,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   <div>
                     <h4 className="font-bold text-white text-sm">Chunked Streaming Uploader Active</h4>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Files are split into 20MB parts and uploaded concurrently directly into Telegram Cloud Bot.
+                      Files are split into 20MB parts and uploaded concurrently with high-speed parallel chunking.
                     </p>
                   </div>
                 </div>
@@ -701,91 +701,66 @@ export default function LandingPage({ onNavigate, siteSettings }) {
               </div>
             )}
 
-            {/* TAB 3: TELEGRAM COURSE CHANNELS DEMO */}
-            {demoTab === "import" && (
-              <div className="w-full max-w-3xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                {/* Channel Selector Pills */}
-                <div className="flex flex-wrap gap-2 justify-center">
-                  <button
-                    onClick={() => setSelectedChannel("supreme")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      selectedChannel === "supreme"
-                        ? "bg-indigo-600 text-white"
-                        : "bg-white/[0.04] text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    DSA Supreme 2.0 (28 Files • 6.48 GB)
-                  </button>
-                  <button
-                    onClick={() => setSelectedChannel("satish")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      selectedChannel === "satish"
-                        ? "bg-indigo-600 text-white"
-                        : "bg-white/[0.04] text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    Satish Dhawale Paid Courses (7 Files • 14.9 GB)
-                  </button>
-                  <button
-                    onClick={() => setSelectedChannel("bindra")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      selectedChannel === "bindra"
-                        ? "bg-indigo-600 text-white"
-                        : "bg-white/[0.04] text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    Vivek Bindra Courses (15 Files • 876 MB)
-                  </button>
-                </div>
-
-                {/* Imported Channel List Simulation */}
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden text-xs">
-                  <div className="p-3 bg-white/[0.04] border-b border-white/10 flex items-center justify-between font-bold text-slate-300">
-                    <span>Imported Media Stream</span>
-                    <span className="text-indigo-400 font-mono">Channel ID: -1002102477197</span>
+            {/* TAB 3: SECURE PUBLIC FILE SHARING DEMO */}
+            {demoTab === "share" && (
+              <div className="w-full max-w-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                        <Share2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">Client_Project_Deliverables_4K.zip</h4>
+                        <p className="text-[11px] text-slate-400">1.4 GB • Ready to share</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                      Link Active
+                    </span>
                   </div>
 
-                  <div className="divide-y divide-white/[0.05]">
-                    <div className="p-3.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-                      <div className="flex items-center gap-3">
-                        <Film className="w-4 h-4 text-indigo-400" />
-                        <div>
-                          <p className="font-bold text-white">01. Time & Space Complexity Masterclass.mp4</p>
-                          <p className="text-[11px] text-slate-400">Telegram Post #412 • 428 MB</p>
-                        </div>
+                  {/* Public Link Field */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Public Share Link</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-xs font-mono text-indigo-300 truncate">
+                        https://telegram-drive.in/s/x9K2pL
                       </div>
-                      <button className="px-3 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-bold hover:bg-indigo-500/30 flex items-center gap-1">
-                        <Play className="w-3 h-3 fill-indigo-300" />
-                        <span>Stream</span>
+                      <button
+                        onClick={() => alert("Simulated link copied to clipboard!")}
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
                       </button>
                     </div>
+                  </div>
 
-                    <div className="p-3.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-                      <div className="flex items-center gap-3">
-                        <Film className="w-4 h-4 text-indigo-400" />
-                        <div>
-                          <p className="font-bold text-white">02. Dynamic Programming On Trees & Graphs.mkv</p>
-                          <p className="text-[11px] text-slate-400">Telegram Post #413 • 785 MB</p>
-                        </div>
+                  {/* Privacy Controls Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1">
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Password Protection</span>
                       </div>
-                      <button className="px-3 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-bold hover:bg-indigo-500/30 flex items-center gap-1">
-                        <Play className="w-3 h-3 fill-indigo-300" />
-                        <span>Stream</span>
-                      </button>
+                      <p className="text-[11px] text-slate-400 font-mono">•••••••• (Active)</p>
                     </div>
 
-                    <div className="p-3.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-4 h-4 text-emerald-400" />
-                        <div>
-                          <p className="font-bold text-white">Supreme_2.0_Handwritten_Notes.pdf</p>
-                          <p className="text-[11px] text-slate-400">Telegram Post #414 • 34 MB</p>
-                        </div>
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1">
+                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Auto Expiration</span>
                       </div>
-                      <button className="px-3 py-1 rounded-lg bg-white/10 text-slate-300 font-bold hover:bg-white/20 flex items-center gap-1">
-                        <Eye className="w-3 h-3" />
-                        <span>Preview</span>
-                      </button>
+                      <p className="text-[11px] text-slate-400 font-mono">7 Days Remaining</p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-white mb-1">
+                        <Download className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Download Limit</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-mono">3 / 10 Downloads Used</p>
                     </div>
                   </div>
                 </div>
@@ -833,7 +808,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             Built For Speed. Designed Without Limits.
           </h2>
           <p className="mt-4 text-sm sm:text-base text-slate-400 max-w-2xl mx-auto">
-            Six architectural breakthroughs that make TeleDrive the most capable Telegram-backed cloud drive on the web.
+            Six architectural breakthroughs that make TeleDrive the most capable next-gen personal cloud drive on the web.
           </p>
         </div>
 
@@ -849,7 +824,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                 Multi-DC Direct Streaming Engine
               </h3>
               <p className="text-sm text-slate-400 max-w-xl leading-relaxed">
-                Our custom GramJS and MTProto cluster communicates directly with Telegram's 5 global Datacenters. Stream 4K video files, seek forward without downloading, and enjoy 85ms gateway response times.
+                Our high-speed multi-DC streaming engine communicates directly with global cloud edge nodes. Stream 4K video files, seek forward without downloading, and enjoy 85ms gateway response times.
               </p>
             </div>
 
@@ -876,7 +851,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                 Zero Storage Quotas
               </h3>
               <p className="text-sm text-slate-400 leading-relaxed">
-                Store 500GB, 2TB, or 10TB with zero monthly invoices. Your files reside on encrypted Telegram storage channels backed by unlimited cloud scale.
+                Store 500GB, 2TB, or 10TB with zero monthly invoices. Your files reside on encrypted distributed object storage backed by unlimited cloud scale.
               </p>
             </div>
 
@@ -890,22 +865,22 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </div>
           </SpotlightCard>
 
-          {/* Card 3: 1-Column - Telegram Channel Importer */}
+          {/* Card 3: 1-Column - Universal Document & Media Previewer */}
           <SpotlightCard className="p-8 flex flex-col justify-between min-h-[340px]">
             <div className="space-y-4">
               <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center">
-                <Radio className="w-6 h-6" />
+                <Eye className="w-6 h-6" />
               </div>
               <h3 className="text-xl sm:text-2xl font-black uppercase text-white tracking-tight">
-                Course & Channel Importer
+                Universal File Previews
               </h3>
               <p className="text-sm text-slate-400 leading-relaxed">
-                Import complete Telegram course channels with thousands of lectures. Organize by subject, stream from browser, and generate direct sharing URLs.
+                Direct browser previews for PDF documents, spreadsheets, Markdown, code syntax, images, and lossless audio with zero extra plugins required.
               </p>
             </div>
 
             <div className="pt-6 flex items-center gap-2 text-xs font-bold text-cyan-400">
-              <span>180GB+ Channels Indexed</span>
+              <span>PDF, Code, Audio & Media</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </div>
           </SpotlightCard>
@@ -1035,11 +1010,11 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                 </tr>
 
                 <tr className="hover:bg-white/[0.02] transition-colors">
-                  <td className="p-4 sm:p-5 font-bold text-white">Telegram Channel Importer</td>
-                  <td className="p-4 sm:p-5 font-black text-emerald-400">1-Click Native</td>
-                  <td className="p-4 sm:p-5 text-rose-500">Not Supported</td>
-                  <td className="p-4 sm:p-5 text-rose-500">Not Supported</td>
-                  <td className="p-4 sm:p-5 text-rose-500">Not Supported</td>
+                  <td className="p-4 sm:p-5 font-bold text-white">Instant Protected Share Links</td>
+                  <td className="p-4 sm:p-5 font-black text-emerald-400">Included (Password & Expiry)</td>
+                  <td className="p-4 sm:p-5 text-slate-400">Basic Link</td>
+                  <td className="p-4 sm:p-5 text-slate-400">Paid Tier Only</td>
+                  <td className="p-4 sm:p-5 text-slate-400">Basic Link</td>
                 </tr>
 
                 <tr className="hover:bg-white/[0.02] transition-colors">
@@ -1068,7 +1043,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             Frequently Asked Questions
           </h2>
           <p className="mt-3 text-sm text-slate-400">
-            Everything you need to know about Telegram Drive storage and security.
+            Everything you need to know about TeleDrive storage and security.
           </p>
         </div>
 
@@ -1131,7 +1106,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
             </h2>
 
             <p className="text-sm sm:text-base text-slate-400">
-              Join thousands of users storing videos, course archives, and documents on unlimited Telegram cloud. No credit card required.
+              Join thousands of users storing videos, datasets, and documents on unlimited private cloud. No credit card required.
             </p>
 
             <div className="pt-4 flex flex-wrap items-center justify-center gap-4">
@@ -1168,11 +1143,11 @@ export default function LandingPage({ onNavigate, siteSettings }) {
               <span className="font-black text-base text-white tracking-tight">TELEDRIVE</span>
             </div>
             <p className="text-slate-400 leading-relaxed text-xs">
-              Unlimited, high-speed, secure cloud storage powered by Telegram's distributed multi-DC infrastructure and official Bot API.
+              Unlimited, high-speed, secure private cloud storage engineered with modern distributed architecture.
             </p>
             <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>All Systems Operational • MTProto 85ms</span>
+              <span>All Systems Operational • High-Speed 85ms Edge</span>
             </div>
           </div>
 
@@ -1228,9 +1203,9 @@ export default function LandingPage({ onNavigate, siteSettings }) {
                   href={telegramChannel}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 font-semibold"
+                  className="text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1 font-semibold"
                 >
-                  <span>Telegram Community</span>
+                  <span>Community Channel</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </li>
@@ -1240,7 +1215,7 @@ export default function LandingPage({ onNavigate, siteSettings }) {
 
         <div className="max-w-7xl mx-auto pt-6 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500">
           <p>© {new Date().getFullYear()} TeleDrive. Engineered for privacy, speed, and unlimited storage.</p>
-          <p>Powered by MTProto & Telegram Bot API.</p>
+          <p>Encrypted End-to-End • Zero Third-Party Tracking</p>
         </div>
       </footer>
     </div>
