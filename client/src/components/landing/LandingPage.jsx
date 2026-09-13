@@ -49,6 +49,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
+import AdBanner, { CustomAdSnippet } from "../ads/AdBanner.jsx";
 
 /**
  * Motion Primitives: Spotlight Card
@@ -1503,6 +1504,23 @@ export default function LandingPage({ onNavigate, siteSettings }) {
           })}
         </div>
       </section>
+
+      {/* Monetization / Ad Banner (Controlled dynamically from Admin Panel) */}
+      {siteSettings?.adsEnabled && siteSettings?.showAdsOnLanding !== false && (
+        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 my-8">
+          {siteSettings?.adsenseLandingSlot && siteSettings?.adsenseClientId ? (
+            <div className="p-2 rounded-2xl bg-white/[0.02] border border-white/[0.06] backdrop-blur-sm overflow-hidden text-center">
+              <span className="text-[10px] tracking-wider uppercase text-slate-500 font-bold block mb-1">Sponsored</span>
+              <AdBanner client={siteSettings.adsenseClientId} slot={siteSettings.adsenseLandingSlot} />
+            </div>
+          ) : siteSettings?.customAdCode ? (
+            <div className="p-2 rounded-2xl bg-white/[0.02] border border-white/[0.06] backdrop-blur-sm overflow-hidden text-center">
+              <span className="text-[10px] tracking-wider uppercase text-slate-500 font-bold block mb-1">Sponsored</span>
+              <CustomAdSnippet htmlCode={siteSettings.customAdCode} />
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 7. SHERYIANS-STYLE STORAGE COMPARISON TABLE                               */}

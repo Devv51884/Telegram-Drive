@@ -43,7 +43,18 @@ router.get("/settings", async (req, res) => {
         enableContactForm: settings.enableContactForm !== "false",
         brandName: settings.brandName || "TeleDrive",
         contactHeading: settings.contactHeading || "We'd love to hear from you",
-        contactSubheading: settings.contactSubheading || "Have a question, feedback, or need assistance? Get in touch with our team directly."
+        contactSubheading: settings.contactSubheading || "Have a question, feedback, or need assistance? Get in touch with our team directly.",
+        // Monetization & Google AdSense Settings
+        adsEnabled: settings.adsEnabled === "true",
+        adsenseClientId: settings.adsenseClientId || "",
+        adsenseAutoAds: settings.adsenseAutoAds === "true",
+        adsensePublicShareSlot: settings.adsensePublicShareSlot || "",
+        adsenseLandingSlot: settings.adsenseLandingSlot || "",
+        adsenseDownloadSlot: settings.adsenseDownloadSlot || "",
+        showAdsOnPublicShare: settings.showAdsOnPublicShare !== "false",
+        showAdsOnLanding: settings.showAdsOnLanding === "true",
+        showAdsOnDashboard: settings.showAdsOnDashboard === "true",
+        customAdCode: settings.customAdCode || ""
       }
     });
   } catch (err) {

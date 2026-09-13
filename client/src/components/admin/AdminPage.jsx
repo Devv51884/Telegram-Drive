@@ -43,7 +43,11 @@ import {
   Filter,
   Copy,
   CloudDownload,
-  Folder
+  Folder,
+  DollarSign,
+  Coins,
+  TrendingUp,
+  Code
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -114,6 +118,21 @@ export default function AdminPage() {
   });
   const [savingSiteSettings, setSavingSiteSettings] = useState(false);
 
+  // AdSense Monetization state
+  const [adSettingsInput, setAdSettingsInput] = useState({
+    adsEnabled: false,
+    adsenseClientId: "",
+    adsenseAutoAds: false,
+    adsensePublicShareSlot: "",
+    adsenseLandingSlot: "",
+    adsenseDownloadSlot: "",
+    showAdsOnPublicShare: true,
+    showAdsOnLanding: true,
+    showAdsOnDashboard: false,
+    customAdCode: ""
+  });
+  const [savingAdSettings, setSavingAdSettings] = useState(false);
+
   const isAdmin = currentUser?.role === "admin" || currentUser?.email === "devv5412@gmail.com";
 
   useEffect(() => {
@@ -132,6 +151,8 @@ export default function AdminPage() {
         if (!overviewData) fetchOverview();
       } else if (activeTab === "contact") {
         fetchContactMessages();
+        fetchSiteSettings();
+      } else if (activeTab === "monetization") {
         fetchSiteSettings();
       }
     }
@@ -168,6 +189,18 @@ export default function AdminPage() {
           contactHeading: res.settings.contactHeading || prev.contactHeading || "We'd love to hear from you",
           contactSubheading: res.settings.contactSubheading || prev.contactSubheading || "Have a question, feedback, or need enterprise assistance? Get in touch with our team directly."
         }));
+        setAdSettingsInput({
+          adsEnabled: res.settings.adsEnabled === true || res.settings.adsEnabled === "true" || res.settings.adsEnabled === 1,
+          adsenseClientId: res.settings.adsenseClientId || "",
+          adsenseAutoAds: res.settings.adsenseAutoAds === true || res.settings.adsenseAutoAds === "true" || res.settings.adsenseAutoAds === 1,
+          adsensePublicShareSlot: res.settings.adsensePublicShareSlot || "",
+          adsenseLandingSlot: res.settings.adsenseLandingSlot || "",
+          adsenseDownloadSlot: res.settings.adsenseDownloadSlot || "",
+          showAdsOnPublicShare: res.settings.showAdsOnPublicShare === undefined ? true : (res.settings.showAdsOnPublicShare === true || res.settings.showAdsOnPublicShare === "true" || res.settings.showAdsOnPublicShare === 1),
+          showAdsOnLanding: res.settings.showAdsOnLanding === undefined ? true : (res.settings.showAdsOnLanding === true || res.settings.showAdsOnLanding === "true" || res.settings.showAdsOnLanding === 1),
+          showAdsOnDashboard: res.settings.showAdsOnDashboard === true || res.settings.showAdsOnDashboard === "true" || res.settings.showAdsOnDashboard === 1,
+          customAdCode: res.settings.customAdCode || ""
+        });
       }
     } catch (err) {
       console.warn("Failed to load site settings:", err.message);
@@ -217,6 +250,21 @@ export default function AdminPage() {
       showToast(err.response?.data?.error || "Failed to save settings", "error");
     } finally {
       setSavingSiteSettings(false);
+    }
+  };
+
+  const handleSaveAdSettings = async (e) => {
+    if (e) e.preventDefault();
+    setSavingAdSettings(true);
+    try {
+      const res = await DriveAPI.updateAdminSiteSettings(adSettingsInput);
+      if (res.success) {
+        showToast("Monetization & AdSense settings saved and synced!", "success");
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to save AdSense settings", "error");
+    } finally {
+      setSavingAdSettings(false);
     }
   };
 
@@ -670,6 +718,18 @@ export default function AdminPage() {
           <MessageSquare className="w-3.5 h-3.5" />
           <span>Contact & Settings</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab("monetization")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            activeTab === "monetization"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c]"
+          }`}
+        >
+          <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Monetization & Ads</span>
+        </button>
       </div>
 
       {/* Main Admin Workspace Layout */}
@@ -751,6 +811,18 @@ export default function AdminPage() {
             >
               <MessageSquare className="w-4 h-4" />
               <span>Contact & Site Settings</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("monetization")}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-semibold transition-all ${
+                activeTab === "monetization"
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#282a2c] hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              <DollarSign className="w-4 h-4 text-emerald-400" />
+              <span>Monetization & Ads</span>
             </button>
           </div>
 
@@ -2538,6 +2610,360 @@ export default function AdminPage() {
                   </div>
                 </>
               )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: MONETIZATION & GOOGLE ADSENSE CONTROLS */}
+          {activeTab === "monetization" && (
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-7xl mx-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-emerald-500" />
+                    <span>Monetization & Google AdSense Controls</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Configure Google AdSense publisher keys, ad slot units, auto ads, and display toggles across TeleDrive.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="https://adsense.google.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+                  >
+                    <span>Open AdSense Console</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <button
+                    onClick={fetchSiteSettings}
+                    className="px-3.5 py-2 bg-slate-100 dark:bg-[#282a2c] hover:bg-slate-200 dark:hover:bg-[#323437] text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Alert Banner */}
+              <div className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${
+                adSettingsInput.adsEnabled
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+                  : "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300"
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${adSettingsInput.adsEnabled ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                      {adSettingsInput.adsEnabled ? "Ad Monetization Active" : "Ad Monetization Disabled"}
+                    </h4>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                      {adSettingsInput.adsEnabled
+                        ? "Google AdSense script is injected dynamically for visitors and responsive ad banners are active."
+                        : "No ad scripts or slot containers are rendered anywhere on the website."}
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!adSettingsInput.adsEnabled}
+                    onChange={(e) => setAdSettingsInput(prev => ({ ...prev, adsEnabled: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                </label>
+              </div>
+
+              {/* Grid: Settings Form & Step-by-Step Guide */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left (2 cols): Settings Form */}
+                <div className="lg:col-span-2 space-y-6">
+                  <form onSubmit={handleSaveAdSettings} className="bg-white dark:bg-[#1e1f20] rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 flex items-center justify-center">
+                          <Coins className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                            Google AdSense Configuration
+                          </h4>
+                          <p className="text-[11px] text-slate-400">
+                            Configure publisher credentials and slot unit identifiers.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Google AdSense Publisher Client ID */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                        <span>AdSense Publisher Client ID (data-ad-client)</span>
+                        <span className="text-[10px] text-purple-500 font-mono">Format: ca-pub-XXXXXXXXXXXXXXXX</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ca-pub-1234567890123456"
+                        value={adSettingsInput.adsenseClientId}
+                        onChange={(e) => setAdSettingsInput(prev => ({ ...prev, adsenseClientId: e.target.value }))}
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Find this in your AdSense console under Account &gt; Settings &gt; Account Information.
+                      </p>
+                    </div>
+
+                    {/* Auto Ads Toggle */}
+                    <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-[#282a2c] rounded-2xl border border-slate-200 dark:border-slate-700/70">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          Google Auto Ads
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          Allow Google AI to automatically find and place responsive ads across pages.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!adSettingsInput.adsenseAutoAds}
+                          onChange={(e) => setAdSettingsInput(prev => ({ ...prev, adsenseAutoAds: e.target.checked }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Ad Placements & Slot IDs */}
+                    <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Placement Units & Slot IDs
+                      </h5>
+
+                      {/* Public Share & Folder View Slot */}
+                      <div className="p-3.5 bg-slate-50 dark:bg-[#282a2c] rounded-2xl border border-slate-200 dark:border-slate-700/70 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                              Public Folder & Multi-File Share Page
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Shows responsive banner below category tabs on shared links.
+                            </p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={!!adSettingsInput.showAdsOnPublicShare}
+                            onChange={(e) => setAdSettingsInput(prev => ({ ...prev, showAdsOnPublicShare: e.target.checked }))}
+                            className="w-4 h-4 text-purple-600 rounded"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Ad Slot ID (e.g. 9876543210)"
+                          value={adSettingsInput.adsensePublicShareSlot}
+                          onChange={(e) => setAdSettingsInput(prev => ({ ...prev, adsensePublicShareSlot: e.target.value }))}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {/* Single File Download Slot */}
+                      <div className="p-3.5 bg-slate-50 dark:bg-[#282a2c] rounded-2xl border border-slate-200 dark:border-slate-700/70 space-y-2">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            Single File Direct Download View
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            Shows banner directly under file preview & direct download button (High CTR placement).
+                          </p>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Ad Slot ID (leave blank to reuse Public Share slot)"
+                          value={adSettingsInput.adsenseDownloadSlot}
+                          onChange={(e) => setAdSettingsInput(prev => ({ ...prev, adsenseDownloadSlot: e.target.value }))}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {/* Landing Page Slot */}
+                      <div className="p-3.5 bg-slate-50 dark:bg-[#282a2c] rounded-2xl border border-slate-200 dark:border-slate-700/70 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                              Landing Page (Homepage)
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Shows responsive banner between interactive tour & comparison table.
+                            </p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={!!adSettingsInput.showAdsOnLanding}
+                            onChange={(e) => setAdSettingsInput(prev => ({ ...prev, showAdsOnLanding: e.target.checked }))}
+                            className="w-4 h-4 text-purple-600 rounded"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Ad Slot ID (e.g. 5432109876)"
+                          value={adSettingsInput.adsenseLandingSlot}
+                          onChange={(e) => setAdSettingsInput(prev => ({ ...prev, adsenseLandingSlot: e.target.value }))}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {/* Logged-In User Dashboard Toggle */}
+                      <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-[#282a2c] rounded-2xl border border-slate-200 dark:border-slate-700/70">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            Show Ads on Logged-in Dashboard
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            Keep OFF for a clean premium user experience, or turn ON to monetize active users.
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!adSettingsInput.showAdsOnDashboard}
+                            onChange={(e) => setAdSettingsInput(prev => ({ ...prev, showAdsOnDashboard: e.target.checked }))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Custom Ad / Alternative Network Code Fallback */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Code className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Alternative / Custom Ad Code Fallback (Optional)</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">Adsterra / Monetag / PropellerAds</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        placeholder="<!-- Paste HTML / <script> ad code snippet here. Rendered if AdSense slot is empty or pending. -->"
+                        value={adSettingsInput.customAdCode}
+                        onChange={(e) => setAdSettingsInput(prev => ({ ...prev, customAdCode: e.target.value }))}
+                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-[#282a2c] border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Use this if your Google AdSense account is under review and you want to monetize traffic immediately with an alternative ad network.
+                      </p>
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={savingAdSettings}
+                        className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-2xl text-xs font-bold shadow-lg shadow-purple-600/25 transition-all flex items-center justify-center gap-2"
+                      >
+                        {savingAdSettings ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Saving AdSense Settings...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Save Monetization Settings</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Right (1 col): Step-by-Step AdSense Approval & Earning Guide */}
+                <div className="space-y-4">
+                  <div className="bg-white dark:bg-[#1e1f20] rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center">
+                        <TrendingUp className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        AdSense Setup & Approval Guide
+                      </h4>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div className="p-3 bg-slate-50 dark:bg-[#282a2c] rounded-xl border border-slate-200 dark:border-slate-700/60">
+                        <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center">1</span>
+                          <span>Create Google AdSense Account</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          Go to <a href="https://adsense.google.com/" target="_blank" rel="noopener noreferrer" className="text-purple-600 dark:text-purple-400 underline font-semibold">adsense.google.com</a>, log in with your Google account, and enter your website URL: <code className="text-purple-500 font-mono">https://telegram-drive.in</code>.
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 dark:bg-[#282a2c] rounded-xl border border-slate-200 dark:border-slate-700/60">
+                        <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center">2</span>
+                          <span>Connect Site via Publisher ID</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          Copy your publisher ID (<code className="text-purple-500 font-mono">ca-pub-XXXXXXXXXX</code>) from AdSense and paste it in the box on the left. Toggle "Enable Ad Monetization Globally" to ON and click Save.
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 dark:bg-[#282a2c] rounded-xl border border-slate-200 dark:border-slate-700/60">
+                        <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center">3</span>
+                          <span>Site Verification & Review</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          In the AdSense dashboard, check "I've placed the code" and submit for review. Google reviews your website (usually takes 24 hours to 7 days).
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 dark:bg-[#282a2c] rounded-xl border border-slate-200 dark:border-slate-700/60">
+                        <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center">4</span>
+                          <span>How Earning & Payouts Work</span>
+                        </p>
+                        <ul className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 space-y-1 list-disc list-inside">
+                          <li><strong>CPM:</strong> Earnings per 1,000 ad impressions when people visit your links.</li>
+                          <li><strong>CPC:</strong> Higher revenue when visitors click on relevant ads.</li>
+                          <li><strong>Payout Threshold:</strong> Minimum $100 (approx. ₹8,300+ INR). Paid monthly directly to your Indian bank account via Wire Transfer (SWIFT).</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Readiness Checklist Card */}
+                  <div className="bg-gradient-to-br from-purple-950/20 to-indigo-950/20 border border-purple-500/20 rounded-3xl p-4 text-xs space-y-2.5">
+                    <p className="font-bold text-purple-300 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>TeleDrive AdSense Readiness</span>
+                    </p>
+                    <div className="space-y-1.5 text-[11px] text-slate-300">
+                      <p className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Privacy Policy & Terms pages are live</span>
+                      </p>
+                      <p className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Contact Support system is active</span>
+                      </p>
+                      <p className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Fully responsive for mobile & desktop</span>
+                      </p>
+                      <p className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>HTTPS SSL Encrypted on telegram-drive.in</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

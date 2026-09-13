@@ -42,8 +42,9 @@ import {
   Sparkles,
   ArrowDown
 } from "lucide-react";
+import AdBanner, { CustomAdSnippet } from "../ads/AdBanner.jsx";
 
-export default function PublicShareView({ shareToken, onBackToApp }) {
+export default function PublicShareView({ shareToken, onBackToApp, siteSettings }) {
   // Main Data State
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -734,6 +735,25 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
             </div>
           </div>
 
+          {/* Public Share Monetization Ad Banner */}
+          {siteSettings?.adsEnabled && siteSettings?.showAdsOnPublicShare && (
+            <div className="w-full my-3 p-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden text-center">
+              <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1">
+                Sponsored Advertisement
+              </div>
+              {siteSettings?.adsensePublicShareSlot ? (
+                <AdBanner
+                  client={siteSettings.adsenseClientId}
+                  slot={siteSettings.adsensePublicShareSlot}
+                  format="auto"
+                  responsive="true"
+                />
+              ) : siteSettings?.customAdCode ? (
+                <CustomAdSnippet htmlCode={siteSettings.customAdCode} />
+              ) : null}
+            </div>
+          )}
+
           {/* Loading Indicator for subfolders */}
           {folderLoading && (
             <div className="flex items-center justify-center py-12 gap-3">
@@ -983,6 +1003,25 @@ export default function PublicShareView({ shareToken, onBackToApp }) {
                 <Download className="w-4 h-4" />
                 <span>Download Document</span>
               </a>
+
+              {/* Single File Download Monetization Ad Banner */}
+              {siteSettings?.adsEnabled && siteSettings?.showAdsOnPublicShare && (
+                <div className="w-full pt-3 border-t border-slate-800/80 mt-2">
+                  <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1 text-center">
+                    Advertisement
+                  </div>
+                  {siteSettings?.adsenseDownloadSlot || siteSettings?.adsensePublicShareSlot ? (
+                    <AdBanner
+                      client={siteSettings.adsenseClientId}
+                      slot={siteSettings.adsenseDownloadSlot || siteSettings.adsensePublicShareSlot}
+                      format="auto"
+                      responsive="true"
+                    />
+                  ) : siteSettings?.customAdCode ? (
+                    <CustomAdSnippet htmlCode={siteSettings.customAdCode} />
+                  ) : null}
+                </div>
+              )}
             </div>
           )}
         </main>

@@ -27,6 +27,7 @@ import LandingPage from "./components/landing/LandingPage.jsx";
 import PrivacyPolicyPage from "./components/legal/PrivacyPolicyPage.jsx";
 import TermsPage from "./components/legal/TermsPage.jsx";
 import ContactPage from "./components/contact/ContactPage.jsx";
+import { useAdSense } from "./components/ads/AdBanner.jsx";
 import { Loader2, CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 function DriveMain() {
@@ -146,9 +147,14 @@ function DriveMain() {
     }
   };
 
+  useAdSense(
+    siteSettings?.adsEnabled ? siteSettings?.adsenseClientId : null,
+    siteSettings?.adsenseAutoAds
+  );
+
   // 1. Direct Public Share Link View (No login required for public files)
   if (shareToken) {
-    return <PublicShareView shareToken={shareToken} />;
+    return <PublicShareView shareToken={shareToken} siteSettings={siteSettings} />;
   }
 
   // Display security check loading screen
