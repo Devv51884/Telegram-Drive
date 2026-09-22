@@ -1,5 +1,6 @@
 import axios from "axios";
 import FormData from "form-data";
+import https from "https";
 import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { computeCheck } from "telegram/Password.js";
@@ -18,6 +19,9 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Dedicated IPv4 HTTPS agent for Telegram Bot API to eliminate IPv6 VPS connection delays/timeouts
+export const telegramIpv4Agent = new https.Agent({ family: 4, keepAlive: true });
 
 // Helper to get Telegram Bot & Account credentials
 export async function getTelegramConfig() {
@@ -256,7 +260,10 @@ export async function getGramClient(userId = null, preferStorageBot = false) {
 // Test Bot Token Connection
 export async function testBotConnection(botToken, chatId) {
   try {
-    const res = await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 10000 });
+    const res = await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, {
+      httpsAgent: telegramIpv4Agent,
+      timeout: 10000
+    });
     if (!res.data || !res.data.ok) {
       return { success: false, error: "Invalid bot token" };
     }
@@ -266,6 +273,7 @@ export async function testBotConnection(botToken, chatId) {
       try {
         const chatRes = await axios.get(`https://api.telegram.org/bot${botToken}/getChat`, {
           params: { chat_id: chatId },
+          httpsAgent: telegramIpv4Agent,
           timeout: 10000
         });
         return {
@@ -343,6 +351,7 @@ export async function uploadFileToTelegram(
         formData,
         {
           headers: formHeaders,
+          httpsAgent: telegramIpv4Agent,
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
           timeout: 0,
@@ -501,7 +510,9 @@ export async function getTelegramFileStreamUrl(fileId) {
   if (!config.botToken) throw new Error("Bot token not configured");
 
   const fileRes = await axios.get(`https://api.telegram.org/bot${config.botToken}/getFile`, {
-    params: { file_id: fileId }
+    params: { file_id: fileId },
+    httpsAgent: telegramIpv4Agent,
+    timeout: 15000
   });
 
   if (!fileRes.data || !fileRes.data.ok) {
@@ -519,10 +530,17 @@ export async function deleteTelegramMessage(messageId, chatId) {
   if (!config.botToken || !targetChat || !messageId) return false;
 
   try {
-    await axios.post(`https://api.telegram.org/bot${config.botToken}/deleteMessage`, {
-      chat_id: targetChat,
-      message_id: parseInt(messageId, 10)
-    });
+    await axios.post(
+      `https://api.telegram.org/bot${config.botToken}/deleteMessage`,
+      {
+        chat_id: targetChat,
+        message_id: parseInt(messageId, 10)
+      },
+      {
+        httpsAgent: telegramIpv4Agent,
+        timeout: 10000
+      }
+    );
     return true;
   } catch (err) {
     console.error("Delete Telegram message error:", err.message);
@@ -1210,15 +1228,31 @@ export async function streamGramMedia(
 
   // Use User account client for imported posts; Use Storage Bot for platform uploads; fallback seamlessly
   let client = null;
+  const viewerUserId = req?.userId || null;
+
   if (!useStorageBot) {
-    client = await getUserGramClient(userId);
+    if (userId) client = await getUserGramClient(userId);
+    if (!client && viewerUserId && viewerUserId !== userId) {
+      client = await getUserGramClient(viewerUserId);
+    }
+    if (!client) client = await getUserGramClient(null);
     if (!client) client = await getStorageGramClient();
   } else {
     client = await getStorageGramClient();
-    if (!client) client = await getUserGramClient(userId);
+    if (!client && userId) client = await getUserGramClient(userId);
+    if (!client && viewerUserId && viewerUserId !== userId) {
+      client = await getUserGramClient(viewerUserId);
+    }
+    if (!client) client = await getUserGramClient(null);
+  }
+  if (!client && userId) {
+    client = await getGramClient(userId);
+  }
+  if (!client && viewerUserId) {
+    client = await getGramClient(viewerUserId);
   }
   if (!client) {
-    client = await getGramClient(userId);
+    client = await getGramClient(null);
   }
   if (!client) {
     throw new Error("Telegram MTProto streaming client unavailable");

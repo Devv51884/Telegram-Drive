@@ -19,7 +19,10 @@ import { requireAdmin, hashPassword } from "../security.js";
 import {
   getGramClient,
   getConnectedTelegramUser,
-  deleteTelegramMessage
+  deleteTelegramMessage,
+  getTelegramConfig,
+  telegramIpv4Agent,
+  getStorageGramClient
 } from "../telegram.js";
 import axios from "axios";
 
@@ -36,27 +39,51 @@ router.get("/overview", async (req, res) => {
     // Check Telegram Bot API status
     let botConnected = false;
     let botUsername = "";
-    const botToken = process.env.BOT_TOKEN;
+    const config = await getTelegramConfig();
+    const botToken = config.botToken;
     if (botToken) {
       try {
-        const botRes = await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, { timeout: 3000 });
+        const botRes = await axios.get(`https://api.telegram.org/bot${botToken}/getMe`, {
+          httpsAgent: telegramIpv4Agent,
+          timeout: 8000
+        });
         if (botRes.data?.ok) {
           botConnected = true;
           botUsername = botRes.data.result.username;
         }
-      } catch {}
+      } catch (botErr) {
+        console.warn("Telegram Bot overview check diagnostic:", botErr.message);
+      }
     }
 
-    // Check MTProto User status
+    // Check MTProto User status (Check requesting admin's session first, then global session, then storage bot)
     let mtprotoConnected = false;
     let mtprotoUser = null;
     try {
-      const tgStatus = await getConnectedTelegramUser();
+      let tgStatus = await getConnectedTelegramUser(req.userId);
+      if (!tgStatus.connected) {
+        tgStatus = await getConnectedTelegramUser(null);
+      }
       if (tgStatus.connected) {
         mtprotoConnected = true;
-        mtprotoUser = tgStatus.info;
+        mtprotoUser = tgStatus.info || {
+          firstName: tgStatus.firstName,
+          username: tgStatus.username,
+          phone: tgStatus.phoneNumber
+        };
+      } else {
+        const storageClient = await getStorageGramClient();
+        if (storageClient && storageClient.connected) {
+          mtprotoConnected = true;
+          mtprotoUser = {
+            firstName: "Storage Bot (MTProto)",
+            username: botUsername || "Connected"
+          };
+        }
       }
-    } catch {}
+    } catch (mtErr) {
+      console.warn("MTProto overview check diagnostic:", mtErr.message);
+    }
 
     const storageChannelId = process.env.STORAGE_CHANNEL_ID || "-1003808048037";
 
@@ -273,14 +300,12 @@ router.post("/system/ping", async (req, res) => {
 
   // 2. Bot API HTTP Ping (Forced IPv4 to prevent 5-second VPS IPv6 timeout)
   try {
-    const config = await (await import("../telegram.js")).getTelegramConfig();
+    const config = await getTelegramConfig();
     const token = config.botToken || process.env.BOT_TOKEN;
     if (token) {
       const tb0 = Date.now();
-      const https = await import("https");
-      const agent = new https.Agent({ family: 4, keepAlive: true });
       const botRes = await axios.get(`https://api.telegram.org/bot${token}/getMe`, {
-        httpsAgent: agent,
+        httpsAgent: telegramIpv4Agent,
         timeout: 10000
       });
       if (botRes.data?.ok) {

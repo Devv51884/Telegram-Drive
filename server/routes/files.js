@@ -17,7 +17,9 @@ import {
   getTelegramFileStreamUrl,
   streamGramMedia,
   deleteTelegramMessage,
-  parseAndFetchTelegramPost
+  parseAndFetchTelegramPost,
+  telegramIpv4Agent,
+  getTelegramConfig
 } from "../telegram.js";
 import {
   sanitizeFileName,
@@ -534,6 +536,7 @@ async function streamTelegramBotFile(file, range, req, res) {
     method: "GET",
     url: downloadUrl,
     responseType: "stream",
+    httpsAgent: telegramIpv4Agent,
     timeout: 0,
     validateStatus: (status) => status < 400
   });
@@ -658,7 +661,8 @@ router.get("/:id/stream", async (req, res) => {
     }
 
     const range = req.headers.range;
-    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    const config = await getTelegramConfig();
+    const targetChannelId = file.telegram_channel_id || config.chatId || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
     const targetUserId = file.user_id || req.userId || null;
@@ -750,7 +754,8 @@ router.get("/:id/download", async (req, res) => {
       res.setHeader("Accept-Ranges", "bytes");
     }
 
-    const targetChannelId = file.telegram_channel_id || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
+    const config = await getTelegramConfig();
+    const targetChannelId = file.telegram_channel_id || config.chatId || process.env.STORAGE_CHAT_ID || process.env.STORAGE_CHANNEL_ID;
     const fileSize = Number(file.size) || 0;
     const isUploaded = file.source_type === "upload" || !file.source_type;
     const isBotApiFileId = file.telegram_file_id && !file.telegram_file_id.match(/^\d+$/);
@@ -762,6 +767,7 @@ router.get("/:id/download", async (req, res) => {
         const downloadUrl = await getTelegramFileStreamUrl(file.telegram_file_id);
         const response = await axios.get(downloadUrl, {
           responseType: "stream",
+          httpsAgent: telegramIpv4Agent,
           timeout: 0
         });
 

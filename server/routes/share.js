@@ -25,7 +25,8 @@ import {
 } from "../db.js";
 import {
   streamGramMedia,
-  getTelegramFileStreamUrl
+  getTelegramFileStreamUrl,
+  telegramIpv4Agent
 } from "../telegram.js";
 import {
   sendShareNotificationEmail,
@@ -89,6 +90,7 @@ async function streamTelegramBotFile(file, range, req, res) {
     method: "GET",
     url: downloadUrl,
     responseType: "stream",
+    httpsAgent: telegramIpv4Agent,
     timeout: 0,
     validateStatus: (status) => status < 400
   });
@@ -816,6 +818,7 @@ router.get("/public/:token/download", async (req, res) => {
           method: "GET",
           url: downloadUrl,
           responseType: "stream",
+          httpsAgent: telegramIpv4Agent,
           timeout: 0
         });
 
@@ -982,6 +985,7 @@ router.get("/public/:token/file/:fileId/download", async (req, res) => {
           method: "GET",
           url: downloadUrl,
           responseType: "stream",
+          httpsAgent: telegramIpv4Agent,
           timeout: 0
         });
 
